@@ -1,8 +1,9 @@
 # Claude
 .claude/settings.json
 .claude/settings.local.json
+.private-journal/
 
-# UI mockp files
+# UI mockup files
 dev/mockups/
 
 # Logs
