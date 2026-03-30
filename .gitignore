@@ -1,3 +1,10 @@
+# Claude
+.claude/settings.json
+.claude/settings.local.json
+
+# UI mockp files
+dev/mockups/
+
 # Logs
 logs
 *.log
