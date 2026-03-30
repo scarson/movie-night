@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Movie Night is a couples' movie recommendation app. Two people with different tastes fill out profiles, set a mood for the evening, and an AI finds movies that work for both of them.
 
-**dev/plans/movie-night-design.md** — design doc.
+**dev/gstack/** — symlink to `~/.gstack/projects/scarson-movie-night/`. Design docs, review artifacts, test plans from gstack skills.
 **dev/plans/** — implementation plans, bugfix plans, feature designs.
 **dev/research/** — decision rationale (read when you need the *why* behind an architectural choice).
 
