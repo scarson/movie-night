@@ -212,6 +212,12 @@ npx wrangler d1 execute movie-night-db --local --command="SELECT * FROM table"  
 - NEVER guess about Cloudflare Workers, D1, Cron Triggers, or Wrangler behavior.
 - ALWAYS use the Cloudflare documentation MCP tools (`search_cloudflare_documentation`) to verify platform-specific behavior before making claims or design decisions.
 
+## Design System
+Always read DESIGN.md before making any visual or UI decisions.
+All font choices, colors, spacing, and aesthetic direction are defined there.
+Do not deviate without explicit user approval.
+In QA mode, flag any code that doesn't match DESIGN.md.
+
 ## Tech Stack
 
 | Layer | Choice |
