@@ -6,9 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Movie Night is a couples' movie recommendation app. Two people with different tastes fill out profiles, set a mood for the evening, and an AI finds movies that work for both of them.
 
-**dev/gstack/** — symlink to `~/.gstack/projects/scarson-movie-night/`. Design docs, review artifacts, test plans from gstack skills.
-**dev/plans/** — implementation plans, bugfix plans, feature designs.
+**dev/plans/** — design docs, implementation plans, CEO/eng/design review artifacts. Tracked in git.
+**dev/test-plans/** — test plan artifacts from eng reviews. Tracked in git.
 **dev/research/** — decision rationale (read when you need the *why* behind an architectural choice).
+**dev/gstack/** — local symlink to `~/.gstack/projects/scarson-movie-night/` (gitignored, convenience only).
+
+### gstack artifact sync
+
+gstack skills (`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, etc.) write artifacts to `~/.gstack/projects/scarson-movie-night/`. These are the source of truth for gstack's skill discovery (glob patterns hardcoded in skill files). We also track copies in `dev/` for git history.
+
+**After running any gstack skill that produces artifacts**, YOU MUST sync new or updated files:
+```
+~/.gstack/projects/scarson-movie-night/*-design-*.md  →  dev/plans/
+~/.gstack/projects/scarson-movie-night/*-eng-review-*.md  →  dev/plans/
+~/.gstack/projects/scarson-movie-night/ceo-plans/*.md  →  dev/plans/
+~/.gstack/projects/scarson-movie-night/*-test-plan-*.md  →  dev/test-plans/
+```
+Use descriptive names in `dev/` (e.g., `design-doc.md`, `phase-1-implementation.md`), not gstack's timestamped filenames. If a file already exists in `dev/`, overwrite it (it's the same artifact, updated). Commit the sync as part of the same commit or immediately after.
 
 ## Principles
 You are an experienced, pragmatic software engineer. You don't over-engineer a solution when a simple one is possible.
