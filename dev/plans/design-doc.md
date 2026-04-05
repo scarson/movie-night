@@ -25,7 +25,7 @@ Working title: **Movie Night**. There's a naming conflict with an existing open-
 
 ## Problem Statement
 
-Laurel (a medical resident who works 18-hour shifts) wished an app existed that solves "what should we watch tonight" for couples with different tastes. Not a recommendation engine that gives two separate lists, but one that reasons about why each person likes what they like, finds the tension points between them, and surfaces compromises that feel right for both people and for tonight's mood. Sam is building it as a side project, publicly hosted on a scarson.io subdomain.
+Alice (a medical resident who works 18-hour shifts) wished an app existed that solves "what should we watch tonight" for couples with different tastes. Not a recommendation engine that gives two separate lists, but one that reasons about why each person likes what they like, finds the tension points between them, and surfaces compromises that feel right for both people and for tonight's mood. Sam is building it as a side project, publicly hosted on a scarson.io subdomain.
 
 ## What Makes This Cool
 
@@ -33,7 +33,7 @@ Every existing couples movie app (Matched, Match a Movie, Movie Night/Swipe & Wa
 
 The "rough day" toggle is a generosity mechanic no other app has: "prioritize their preferences over mine tonight." The framing avoids "who had the worst day" competition. It's an act of care.
 
-The differentiator is the whole ritual: filling it out together, seeing the taste map, the reveal. But the ritual can't require effort when someone has nothing left. Laurel after an 18-hour shift needs to tap three things and get a recommendation. Profile persistence makes that possible.
+The differentiator is the whole ritual: filling it out together, seeing the taste map, the reveal. But the ritual can't require effort when someone has nothing left. Alice after an 18-hour shift needs to tap three things and get a recommendation. Profile persistence makes that possible.
 
 ## Constraints
 
@@ -91,7 +91,7 @@ Any AI service triggered by user activity (as opposed to one-off batch operation
 ## Premises
 
 1. The core product is the AI matching quality — if the recommendations don't feel eerily right, nothing else matters. The UI, the ritual, the streaming info are all in service of that.
-2. Persistent profiles + Google Auth is the minimum bar for a real app. Without it, nobody uses this twice — especially Laurel after an 18-hour shift.
+2. Persistent profiles + Google Auth is the minimum bar for a real app. Without it, nobody uses this twice — especially Alice after an 18-hour shift.
 3. The content catalog should be comprehensive — thousands of titles with rich metadata (genres, year, synopsis, streaming availability, keywords). TMDB covers both movies and TV series. Vectorize handles millions of vectors. No reason to artificially cap the catalog or limit to one content type.
 4. The app needs two friction modes: "full ritual" (both people tweak preferences, set mood, explore the taste map) and "quick match" (saved profiles, just set tonight's mood and go). Both modes should feel intentional, not degraded.
 5. The existing tech stack (Next.js, Cloudflare Workers/D1/KV, OpenNext) is the right foundation — proven on twin-cities-tee-times.
@@ -101,7 +101,7 @@ Any AI service triggered by user activity (as opposed to one-off batch operation
 
 A Claude subagent reviewed a summary of this session independently. Key insights:
 
-**The "Taste Autopsy" mechanic.** After watching a movie together, the app asks: did you like it, and what surprised you about your partner's reaction? Over time this builds a model of specific tension axes between the couple (e.g., "Sam needs narrative payoff, Laurel tolerates ambiguous endings"). The matching AI then reasons explicitly about which compromises it's making and why. The output shifts from "you'll both like this" to "Sam, this has the tight plot you need. Laurel, the emotional ambiguity you prefer lands in the final act."
+**The "Taste Autopsy" mechanic.** After watching a movie together, the app asks: did you like it, and what surprised you about your partner's reaction? Over time this builds a model of specific tension axes between the couple (e.g., "Sam needs narrative payoff, Alice tolerates ambiguous endings"). The matching AI then reasons explicitly about which compromises it's making and why. The output shifts from "you'll both like this" to "Sam, this has the tight plot you need. Alice, the emotional ambiguity you prefer lands in the final act."
 
 **TMDB solves the dataset problem completely.** Free API, 500k+ titles, full metadata including streaming availability via Watch Providers. The 50% that remains is the AI compatibility layer — modeling taste as structured data, reasoning about two profiles together, and generating explanations that feel personal.
 
@@ -260,7 +260,7 @@ Anthropic does not offer their own embedding model and [explicitly recommends Vo
 
 ### Streaming Awareness
 
-Users enter which streaming services they have on their profile (Phase 1 — collected alongside other profile data since it's the same form). TMDB Watch Providers API returns where each movie is available by region. Recommendations show availability as informational badges ("On Netflix", "Rent on Prime $3.99") but never exclude movies based on streaming availability — Laurel's framing was "where can we watch this," not "only show me what's on Netflix." Users may be willing to rent a recommendation.
+Users enter which streaming services they have on their profile (Phase 1 — collected alongside other profile data since it's the same form). TMDB Watch Providers API returns where each movie is available by region. Recommendations show availability as informational badges ("On Netflix", "Rent on Prime $3.99") but never exclude movies based on streaming availability — Alice's framing was "where can we watch this," not "only show me what's on Netflix." Users may be willing to rent a recommendation.
 
 ### Group Linkage Model
 
@@ -284,7 +284,7 @@ UI: a "Just me tonight" option alongside group selection. For users in no groups
 
 ### Quick-Match Flow
 
-For the exhausted-Laurel scenario. One screen after login:
+For the exhausted-Alice scenario. One screen after login:
 1. App shows the group and its members (names/avatars, last-used mood tags)
 2. User taps 0-3 mood tags (or none — "surprise us")
 3. Optionally toggles "rough day" — **this is private and only visible to the person who sets it.** The other person never sees whether their partner toggled it or not. This preserves the generosity framing: it's a selfless gift, not a competition over who had the harder day. The matching endpoint receives the flag server-side and adjusts weighting silently.
@@ -447,7 +447,7 @@ This is a sketch, not a final schema. Key design decision: the data model uses `
 
 ## Success Criteria
 
-- Laurel and Thayne use it on a real movie night and pick a movie from the recommendations
+- Alice and Bob use it on a real movie night and pick a movie from the recommendations
 - A second couple tries it and gets recommendations that feel right for them (not just generic "good movies")
 - Quick-match flow takes under 30 seconds from opening the app to seeing recommendations
 - Recommendations include "where to watch" info that's actually correct
@@ -532,7 +532,7 @@ Issues identified during adversarial spec review that remain partially open:
 
 ## What I noticed about how you think
 
-- You corrected me when I attributed the idea to Thayne — "Laurel's idea, actually. This started as me asking her what app she wished existed." You care about who actually has the need. That precision carried through the whole session: Laurel's 18-hour shifts became a design principle, her dinner-table comment about streaming became a feature spec.
+- You corrected me when I attributed the idea to Bob — "Alice's idea, actually. This started as me asking her what app she wished existed." You care about who actually has the need. That precision carried through the whole session: Alice's 18-hour shifts became a design principle, her dinner-table comment about streaming became a feature spec.
 - You caught that the "Person A / Person B" framing in the flows and schema would bake in a two-person assumption. That's architectural foresight — you saw a future refactoring cost hiding in naming choices and called it out before any code was written. Then during the CEO review, you surfaced solo mode unprompted — "A user should be able to get recommendations just for themselves." You see the natural implications of data model decisions faster than the review process does.
 - When I proposed a weak embeddings fallback ("try one model, fall back to tags"), you pushed back hard: "For something core to our product edge... Really? Think through that with greater rigor." Then you directed me to specific resources for Voyage AI and OpenAI embeddings, with pricing. You don't just push back. You push back AND point toward the better answer.
 - Same pattern on the catalog size. You questioned the "500-800 films" cap: "Why? That feels like an arbitrary holdover." It was. You don't inherit assumptions from prior documents without examining them.
