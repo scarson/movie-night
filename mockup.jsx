@@ -687,8 +687,8 @@ const WATCHLIST_PICKS_B = [
 
 export default function MovieMatchApp() {
   const [screen, setScreen] = useState(0);
-  const [personAName, setPersonAName] = useState("Thayne");
-  const [personBName, setPersonBName] = useState("Laurel");
+  const [personAName, setPersonAName] = useState("Bob");
+  const [personBName, setPersonBName] = useState("Alice");
   const [comfortA, setComfortA] = useState(["The Grand Budapest Hotel", "Inception", "Spirited Away"]);
   const [watchlistA, setWatchlistA] = useState(["Dune: Part Two", "Past Lives"]);
   const [vibesA, setVibesA] = useState(["Cerebral", "Thrilling"]);

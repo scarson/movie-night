@@ -2,7 +2,7 @@
 
 ## Product Context
 - **What this is:** A group movie/TV recommendation app where AI reasons about taste compatibility between people
-- **Who it's for:** Couples and friend groups. Primary: Laurel (medical resident, 18h shifts) and Thayne. Shared publicly via movienight.scarson.io.
+- **Who it's for:** Couples and friend groups. Primary: Alice (medical resident, 18h shifts) and Bob. Shared publicly via movienight.scarson.io.
 - **Space/industry:** Film recommendation, adjacent to Letterboxd, MUBI, Criterion Channel
 - **Project type:** Mobile-first web app (Next.js + Cloudflare Workers)
 

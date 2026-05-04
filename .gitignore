@@ -1,9 +1,11 @@
 # Claude
 .claude/settings.json
 .claude/settings.local.json
+.private-journal/
 
-# UI mockp files
+# Dev artifacts (local symlinks, not tracked)
 dev/mockups/
+dev/gstack/
 
 # Logs
 logs

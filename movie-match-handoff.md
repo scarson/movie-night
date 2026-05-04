@@ -10,7 +10,7 @@
 
 A proof-of-concept for a couples' movie recommendation app. Two people with different tastes fill out profiles, set a mood for the evening, and an AI finds movies that work for both of them. The POC proves out the core matching logic — can an LLM reason about taste compatibility and surface good compromises?
 
-This is Sam's friend Thayne's app idea. Sam is prototyping it to demonstrate feasibility.
+This is Sam's friend Bob's app idea. Sam is prototyping it to demonstrate feasibility.
 
 ## Core Concept
 
@@ -103,7 +103,7 @@ The dataset has ~100 movies which is too many for a chip wall but too few for a 
 On mobile, the rough day toggle switch circle overflowed its track. Fixed with `minWidth: 44px` and `flexShrink: 0` on the track, plus proper flex layout with gap.
 
 ### Progress bar shows names, not "Profile A"
-The step labels and page headers use the person's actual name ("Thayne's Taste Profile") instead of generic labels. Updates live as names are edited.
+The step labels and page headers use the person's actual name ("Bob's Taste Profile") instead of generic labels. Updates live as names are edited.
 
 ## Known Limitations / Next Steps
 
