@@ -130,4 +130,4 @@ Clean after Round 1's fix — stopped at 3 rounds per standing rule 8.
 - `npm run lint`: clean.
 - `npm test`: clean, 3 files / 16 tests passed, no warnings in output (verified both with and without the `NODE_OPTIONS` flag — no warning appears either way on this Node version).
 
-**Commit:** pending — `test: add in-memory D1 fake backed by node:sqlite`
+**Commit:** `7c26642` — `test: add in-memory D1 fake backed by node:sqlite`

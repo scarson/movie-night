@@ -31,4 +31,13 @@ describe("parseJsonColumn", () => {
     expect(parseJsonColumn<string[]>("not json", ["fallback"])).toEqual(["fallback"]);
     expect(parseJsonColumn<string[]>("{broken", ["fallback"])).toEqual(["fallback"]);
   });
+
+  it("returns the fallback for an empty string", () => {
+    expect(parseJsonColumn<string[]>("", ["fallback"])).toEqual(["fallback"]);
+  });
+
+  it("returns valid JSON's falsy/empty values instead of the fallback", () => {
+    expect(parseJsonColumn<string[]>("[]", ["fallback"])).toEqual([]);
+    expect(parseJsonColumn<number>("0", -1)).toBe(0);
+  });
 });
