@@ -94,4 +94,20 @@ Clean after Round 1's fix — stopped at 3 rounds per standing rule 8.
 - `npm run lint`: clean.
 - `npm test`: clean, 1 file / 3 tests passed (no new test files this task — schema + types only).
 
-**Commit:** pending — `feat: add D1 initial schema and row types`
+**Commit:** `8505089` — `feat: add D1 initial schema and row types`
+
+## Task 1.3: db utils
+
+**Built:** `src/lib/db.ts`, `src/lib/db.test.ts`.
+
+**Decisions:**
+- Test written first per TDD: exact-string assertions on `sqliteIsoNow()`'s output (both no-modifier and `"-7 days"` modifier forms), plus `parseJsonColumn` coverage for valid JSON (array and object), `null`, `undefined`, and two garbage-JSON shapes (`"not json"`, `"{broken"`) per the testing-pitfalls "empty/null/zero inputs" and "error path coverage" checks. Ran red first — `Cannot find module './db'` — confirming expected failure, then implemented to go green.
+- `sqliteIsoNow` copied verbatim from `/Users/sam/Code/twin-cities-tee-times/src/lib/db.ts:135-140` (including its doc comment explaining the space-vs-T-separator mismatch between SQLite `datetime()` and JS `toISOString()`). `parseJsonColumn` written verbatim from the plan's code block.
+
+**Check results:**
+- `npx vitest run src/lib/db.test.ts`: red first (module not found), confirmed expected failure; green after implementation (6 tests passed).
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 2 files / 9 tests passed.
+
+**Commit:** pending — `feat: add db utils (sqliteIsoNow, parseJsonColumn)`

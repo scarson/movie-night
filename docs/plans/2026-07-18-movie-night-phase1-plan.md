@@ -559,8 +559,8 @@ CREATE TABLE tension_axes (
 
 **Files:** Create: `src/lib/db.ts`, `src/lib/db.test.ts`
 
-- [ ] **Step 1 (failing tests):** `sqliteIsoNow()` returns `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` and with modifier `sqliteIsoNow("-7 days")` embeds the modifier; `parseJsonColumn<T>(raw, fallback)` returns parsed value for valid JSON and the fallback for null/garbage (test both).
-- [ ] **Step 2:** Implement `src/lib/db.ts`: copy `sqliteIsoNow` verbatim from tee-times `src/lib/db.ts:135-140`; add `parseJsonColumn`:
+- [x] **Step 1 (failing tests):** `sqliteIsoNow()` returns `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` and with modifier `sqliteIsoNow("-7 days")` embeds the modifier; `parseJsonColumn<T>(raw, fallback)` returns parsed value for valid JSON and the fallback for null/garbage (test both).
+- [x] **Step 2:** Implement `src/lib/db.ts`: copy `sqliteIsoNow` verbatim from tee-times `src/lib/db.ts:135-140`; add `parseJsonColumn`:
 
 ```ts
 export function parseJsonColumn<T>(raw: string | null | undefined, fallback: T): T {
@@ -573,7 +573,7 @@ export function parseJsonColumn<T>(raw: string | null | undefined, fallback: T):
 }
 ```
 
-- [ ] **Step 3:** Green, commit: `feat: add db utils (sqliteIsoNow, parseJsonColumn)`
+- [x] **Step 3:** Green, commit: `feat: add db utils (sqliteIsoNow, parseJsonColumn)`
 
 ### Task 1.4: Fake-D1 test helper (moved up from Phase 5 — Phases 2, 4, 5 all depend on it)
 
