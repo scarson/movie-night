@@ -481,3 +481,20 @@ No production-code defects were found in any round; Round 3's coverage gaps were
 - Removed-id accumulation is server-side (union of all prior rounds ∪ the current request) — the client should still accumulate locally for optimistic UI, but the server is authoritative.
 - All five routes are auth-gated (401 with merged auth headers); session endpoints 404 identically for unknown ids and non-members.
 
+
+---
+
+## Phase 6 — UI foundation
+
+### Task 6.1 — fonts, design tokens, base layout (`43a7392`)
+
+**Built:** `src/app/fonts.ts` (Fraunces via next/font/google — variable, `opsz` axis, normal+italic, swap; Satoshi via next/font/local — `Satoshi-Variable.woff2` + `Satoshi-VariableItalic.woff2` downloaded from Fontshare's zip API into `public/fonts/`, weight range 300–900). `globals.css` rewritten: every DESIGN.md token as a `:root` custom property under its DESIGN.md name (`--midnight`, `--amber`, `--person-a`, `--space-*`, `--radius-tag/control/panel/pill`, `--ease-enter`, `--duration-*`), then a Tailwind v4 `@theme inline` block mapping them into utility namespaces (`bg-midnight`, `text-cream`, `font-display`, `p-md`, `rounded-panel`, …). `color-scheme: dark`, body = midnight/cream/16px/Satoshi. Reduced-motion kill switch duplicated for `@media (prefers-reduced-motion: reduce)` AND `[data-reduced-motion="true"]` (in-app toggle arrives Task 7.6). `layout.tsx`: font variables on `<html>`, flex column shell (`min-h-dvh`, content `flex-1`, footer at bottom), `SiteFooter` with the two attribution lines + amber Privacy link (44px touch target via `min-h-11`).
+
+**Decisions:**
+- Font CSS vars are `--font-fraunces`/`--font-satoshi` from next/font; `--font-display`/`--font-body` are composed in `@theme inline` with fallback stacks (Georgia serif / system-ui). Avoids a self-referential `@theme` var while still exposing `--font-display`/`--font-body` as real custom properties (plan Step 1 requirement).
+- Layout test uses `renderToStaticMarkup` (node env), not RTL render — RootLayout renders `<html>`, which React refuses to nest inside a jsdom container div (console.error → violates pristine-output). next/font loaders are vi.mocked (build-time infrastructure, not behavior under test); footer/lang/font-var assertions run against real markup. SiteFooter has its own jsdom RTL test.
+- Verified ash-on-midnight contrast ≈ 6.2:1 (≥4.5 AA, DESIGN.md accessibility note).
+
+**Gotchas:** Fontshare zip nests web fonts at `Satoshi_Complete/Fonts/WEB/fonts/`. next/font/local registers the family lowercase ("satoshi") — cosmetic. `.claude/launch.json` created for Browser-pane dev preview (not gitignored; committed).
+
+**Checks:** tsc clean; lint clean; 256 passed + 2 skipped (7 new), pristine; `next build` OK. Browser at 375px: midnight bg, Satoshi/Fraunces confirmed loaded via `document.fonts`, tokens live, no h-scroll, zero console errors.
