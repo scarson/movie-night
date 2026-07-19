@@ -263,8 +263,8 @@ interface CloudflareEnv {
 
 **Files:** Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1:** Copy tee-times CI (`/Users/sam/Code/twin-cities-tee-times/.github/workflows/ci.yml`) dropping the `proxy-tests` job. Keep 4 parallel jobs (typecheck, lint, test, build with `npx @opennextjs/cloudflare build`), node 24, branches `[main, dev]` push + PR, docs paths-ignore.
-- [ ] **Step 2:** Commit: `ci: add type-check/lint/test/build workflow`
+- [x] **Step 1:** Copy tee-times CI (`/Users/sam/Code/twin-cities-tee-times/.github/workflows/ci.yml`) dropping the `proxy-tests` job. Keep 4 parallel jobs (typecheck, lint, test, build with `npx @opennextjs/cloudflare build`), node 24, branches `[main, dev]` push + PR, docs paths-ignore.
+- [x] **Step 2:** Commit: `ci: add type-check/lint/test/build workflow`
 
 **After completing Phase 0:** run the group review per standing rule 8.
 
