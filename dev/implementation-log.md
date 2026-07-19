@@ -316,3 +316,25 @@ No implementation defects found across any round. Stopped at 3 rounds per standi
 - **Phase 8 deploy-time decision:** `STALE_TITLES_LIMIT` in `src/lib/cron-handler.ts` is hardcoded to 200 (Workers Paid plan assumption, 1000 subrequests/invocation). Confirm the Cloudflare account's actual plan tier before enabling the cron trigger in production — drop the constant to 40 if it's on the Free plan (50 subrequests/invocation), or the cron will fail mid-run on every execution.
 - The `titles` table's composite primary key `(tmdb_id, content_type)` is honored correctly by the cron's UPDATE (`WHERE tmdb_id = ? AND content_type = ?`) even though only `'movie'` rows exist today — any future TV-support work should keep matching both columns everywhere, not just `tmdb_id`.
 
+## Task 4.1: Group lib + invite codes
+
+**Built:** `src/lib/groups.ts`, `src/lib/groups.test.ts`.
+
+**Decisions:**
+- Test written first per TDD (red confirmed: `Cannot find module './groups'`, 0 tests collected); implemented to go green (16/16 passed).
+- Invite codes: `nanoid`'s `customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz", 8)` per the plan's exact code block — excludes `0`, `1`, `O`, `I`, `l` (ambiguous glyphs). Every character this alphabet can produce is a subset of the route-layer format regex `/^[2-9A-Za-z]{8}$/` (verified by inspection: digits 2-9, no ambiguous letters), so Task 4.2's pre-DB format check never rejects a real invite code.
+- `createGroup`/`joinGroup`/`getGroupsForUser`/`leaveGroup`/`checkJoinRateLimit`/`logJoinAttempt` implemented exactly per the plan's Task 4.1 Step 1 test list. `createGroup` uses `db.batch` (group insert + creator's group_members insert) for atomicity — matches the Phase 2 review's verified D1 `batch()` transaction guarantee, so a crash between the two inserts can't leave an orphaned group with no members.
+- **Scope decision, not explicit in Task 4.1's text:** group-name length/trim/empty validation (`≤ 50 chars, trim, reject empty`) is listed under Task 4.2 ("Input limits") in the plan, not under Task 4.1's lib test list — so `createGroup` does NOT validate name length/emptiness; it only rejects the reserved `"__solo__"` name (the one check Task 4.1's text explicitly assigns to the lib: "lib throws"). Name trimming/length enforcement is implemented at the Task 4.2 route layer instead, keeping the task split literal rather than guessing a different division of labor. Documented here so Task 4.2's reviewer doesn't miss that this validation still needs to exist, just one layer up.
+- `joinGroup` excludes `"__solo__"`-named groups from the invite-code lookup itself (`WHERE invite_code = ? AND name != ?`), not via a post-lookup filter — a solo group's code is therefore genuinely indistinguishable from an unknown code to every caller, including in the DB query plan (no separate "found a solo group, discard it" branch that could leak timing/existence information).
+- `joinGroup` uses `INSERT OR IGNORE` against `UNIQUE(group_id, user_id)` for idempotency — rejoining an already-joined group is a no-op, not an error.
+- `leaveGroup` is a single `DELETE FROM group_members WHERE group_id = ? AND user_id = ?` — no existence/membership check beforehand (idempotent, doesn't throw if the user was never a member). `session_members` rows reference `user_id` directly (not `group_members`), so leaving a group cannot cascade or otherwise disturb session history — verified with a test that leaves a group and asserts the group's `movie_sessions`/`session_members` rows are untouched.
+- `checkJoinRateLimit`/`logJoinAttempt`: scope hardcoded to `'group_join'`, key is caller-supplied (Task 4.2 passes the authenticated user's id). The 10-minute window is interpolated via `sqliteIsoNow("-10 minutes")` directly into SQL text (not bound) — the modifier is a hardcoded string literal, never request-derived, matching the pattern the Phase 1/3 reviews already verified as safe for this exact helper. `checkJoinRateLimit` returns `true` when the request should be ALLOWED (count < 10) and `false` when it should be BLOCKED (count >= 10) — chosen so the 11th attempt within a 10-minute window (after 10 prior successful passes, each having called `logJoinAttempt`) is the first one blocked, matching the plan's "≥ 10 attempts... limited" wording exactly. Tested the window boundary explicitly (attempts older than 10 minutes don't count) and scope/key isolation (a different scope or a different key's attempts don't count toward this key's limit).
+
+**Check results:**
+- `npx vitest run src/lib/groups.test.ts`: red first (module not found, 0 tests collected, confirmed); green after implementation (16/16 passed).
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 9 files / 106 tests passed.
+
+**Commit:** `dccf8e4` — `feat: add group creation/join/leave with rate-limited invite codes`
+
