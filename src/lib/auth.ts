@@ -88,20 +88,23 @@ export async function authenticateRequest(
   const refreshCookie = request.cookies.get(COOKIE_REFRESH)?.value;
   const isSecure = request.url.startsWith("https://");
 
-  // No session cookie at all
-  if (!sessionCookie) {
-    return { user: null, headers };
+  // A valid session cookie is the fast path. When it's absent, fall through to
+  // refresh: the session cookie's Max-Age is tied to the 15m JWT, so a browser
+  // that has passed that window sends only mn-refresh, and rotation must still
+  // work from that state (otherwise the 90-day refresh token is unreachable).
+  if (sessionCookie) {
+    const user = await verifyJWT(sessionCookie, jwtSecret);
+    if (user) {
+      return { user, headers };
+    }
   }
 
-  // Try to verify the JWT
-  const user = await verifyJWT(sessionCookie, jwtSecret);
-  if (user) {
-    return { user, headers };
-  }
-
-  // JWT invalid/expired — try refresh
+  // JWT missing/invalid/expired — try refresh
   if (!refreshCookie) {
-    clearAuthCookies(headers, isSecure);
+    // Nothing to authenticate with. Only clear cookies if the client sent an
+    // (invalid) session cookie; a request with no auth cookies at all needs no
+    // Set-Cookie churn.
+    if (sessionCookie) clearAuthCookies(headers, isSecure);
     return { user: null, headers };
   }
 

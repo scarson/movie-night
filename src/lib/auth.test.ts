@@ -208,6 +208,39 @@ describe("authenticateRequest", () => {
     vi.useRealTimers();
   });
 
+  it("rotates tokens when only the refresh cookie is present (session cookie already expired)", async () => {
+    // A real browser deletes mn-session at its Max-Age (tied to the JWT's 15m
+    // lifetime) and sends only mn-refresh afterward. The refresh path must be
+    // reachable from that state, or the 90-day refresh token is dead weight.
+    const { authenticateRequest, sha256 } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    await seedUser(db);
+
+    const refreshToken = "valid-refresh-token";
+    const tokenHash = await sha256(refreshToken);
+    await seedSession(db, { tokenHash, userId: "u1" });
+
+    const req = makeRequest({ "mn-refresh": refreshToken });
+
+    const result = await authenticateRequest(req, db, secret);
+    expect(result.user).toEqual({ userId: "u1", email: "a@b.com" });
+
+    const setCookies = result.headers.getSetCookie();
+    expect(setCookies.length).toBe(2);
+    expect(setCookies[0]).toContain("mn-session=");
+    expect(setCookies[1]).toContain("mn-refresh=");
+
+    const oldSession = await db.prepare("SELECT * FROM sessions WHERE token_hash = ?").bind(tokenHash).first();
+    expect(oldSession).toBeNull();
+  });
+
+  it("returns null with no cookies at all", async () => {
+    const { authenticateRequest } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    const result = await authenticateRequest(makeRequest({}), db, secret);
+    expect(result.user).toBeNull();
+  });
+
   it("clears cookies when JWT is expired and refresh token is expired in D1", async () => {
     const { createJWT, authenticateRequest, sha256 } = await import("./auth");
     const db = createFakeD1(loadMigration());
