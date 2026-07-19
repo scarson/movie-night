@@ -20,7 +20,7 @@ import {
 /** Matches MAX_ROUNDS_PER_SESSION in the match route. */
 const MAX_ROUNDS = 10;
 /** Matches MAX_ID_LIST_ENTRIES in the match route — over this it 400s. */
-const MAX_REMOVED_IDS = 50;
+const MAX_ID_LIST_ENTRIES = 50;
 /** Enough to set the scene; the full list belongs on the mood screen, not here. */
 const MAX_VIBES_IN_STRAPLINE = 3;
 
@@ -175,16 +175,19 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   // Kept/removed follow the printed order, so what we send matches what was read.
   const recommendations = response?.recommendations ?? [];
+  // Capped for the same reason as the removed list: the schema puts no ceiling
+  // on how many recommendations come back, and the route rejects over 50.
   const keptTmdbIds = recommendations
     .filter((rec) => ratings[rec.tmdbId] === "kept")
-    .map((rec) => rec.tmdbId);
+    .map((rec) => rec.tmdbId)
+    .slice(0, MAX_ID_LIST_ENTRIES);
   const removedThisRound = recommendations
     .filter((rec) => ratings[rec.tmdbId] === "removed")
     .map((rec) => rec.tmdbId);
   // The server unions these with every prior round's exclusions too; sending
   // them keeps the list right even if a round was run from another device.
   const removedTmdbIds = [...new Set([...carriedRemoved, ...removedThisRound])].slice(
-    -MAX_REMOVED_IDS
+    -MAX_ID_LIST_ENTRIES
   );
 
   const regenerate = () =>

@@ -62,6 +62,14 @@ describe("ConversationalView", () => {
     expect(container.querySelector("b")).toBeNull();
   });
 
+  it("splits on Windows line endings too", () => {
+    const { container } = render(<ConversationalView text={"First line.\r\nSecond line."} />);
+    const paragraphs = [...container.querySelectorAll("p")];
+    expect(paragraphs).toHaveLength(2);
+    // A stray \r would ride along invisibly inside the text node.
+    expect(paragraphs[0].textContent).toBe("First line.");
+  });
+
   it("renders nothing at all when the model returned no narrative", () => {
     const { container } = render(<ConversationalView text="   " />);
     expect(container.querySelectorAll("p")).toHaveLength(0);

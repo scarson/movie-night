@@ -153,6 +153,20 @@ describe("profile settings", () => {
     expect(screen.getByText(/saved/i)).toBeTruthy();
   });
 
+  it("stops claiming the profile is saved once it is edited again", async () => {
+    stubApi();
+    await renderProfile();
+
+    await screen.findByRole("heading", { name: /comfort films/i });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(screen.getByText(/^Saved$/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hulu" }));
+    expect(screen.queryByText(/^Saved$/)).toBeNull();
+  });
+
   it("surfaces a failed save instead of implying it worked", async () => {
     stubApi({ put: { status: 500, body: { error: "Failed to save profile" } } });
     await renderProfile();

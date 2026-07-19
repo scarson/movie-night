@@ -11,7 +11,8 @@ export interface ConversationalViewProps {
 }
 
 export function ConversationalView({ text }: ConversationalViewProps) {
-  const paragraphs = text.split("\n").filter((line) => line.trim() !== "");
+  // CRLF as well as LF: a stray \r would otherwise ride along inside the text.
+  const paragraphs = text.split(/\r?\n/).filter((line) => line.trim() !== "");
   if (paragraphs.length === 0) return null;
 
   // The opening line carries the display face only when there is a body for it

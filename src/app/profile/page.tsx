@@ -165,7 +165,15 @@ export default function ProfilePage() {
       {draft !== null && (
         <>
           <div className="mt-2xl">
-            <ProfileEditor value={draft} onChange={setDraft} quickPicks={quickPicks} />
+            <ProfileEditor
+              value={draft}
+              onChange={(next) => {
+                setDraft(next);
+                // A standing "Saved" over unsaved edits is worse than no confirmation.
+                setSaveState((state) => (state === "saved" ? "idle" : state));
+              }}
+              quickPicks={quickPicks}
+            />
           </div>
           <div className="mt-2xl flex flex-wrap items-center gap-md">
             <button
