@@ -68,6 +68,10 @@ notes and commit messages.
 
 **Overall:** Phase 0 shipped.
 
+### Discoveries
+
+- **Task 1.4:** on this execution's local Node (v26.3.0), `node:sqlite` emits no `ExperimentalWarning` at all — attaching a `process.on("warning", ...)` listener and requiring the module directly produces nothing. `node:sqlite` appears to have graduated from experimental status by Node 26. The plan's Step 0 mitigation (`NODE_OPTIONS=--disable-warning=ExperimentalWarning` on the `test` script) was still applied as instructed — it's a harmless no-op on Node 26 and remains necessary for CI's Node 24 (per Task 0.3's log entry), where the module may still warn. Future readers on Node ≥26 should not be surprised the flag appears to do nothing locally.
+
 ### Deviations
 
 - **Task 0.1:** `wrangler` pinned to exact `4.105.0` (not `^4.105.0`) — the caret range resolves to `4.112.0` on a fresh install, and wrangler ≥4.108.0 requires `@cloudflare/workers-types@^5.x` as a peer, conflicting with the plan-pinned v4 workers-types line (ERESOLVE). Exact-pinning to `4.105.0` matches tee-times' own locked version.
@@ -581,10 +585,10 @@ export function parseJsonColumn<T>(raw: string | null | undefined, fallback: T):
 
 A minimal in-memory implementation of the `D1Database` subset our code uses, backed by real SQL via `node:sqlite` (`DatabaseSync`) — real SQL semantics, zero new dependencies.
 
-- [ ] **Step 0:** Run `node --version`. `node:sqlite` requires Node ≥ 22.5 (CI uses 24). If the local Node is older, STOP and raise — do not switch to mocks. `node:sqlite` emits an ExperimentalWarning that would dirty test output (pristine-output rule): set the test script to `NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run --pass-with-no-tests` in package.json (verify the flag exists in the local Node; if not, use `--no-warnings=ExperimentalWarning`).
-- [ ] **Step 1 (failing self-test):** `src/test/fake-d1.test.ts`: insert + select round-trip; `DELETE ... RETURNING` works (auth rotation depends on it); FK cascade works (helper must set `PRAGMA foreign_keys = ON`).
-- [ ] **Step 2:** Implement `createFakeD1(migrationSql: string): D1Database`: `.prepare(sql)` → object with `bind(...args)` returning `{ first<T>(), all<T>(), run() }` mapping to DatabaseSync `get/all/run`; `all` returns `{ results }`; `run()` returns `{ meta: { changes } }`; `batch(stmts)` runs them inside a transaction. Export `loadMigration()` that reads `migrations/0001_initial_schema.sql` from disk.
-- [ ] **Step 3:** Green. Commit: `test: add in-memory D1 fake backed by node:sqlite`
+- [x] **Step 0:** Run `node --version`. `node:sqlite` requires Node ≥ 22.5 (CI uses 24). If the local Node is older, STOP and raise — do not switch to mocks. `node:sqlite` emits an ExperimentalWarning that would dirty test output (pristine-output rule): set the test script to `NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run --pass-with-no-tests` in package.json (verify the flag exists in the local Node; if not, use `--no-warnings=ExperimentalWarning`).
+- [x] **Step 1 (failing self-test):** `src/test/fake-d1.test.ts`: insert + select round-trip; `DELETE ... RETURNING` works (auth rotation depends on it); FK cascade works (helper must set `PRAGMA foreign_keys = ON`).
+- [x] **Step 2:** Implement `createFakeD1(migrationSql: string): D1Database`: `.prepare(sql)` → object with `bind(...args)` returning `{ first<T>(), all<T>(), run() }` mapping to DatabaseSync `get/all/run`; `all` returns `{ results }`; `run()` returns `{ meta: { changes } }`; `batch(stmts)` runs them inside a transaction. Export `loadMigration()` that reads `migrations/0001_initial_schema.sql` from disk.
+- [x] **Step 3:** Green. Commit: `test: add in-memory D1 fake backed by node:sqlite`
 
 **After completing Phase 1:** group review per standing rule 8.
 

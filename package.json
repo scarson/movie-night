@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run --pass-with-no-tests",
+    "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run --pass-with-no-tests",
     "test:watch": "vitest",
     "preview": "opennextjs-cloudflare build && wrangler dev",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",
