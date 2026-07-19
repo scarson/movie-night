@@ -99,7 +99,7 @@ notes and commit messages.
 | 3 — TMDB client, seed, cron | ✅ SHIPPED (2026-07-18) | `fe524c1`, `b925c81`, `bc867a9`, `d863fc6`, `bfd3065`, `e3344a3`, `fe38cfe` | — |
 | 4 — Groups | ✅ SHIPPED (2026-07-18) | `dccf8e4`, `8419769`, `6c2e09d`, `1fc6e9a`, `100d98d` | — |
 | 5 — Matching engine + API | ✅ SHIPPED (2026-07-19) | `dabe57e`, `bd18e30`, `f9fe41e`, `206b76b` | Live evals deferred to Phase 8 (no API key locally) |
-| 6 — UI foundation | ⬜ Not started | — | — |
+| 6 — UI foundation | 🚧 IN PROGRESS (claimed 2026-07-19) | — | — |
 | 7 — UI flows | ⬜ Not started | — | — |
 | 8 — Verification & finish | ⬜ Not started | — | — |
 
@@ -852,7 +852,7 @@ API design locked here (UI consumes exactly this):
 
 # Phase 6 — UI foundation
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** 🚧 IN PROGRESS — claimed 2026-07-19T05:24:51Z on branch `claude/app-design-plan-build-b04129`
 
 **Design authority:** `DESIGN.md` is binding — read it in full before ANY UI task. Aesthetic: "Cinematic Editorial" — dark-only (`--midnight #0f1219`), amber candlelight accent, Fraunces display + Satoshi body, generous spacing, no cards for the core experience, discovery-energy motion. Anti-patterns list in DESIGN.md is a hard ban (no purple gradients, no Inter/Roboto, no emoji decor except the rough-day heart, no uniform border radii).
 
