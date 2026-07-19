@@ -26,51 +26,45 @@ This document serves three audiences. Start here, then go directly to the sectio
 
 | § | Section | You're working on... | Entries | Checklist |
 |---|---------|---------------------|---------|-----------|
-| 1 | [EXAMPLE-DOMAIN-1](#1-example-domain-1) | TODO — describe what this section covers | PREFIX-1 – PREFIX-N | §1.C |
-| 2 | [EXAMPLE-DOMAIN-2](#2-example-domain-2) | TODO — describe what this section covers | PREFIX-1 – PREFIX-N | §2.C |
+| 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1 | §1.C |
 | — | [Orchestration](#orchestration) | Parallel subagent dispatch and output persistence | ORCH-1 | §Orchestration.C |
 | A | [Historical Changelog](#appendix-a-historical-changelog) | Provenance, validation dates, review process meta-observations | — | — |
 | B | [Unified Summary Table](#appendix-b-unified-summary-table) | All pitfalls at a glance, with severity and status | — | — |
 
 ---
 
-# Section 1: EXAMPLE-DOMAIN-1
+# Section 1: Cloudflare Workers & D1
 
-<!-- TODO: rename this section to your project's first domain (e.g. "Authentication & Security", "Data Pipeline", "API Handlers"). Delete this comment. -->
-
-> **Reader context:** I'm building or reviewing [what this domain covers].
->
-> TODO — describe the shape of the pitfalls in this section and why they matter.
+> **Reader context:** I'm building or reviewing code that queries D1, runs in the Workers runtime, or reads Cloudflare bindings. These pitfalls are about the platform's hard limits and runtime constraints — the ones that pass every local test and fail only in production.
 
 ---
 
-### PREFIX-1: TODO — First Pitfall Title
+### PLAT-1: D1 rejects any query binding more than 100 parameters
 
-<!-- TODO: replace this example with a real pitfall entry. Use the Flaw → Why → Fix → Lesson structure for complex findings, or a single condensed paragraph for simple ones. See §How to Add a Pitfall below. -->
+**The Flaw:** A query builds `... WHERE col IN (${ids.map(() => "?").join(",")})` and binds `...ids`, where `ids` comes from a user-controlled or cross-record union with no cap on its length. D1 enforces a hard limit of **100 bound parameters per query** ([platform limits](https://developers.cloudflare.com/d1/platform/limits/)); past that, the statement throws `D1_ERROR` at execution.
 
-**The Flaw:** TODO — what the code does wrong or what's missing.
+**Why It Matters:** The failure is invisible until production and scales with engagement. In Movie Night, each profile caps its comfort and watchlist at 50 ids *each*, so a two-member match unions up to 200 ids into a single `IN (...)` — `getTitlesMap` and `selectCandidates`' referenced-id lookup both threw `D1_ERROR`, which isn't a `MatchingError`, so it surfaced as a generic `500 "Match failed"`. The couples who hit it were exactly the most engaged ones (fullest profiles), and nothing told them their profiles were "too full." Critically, the fake D1 (`node:sqlite`, variable limit 999) accepted the oversized query, so the whole test suite proved the path worked while production would reject it.
 
-**Why It Matters:** TODO — the production failure mode. What breaks, for whom, and why it's hard to detect.
+**The Fix:** Chunk any id list that can exceed the ceiling and run one query per chunk, merging results. `src/lib/db.ts` exports `chunk(items, size)` and `D1_IN_CHUNK_SIZE` (90 — headroom for other bound params in the same statement):
 
-**The Fix:** TODO — the specific code change or pattern to apply. Include a code example when the fix is non-trivial.
+```ts
+const map: Record<number, TitleSummary> = {};
+for (const ids of chunk(tmdbIds, D1_IN_CHUNK_SIZE)) {
+  const placeholders = ids.map(() => "?").join(", ");
+  const { results } = await db.prepare(`... IN (${placeholders})`).bind(...ids).all();
+  for (const row of results) map[row.tmdb_id] = /* ... */;
+}
+```
 
-**The Lesson:** TODO — the generalizable principle. What should the reader watch for in future code?
+The fake D1 now throws at 100 bound params (see testing-pitfalls §7) so this class of bug is provable in a unit test.
+
+**The Lesson:** Any `IN (...)` (or multi-row insert, or any statement) whose parameter count grows with a collection — especially a user-controlled or cross-record one — needs a chunk boundary below 100. Audit every dynamically-built placeholder list: if you can't prove the collection is bounded under 100, chunk it. And a fake that's more permissive than the real service hides exactly these bugs — make the fake enforce the limit.
 
 ---
 
 ### Review Checklist
 
-<!-- TODO: one checkbox per pitfall above. Each item is a pass/fail check. Example format: -->
-
-- [ ] **Check derived from PREFIX-1** — TODO
-
----
-
-# Section 2: EXAMPLE-DOMAIN-2
-
-<!-- TODO: rename, or delete this section if not needed. Duplicate the Section 1 template for each additional domain. -->
-
-TODO.
+- [ ] **PLAT-1** — Every dynamically-built `IN (...)` / multi-bind query whose parameter count grows with a collection is chunked below 100 bound params (via `chunk` + `D1_IN_CHUNK_SIZE`), and the collection is not assumed small.
 
 ---
 
