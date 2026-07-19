@@ -309,14 +309,19 @@ src/
   app/               # Next.js App Router pages + API routes
     api/auth/        # OAuth routes (google, google/callback, logout, me)
     api/user/        # Profile CRUD, account deletion
-    api/groups/      # Group create/join/get
-    api/sessions/    # Session create, match, refine
-    api/titles/      # Catalog search (for comfort movie / watchlist pickers)
+    api/groups/      # Group create/join/get/leave
+    api/movie-sessions/  # Session create, read, match (refinement is a match round)
+    api/titles/      # Catalog search + id/popularity reads (title pickers, quick picks)
+    tonight/         # Signed-in hub (group picker, quick vs ritual entry)
+    quick/ ritual/   # The two match flows
+    results/         # Taste map, ranked list, conversational, refinement
+    profile/ privacy/
   components/        # React components per DESIGN.md
   config/            # tags.ts (mood + genre tag vocabulary)
   hooks/             # React hooks
-  lib/               # Core logic: auth, db, matching, tmdb, cron-handler, rate-limit
-  test/              # Test helpers + fixtures
+  lib/               # Core logic: auth, db, matching, tmdb, groups, movie-sessions,
+                     # account, cron-handler, session-flow, reduced-motion
+  test/              # Test helpers (fake-d1) + fixtures
   types/             # TypeScript interfaces (matching response, D1 row types, auth)
 migrations/          # D1 SQL migrations
 scripts/             # TMDB seed script
