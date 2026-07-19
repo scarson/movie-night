@@ -32,11 +32,6 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-/**
- * The matching error taxonomy, as the person waiting experiences it. The body
- * copy is always the server's own string; this only picks the framing and the
- * way out, so the two can never drift apart.
- */
 interface ErrorFraming {
   heading: string;
   retry: boolean;
@@ -44,9 +39,13 @@ interface ErrorFraming {
 }
 
 /**
+ * The matching error taxonomy, as the person waiting experiences it. The body
+ * copy is always the server's own string; this only picks the framing and the
+ * way out, so the two can never drift apart.
+ *
  * A Map, not an object literal: `kind` arrives over the wire, and a plain index
- * lookup would resolve inherited keys like "constructor" to something truthy and
- * skip the fallback entirely.
+ * lookup would resolve inherited keys like "constructor" to something truthy
+ * and skip the fallback entirely.
  */
 const ERROR_FRAMING = new Map<string, ErrorFraming>([
   ["timeout", { heading: "Our movie brain is having a lie-down", retry: true }],
