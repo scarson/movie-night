@@ -36,7 +36,7 @@ export default function Home() {
         <h1 className="animate-rise-fade max-w-[14ch] font-display text-[2.5rem]/[1.15] font-extrabold italic text-warm-white sm:text-[3.5rem]/[1.1]">
           What should we watch tonight?
         </h1>
-        <p className="mt-lg max-w-[42ch] animate-rise-fade text-lg text-ash [animation-delay:80ms]">
+        <p className="mt-lg max-w-[42ch] animate-rise-fade text-xl/relaxed text-ash [animation-delay:80ms]">
           Ask something that knows you both. Movie Night reads two tastes, one
           mood, and finds the film in the middle.
         </p>
@@ -76,7 +76,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => signIn("/tonight")}
-            className="inline-flex min-h-12 items-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+            className="inline-flex min-h-12 items-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
           >
             Sign in with Google
           </button>

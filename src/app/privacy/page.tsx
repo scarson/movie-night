@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <h1 className="font-display text-[2.5rem]/[1.15] font-extrabold text-warm-white">
         Privacy
       </h1>
-      <p className="mt-lg text-lg/relaxed text-ash">
+      <p className="mt-lg text-xl/relaxed text-ash">
         Movie Night knows what you like to watch, which is more personal than
         it sounds. Here is everything the app collects, why it collects it,
         and where it goes — in plain English.

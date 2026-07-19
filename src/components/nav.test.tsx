@@ -85,6 +85,30 @@ describe("Nav", () => {
     expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeDefined();
   });
 
+  it("returns focus to the menu button when Escape closes the menu", async () => {
+    stubMe({
+      status: 200,
+      body: {
+        userId: "u1",
+        email: "alice@example.com",
+        name: "Alice Chen",
+        avatarUrl: null,
+      },
+    });
+    render(
+      <AuthProvider>
+        <Nav />
+      </AuthProvider>
+    );
+    const button = await screen.findByRole("button", { name: /Alice Chen/ });
+    fireEvent.click(button);
+    const profile = screen.getByRole("menuitem", { name: "Profile" });
+    profile.focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
   it("renders the wordmark linking home", async () => {
     stubMe({ status: 401, body: { error: "Unauthorized" } });
     render(
