@@ -884,8 +884,8 @@ API design locked here (UI consumes exactly this):
 
 **Files:** Replace: `src/app/page.tsx` (landing for signed-out; redirect to `/tonight` when signed in). Create: `src/app/privacy/page.tsx`
 
-- [ ] **Step 1:** Landing (load `impeccable`): one-sentence editorial hook (e.g. "What should we watch tonight? Ask something that knows you both."), a static taste-map visual vignette (hand-authored sample data, person-a/person-b/overlap colors), single amber CTA "Sign in with Google", quiet secondary line explaining the ritual. NO feature-grid, NO testimonial rhythm. Subtle grain/starfield texture allowed per DESIGN.md.
-- [ ] **Step 2:** Privacy policy page: plain-English static content covering exactly the design-doc §Privacy Principles bullets (what's collected and why; Anthropic processing disclosure with no-training note; TMDB metadata-only; no analytics/ads/selling; deletion = anonymization of shared records; contact = samuel.carson@gmail.com). Typeset editorially (Fraunces headings, 680px measure).
+- [x] **Step 1:** Landing (load `impeccable`): one-sentence editorial hook (e.g. "What should we watch tonight? Ask something that knows you both."), a static taste-map visual vignette (hand-authored sample data, person-a/person-b/overlap colors), single amber CTA "Sign in with Google", quiet secondary line explaining the ritual. NO feature-grid, NO testimonial rhythm. Subtle grain/starfield texture allowed per DESIGN.md.
+- [x] **Step 2:** Privacy policy page: plain-English static content covering exactly the design-doc §Privacy Principles bullets (what's collected and why; Anthropic processing disclosure with no-training note; TMDB metadata-only; no analytics/ads/selling; deletion = anonymization of shared records; contact = samuel.carson@gmail.com). Typeset editorially (Fraunces headings, 680px measure).
 - [ ] **Step 3:** Tests: landing renders CTA when signed out; privacy page contains "Anthropic" disclosure string. Visual check both widths. Commit: `feat: add landing page and privacy policy`
 
 **After completing Phase 6:** group review incl. DESIGN.md-conformance pass (check every anti-pattern).

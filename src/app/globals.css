@@ -97,6 +97,22 @@
   --container-content: 680px;
 }
 
+@theme {
+  /* Entrance motion: fade + slight upward drift (DESIGN.md "discovery energy") */
+  --animate-rise-fade: rise-fade var(--duration-medium) var(--ease-enter) both;
+
+  @keyframes rise-fade {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
 body {
   background-color: var(--midnight);
   color: var(--cream);
