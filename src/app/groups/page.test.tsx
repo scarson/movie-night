@@ -336,6 +336,53 @@ describe("Groups page", () => {
     expect(api.calls.some((c) => c.url === "/api/groups/g1/leave")).toBe(true);
   });
 
+  it("disables the create and join controls while another mutation is in flight", async () => {
+    // A single `busy` semaphore guards every mutation, but each button only
+    // disabled itself. With a leave in flight, Create stayed enabled yet its
+    // guard returns against the truthy `busy` — a dead click with no feedback.
+    let releaseLeave: () => void = () => {};
+    const leaveGate = new Promise<void>((resolve) => {
+      releaseLeave = resolve;
+    });
+    const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify(ALICE), { status: 200 });
+      }
+      if (url === "/api/groups" && (!init || init.method === undefined)) {
+        return new Response(JSON.stringify({ groups: [SUNDAY] }), { status: 200 });
+      }
+      if (url === "/api/groups/g1/leave") {
+        await leaveGate;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    renderGroups();
+
+    fireEvent.click(await screen.findByRole("button", { name: /leave group/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^yes, leave$/i }));
+
+    // The leave POST is now pending; the other mutation controls must lock.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^create group$/i }).hasAttribute("disabled")
+      ).toBe(true)
+    );
+    expect(
+      screen.getByRole("button", { name: /^join group$/i }).hasAttribute("disabled")
+    ).toBe(true);
+
+    releaseLeave();
+    // They release once the mutation settles.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^create group$/i }).hasAttribute("disabled")
+      ).toBe(false)
+    );
+  });
+
   it("lets the user back out of leaving", async () => {
     const api = stubApi({ groups: [SUNDAY] });
     renderGroups();

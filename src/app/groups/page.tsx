@@ -317,7 +317,7 @@ export default function Groups() {
                           type="button"
                           ref={confirmRef}
                           onClick={() => void leaveGroup(group.id)}
-                          disabled={busy === `leave-${group.id}`}
+                          disabled={busy !== null}
                           // Ember carries the destructive signal as the border;
                           // ember *text* on charcoal is only 4.1:1, under AA.
                           className="min-h-11 rounded-control border border-ember px-md text-sm font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight disabled:opacity-50"
@@ -387,7 +387,7 @@ export default function Groups() {
             />
             <button
               type="submit"
-              disabled={busy === "create"}
+              disabled={busy !== null}
               className={`${primaryClasses} mt-sm w-full`}
             >
               {busy === "create" ? "Creating…" : "Create group"}
@@ -421,7 +421,7 @@ export default function Groups() {
             />
             <button
               type="submit"
-              disabled={busy === "join"}
+              disabled={busy !== null}
               className={`${submitClasses} mt-sm w-full`}
             >
               {busy === "join" ? "Joining…" : "Join group"}
