@@ -35,13 +35,9 @@ export function TitleSearch({
   const requestSeq = useRef(0);
 
   useEffect(() => {
-    const seq = ++requestSeq.current;
     const trimmed = query.trim();
-    if (trimmed.length < MIN_QUERY_LENGTH) {
-      setResults([]);
-      setFailed(false);
-      return;
-    }
+    if (trimmed.length < MIN_QUERY_LENGTH) return;
+    const seq = ++requestSeq.current;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(
@@ -66,11 +62,26 @@ export function TitleSearch({
   const isSelected = (tmdbId: number) =>
     selected.some((t) => t.tmdbId === tmdbId);
 
+  // Clearing results belongs in the event handlers rather than the effect body:
+  // a synchronous reset inside an effect cascades an extra render pass. Bumping
+  // the sequence discards any response still in flight.
+  const clearResults = () => {
+    requestSeq.current++;
+    setResults([]);
+    setFailed(false);
+  };
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (value.trim().length < MIN_QUERY_LENGTH) clearResults();
+  };
+
   const add = (title: TitleRef) => {
     if (!isSelected(title.tmdbId)) {
       onChange([...selected, title]);
     }
     setQuery("");
+    clearResults();
   };
 
   const remove = (tmdbId: number) => {
@@ -107,7 +118,7 @@ export function TitleSearch({
       <input
         type="text"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => handleQueryChange(e.target.value)}
         placeholder={placeholder}
         aria-label="Search for a title"
         className="min-h-11 w-full rounded-control border border-slate bg-charcoal px-md text-base text-cream placeholder:text-ash"
