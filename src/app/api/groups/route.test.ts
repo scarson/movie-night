@@ -104,6 +104,24 @@ describe("POST /api/groups", () => {
     expect(response.status).toBe(401);
   });
 
+  it("returns 400 for a malformed JSON body", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    const { POST } = await import("./route");
+    const jwt = await createJWT({ userId: "u1", email: "u1@example.com" }, JWT_SECRET);
+    const response = await POST(
+      new NextRequest("https://example.com/api/groups", {
+        method: "POST",
+        headers: { cookie: `mn-session=${jwt}`, "content-type": "application/json" },
+        body: "not valid json{{{",
+      })
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("creates a group and returns it with the invite code and creator as member", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
