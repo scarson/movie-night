@@ -426,3 +426,28 @@ No implementation defects were found requiring a code fix — Round 2's rate-lim
 
 **Commit:** `bd18e30` — `test: add live matching eval suite behind RUN_LIVE_EVALS`
 
+## Task 5.4: Profile + session + matching API routes
+
+**Built:** `src/lib/movie-sessions.ts`, `src/lib/movie-sessions.test.ts`, `src/app/api/user/profile/route.ts` (+test), `src/app/api/titles/search/route.ts` (+test), `src/app/api/movie-sessions/route.ts` (+test), `src/app/api/movie-sessions/[id]/route.ts` (+test), `src/app/api/movie-sessions/[id]/match/route.ts` (+test).
+
+**Decisions:**
+- Strict TDD in two waves: lib tests red first (`Cannot find module './movie-sessions'`, 0 collected) → lib green (22/22); then all 5 route test files red (44/44 failing on missing `./route`) → routes green (44/44). Route tests follow the Phase 4 precedent (real JWT auth + real fake-D1; only platform/network boundaries mocked).
+- `createSoloGroup` inserts directly into `groups`/`group_members` (never calls `createGroup`, which rejects the reserved name — per plan). Solo invite codes are `solo-<uuid>` strings that can never match the 8-char join format regex, so a solo group is unjoinable at the join route's format gate in addition to `joinGroup`'s name exclusion. Tested.
+- `createMovieSession` verifies caller membership **unconditionally** (tested with no memberFlags present → NotGroupMemberError → route 403) and requires every `memberFlags` key to be a group member. Flag precedence: `memberFlags[caller]` wins over top-level `roughDay`; other members default to off. Session + all member rows inserted in one `db.batch` (atomicity verified in the Phase 2 review).
+- **Anthropic mocking strategy for the match route tests:** `vi.mock("@anthropic-ai/sdk")` with `importOriginal`, overriding ONLY the default export (the client class) — `APIError`/`APIConnectionError` stay real so `callClaude`'s `instanceof` mapping is exercised for real. The entire engine path (prompt build, thinking-block extraction, parse, retry, log line, persistence) runs unmocked. Gotcha discovered: the mock implementation MUST be a `function` expression, not an arrow — `new Anthropic(...)` on an arrow-implemented `vi.fn()` throws "not a constructor" (surfaced as a 500 in the first red-green cycle; commented in the test helper).
+- Rough-day privacy: `getSessionForMember` returns only the REQUESTING member's flag (`SessionView.roughDay`); `getSessionMembersWithProfiles` (which carries all flags) is prompt-building-only and never serialized. Mandatory tests: the GET body contains exactly ONE `roughDay` occurrence (the requester's own) and never `rough_day`; the match response contains neither.
+- Deleted-account members (`user_id` = `deleted-…` sentinel with no users row) drop out of `getSessionMembersWithProfiles` via the inner JOIN on users — they can't contribute preferences; tested.
+- Title search strips `%`/`_` BEFORE the 2-char length floor, so `"%%"`/`"%a%"` collapse below the floor instead of LIKE-matching the whole catalog; tested both. TMDB merge fires only under 3 local hits, dedupes by tmdbId (local wins), caps at 10, and a TMDB outage degrades to local-only (error captured + asserted per pitfalls §1).
+- Profile PUT enrichment: unknown-id existence checks run BEFORE any TMDB fetch; >10 unknown → 400 `{ error, unknownIds }` with zero fetches (asserted); any fetch failure → 400 `{ error, failedIds }` and the profile row is NOT saved (asserted). Successful enrichment inserts via `INSERT OR REPLACE` with `last_refreshed_at = now` (fresh watch-provider data ⇒ cron skips it for 7 days).
+- Match route caps in order: round > 10 → 429 `{ kind: "round_limit" }` with the locked message; monthly count ≥ `MONTHLY_MATCH_LIMIT` (env, default 2000) → 429 `{ kind: "monthly_cap" }`. Both are plain SELECT-then-act — the TOCTOU race is pre-ACCEPTED by the plan/eng review (third occurrence of this documented decision; see the Phase 4 review entry). Both short-circuit before any model call (asserted via the create stub).
+- Error taxonomy → HTTP contract locked in `MATCHING_ERROR_HTTP` (match route): malformed/thin_results → 502, timeout/overloaded → 503, rate_limited → 429, all bodies `{ error, kind }`. Exact messages tested. Failed rounds persist NO recommendations row (tested), so a failed call doesn't consume a round.
+- `GET /api/movie-sessions/[id]` response is `{ session: SessionView, round, response, titles }` with `round: 0` + `response: null` + `titles: {}` for a fresh session — the reload contract for Phase 7's results page. `titles` map values are `{ title, year, posterPath, genres, streaming, lastRefreshedAt }` (lastRefreshedAt feeds Task 7.5's staleness badge; tested).
+
+**Check results:**
+- Lib: red first, then 22/22. Routes: red first (44/44 failing), then 44/44.
+- `npx tsc --noEmit`: two tuple-typing errors in test fetch stubs (un-parameterized `vi.fn()` gives `calls: []`), fixed by typing the stub's parameter; clean after.
+- `npm run lint`: clean. `npm test`: 21 files / 246 passed + 2 skipped, pristine output.
+- `npx @opennextjs/cloudflare build`: succeeded; route manifest registers `/api/movie-sessions`, `/api/movie-sessions/[id]`, `/api/movie-sessions/[id]/match`, `/api/titles/search`, `/api/user/profile` as dynamic (ƒ).
+
+**Commit:** `f9fe41e` — `feat: add profile, title search, and matching session APIs`
+
