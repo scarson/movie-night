@@ -346,17 +346,22 @@ describe("buildMatchingPrompt", () => {
   });
 
   describe("rough-day weighting", () => {
-    it("names ONLY the favored member when exactly one member is favored, never revealing the toggler", () => {
+    it("weights the favored member but orders the model to apply it silently", () => {
       const input = promptInput({
         members: [member("Ana", { roughDay: true }), member("Ben")],
       });
       const { system, user } = buildMatchingPrompt(input);
 
-      const weightLine = user.split("\n").find((l) => l.includes("lean toward"));
+      const weightLine = user.split("\n").find((l) => l.includes("Preference weighting"));
       expect(weightLine).toBeDefined();
+      // The model needs the favored name to apply the lean, but never the toggler.
       expect(weightLine).toContain("Ben");
       expect(weightLine).not.toContain("Ana");
       expect(weightLine).toContain("65/35");
+      // It must be told to keep the weighting out of user-facing output — a
+      // named lean would reveal the toggler's generosity in a two-person group.
+      expect(weightLine).toContain("apply silently");
+      expect(weightLine).toContain("do not name whose preferences");
       // The note (and the whole prompt) never says who toggled or why.
       expect(user.toLowerCase()).not.toContain("rough day");
       expect(system.toLowerCase()).not.toContain("rough day");
@@ -383,11 +388,12 @@ describe("buildMatchingPrompt", () => {
       });
       const { user } = buildMatchingPrompt(input);
 
-      const weightLine = user.split("\n").find((l) => l.startsWith("Preference weighting:"));
+      const weightLine = user.split("\n").find((l) => l.includes("Preference weighting"));
       expect(weightLine).toBeDefined();
       expect(weightLine).not.toContain("Ana");
       expect(weightLine).not.toContain("Ben");
       expect(weightLine).not.toContain("Cleo");
+      expect(weightLine).toContain("apply silently");
       expect(user.toLowerCase()).not.toContain("rough day");
     });
   });

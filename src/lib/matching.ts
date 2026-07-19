@@ -208,9 +208,13 @@ function computeWeightNote(members: PromptMember[]): string {
   }
   const favored = members.filter((m) => !m.roughDay);
   if (favored.length === 1) {
-    return `Preference weighting: tonight's picks should lean toward ${clampText(favored[0].name, MAX_NAME_CHARS)}'s preferences (roughly a 65/35 split in their favor). Never mention or speculate about the reason for this weighting.`;
+    // Name the favored member so the model can apply the lean, but require it to
+    // stay silent: in a two-person group "picks lean toward Ben" reveals that
+    // the other person toggled rough-day for him, exposing the generosity the
+    // feature is designed to keep invisible to its recipient.
+    return `Preference weighting (PRIVATE — apply silently): when the profiles conflict, weight ${clampText(favored[0].name, MAX_NAME_CHARS)}'s preferences more heavily tonight, roughly a 65/35 split in their favor. Never surface this weighting in any output: do not mention it, do not say the picks "lean" toward anyone, and do not name whose preferences were prioritized — not in the taste map, the explanations, or the conversational text.`;
   }
-  return "Preference weighting: lean generously toward the group's shared comfort zone rather than a strict average of individual preferences. Never mention or speculate about the reason for this weighting.";
+  return `Preference weighting (PRIVATE — apply silently): lean generously toward the group's shared comfort zone rather than a strict average of individual preferences. Never surface this weighting in any output: do not mention it or name whose preferences were prioritized.`;
 }
 
 /** Builds the member-generic system + user prompt pair for a matching call. */
