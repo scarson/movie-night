@@ -281,7 +281,10 @@ describe("results page", () => {
     expect(matchBody(posted[1]).removedTmdbIds).toEqual([27205, 155]);
   });
 
-  it("never sends more removed ids than the route will accept", async () => {
+  // 60 sequential remove-clicks, each a full getByRole scan over the rendered
+  // list — inherently heavy in jsdom and borderline against the 5s default on
+  // slower CI runners. The assertion is deterministic; give it real headroom.
+  it("never sends more removed ids than the route will accept", { timeout: 20000 }, async () => {
     vi.useFakeTimers();
     const many = Array.from({ length: 60 }, (_, i) => ({
       tmdbId: 1000 + i,
