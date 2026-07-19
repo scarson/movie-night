@@ -169,3 +169,22 @@ No implementation defects were found across any round — all four rounds' findi
 - `npm test`: clean, 4 files / 42 tests passed.
 
 **Commit:** `d911d9c` — `feat: port auth utilities with mn- cookie prefix`
+
+## Task 2.2: OAuth routes
+
+**Built:** `src/app/api/auth/google/route.ts`, `src/app/api/auth/google/callback/route.ts`, `src/app/api/auth/logout/route.ts`, `src/app/api/auth/me/route.ts`.
+
+**Decisions:**
+- All four routes ported verbatim from `/Users/sam/Code/twin-cities-tee-times/src/app/api/auth/...`, changing only the items the plan names:
+  - Cookie names throughout: `tct-oauth-state`→`mn-oauth-state`, `tct-oauth-verifier`→`mn-oauth-verifier`, `tct-session`→`mn-session`, `tct-refresh`→`mn-refresh`.
+  - Callback route: decodes `claims.picture` from Google's ID token (`avatarUrl = typeof claims.picture === "string" ? claims.picture : null`) and upserts it. The users `INSERT ... ON CONFLICT(google_id) DO UPDATE` now includes `avatar_url` and `updated_at` in both the insert column list and the `DO UPDATE SET` clause (`avatar_url = excluded.avatar_url, updated_at = excluded.updated_at`) — existing users' avatar/name/email/updated_at refresh on every re-login; `created_at` is untouched by the conflict branch.
+  - `/api/auth/me`: query and response extended to include `avatar_url`/`avatarUrl` alongside `userId`/`email`/`name`.
+- Both encoded gotchas preserved unchanged: `response.cookies.set()` (not raw `headers.append`) on every redirect response in `google/route.ts` and `google/callback/route.ts` — OpenNext on Cloudflare Workers silently strips `Set-Cookie` headers attached via `headers.append` to a redirect; and the `MAX_SESSIONS = 10` excess-session cleanup in the callback (deletes oldest sessions beyond 10 per user, not just one).
+- No unit tests written for these routes per the plan's explicit instruction ("Route-handler logic is exercised end-to-end in Phase 8 manual verification... per testing rules we do NOT write mock-only tests for it") — OAuth cannot be meaningfully unit-tested without mocking Google's token exchange, and CLAUDE.md bans mocks in end-to-end tests while these aren't meaningfully unit-testable either. Verified instead with `npx tsc --noEmit`, `npm run lint`, and `npm run build` (confirms all four routes register as dynamic API routes in the Next.js route manifest).
+
+**Check results:**
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 4 files / 42 tests passed (unchanged from Task 2.1 — no new test files this task).
+- `npm run build`: succeeded; route manifest confirms `/api/auth/google`, `/api/auth/google/callback`, `/api/auth/logout`, `/api/auth/me` all registered as dynamic (ƒ) routes.
+
