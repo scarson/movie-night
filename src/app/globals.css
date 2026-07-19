@@ -17,9 +17,15 @@
   --ember: #c4653a;
   --sage: #7a9e7e;
 
-  /* Taste map person colors (contextual, not app-wide) */
+  /* Taste map person colors (contextual, not app-wide).
+     DESIGN.md names person-a/person-b and calls for "additional person colors
+     assigned from a curated set that maintains contrast on dark backgrounds"
+     for groups > 2. person-c/person-d are that set: both ≥6.3:1 on midnight
+     and ≥6.3:1 on charcoal, and distinct in hue from amber and ember. */
   --person-a: #6b8cce;
   --person-b: #ce7b8c;
+  --person-c: #6fae9f;
+  --person-d: #b3a06a;
   --overlap: #9b7ec8;
 
   /* Semantic */
@@ -68,6 +74,8 @@
   --color-sage: var(--sage);
   --color-person-a: var(--person-a);
   --color-person-b: var(--person-b);
+  --color-person-c: var(--person-c);
+  --color-person-d: var(--person-d);
   --color-overlap: var(--overlap);
   --color-success: var(--success);
   --color-warning: var(--warning);
