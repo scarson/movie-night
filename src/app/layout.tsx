@@ -1,6 +1,8 @@
-// ABOUTME: Root layout with global styles and metadata.
-// ABOUTME: Placeholder shell for Phase 0 — real navigation/providers arrive in Phase 6.
+// ABOUTME: Root layout — fonts, dark cinematic shell, and site-wide footer.
+// ABOUTME: Pages render inside a full-height column; content width convention is 680px.
 import type { Metadata } from "next";
+import { fraunces, satoshi } from "@/app/fonts";
+import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,8 +16,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
+      <body className="flex min-h-dvh flex-col font-body antialiased">
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
+      </body>
     </html>
   );
 }
