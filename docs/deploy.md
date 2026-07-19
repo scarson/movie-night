@@ -17,17 +17,17 @@ those credentials. Steps 1–6 are one-time setup; step 7 is every subsequent de
 | Google OAuth client ID + secret | Sign-in | Google Cloud Console → APIs & Services → Credentials |
 | JWT signing secret | Session cookies | Generate: `openssl rand -base64 32` |
 
-## 1. Create the D1 database
+## 1. Create the D1 database — ✅ DONE
 
-```bash
-npx wrangler d1 create movie-night-db
-```
+`movie-night-db` is provisioned in region ENAM as
+`46d47bab-95d7-4bfa-9923-e51b72fc15f1`, and `wrangler.jsonc` already points at
+it. Nothing to do here unless you are standing up a second environment, in which
+case: `npx wrangler d1 create <name>` and copy the returned id into the config.
 
-Copy the returned `database_id` into `wrangler.jsonc` — the committed value is a
-zero placeholder (`00000000-0000-0000-0000-000000000000`) and **will fail at
-runtime if left as-is**. Commit the real id; D1 database ids are not secrets.
+## 2. Apply the schema — ✅ DONE
 
-## 2. Apply the schema
+The migration has been applied to the remote database (13 tables). Re-running is
+only needed for a fresh database:
 
 ```bash
 npx wrangler d1 execute movie-night-db --remote --file=migrations/0001_initial_schema.sql
