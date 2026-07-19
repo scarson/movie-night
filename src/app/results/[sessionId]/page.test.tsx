@@ -544,6 +544,23 @@ describe("results page", () => {
     expect(screen.getByTestId("refine-error-heading").tagName).toBe("H2");
   });
 
+  it("falls back to the default framing for an error kind it does not know", async () => {
+    vi.useFakeTimers();
+    // "constructor" is an inherited key on any plain object, so a bare index
+    // lookup would find Object.prototype.constructor and skip the fallback.
+    stubApi({
+      match: { status: 500, body: { error: "Something odd happened", kind: "constructor" } },
+    });
+    await renderResults();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("refine-error-heading").textContent).toBe("That didn't work");
+    expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
+  });
+
   it("hands the evening back to the hub on start over", async () => {
     stubApi();
     await renderResults();

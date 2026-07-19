@@ -37,17 +37,35 @@ type TabId = (typeof TABS)[number]["id"];
  * copy is always the server's own string; this only picks the framing and the
  * way out, so the two can never drift apart.
  */
-const ERROR_FRAMING: Record<string, { heading: string; retry: boolean; loosen?: boolean }> = {
-  timeout: { heading: "Our movie brain is having a lie-down", retry: true },
-  overloaded: { heading: "Our movie brain is having a lie-down", retry: true },
-  rate_limited: { heading: "Everyone picked tonight", retry: true },
-  monthly_cap: { heading: "Everyone picked tonight", retry: true },
-  malformed: { heading: "That came back garbled", retry: true },
-  thin_results: { heading: "That was a tough brief — loosen a dealbreaker?", retry: false, loosen: true },
-  round_limit: { heading: "That's the evening's last round", retry: false },
-};
+interface ErrorFraming {
+  heading: string;
+  retry: boolean;
+  loosen?: boolean;
+}
 
-const DEFAULT_FRAMING = { heading: "That didn't work", retry: true } as const;
+/**
+ * A Map, not an object literal: `kind` arrives over the wire, and a plain index
+ * lookup would resolve inherited keys like "constructor" to something truthy and
+ * skip the fallback entirely.
+ */
+const ERROR_FRAMING = new Map<string, ErrorFraming>([
+  ["timeout", { heading: "Our movie brain is having a lie-down", retry: true }],
+  ["overloaded", { heading: "Our movie brain is having a lie-down", retry: true }],
+  ["rate_limited", { heading: "Everyone picked tonight", retry: true }],
+  ["monthly_cap", { heading: "Everyone picked tonight", retry: true }],
+  ["malformed", { heading: "That came back garbled", retry: true }],
+  [
+    "thin_results",
+    { heading: "That was a tough brief — loosen a dealbreaker?", retry: false, loosen: true },
+  ],
+  ["round_limit", { heading: "That's the evening's last round", retry: false }],
+]);
+
+const DEFAULT_FRAMING: ErrorFraming = { heading: "That didn't work", retry: true };
+
+function framingFor(kind: string | null): ErrorFraming {
+  return ERROR_FRAMING.get(kind ?? "") ?? DEFAULT_FRAMING;
+}
 
 const PRIMARY_BUTTON =
   "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white";
@@ -200,7 +218,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
               data-testid="refine-error-heading"
               className="font-display text-xl font-semibold text-warm-white"
             >
-              {(ERROR_FRAMING[refineError.kind ?? ""] ?? DEFAULT_FRAMING).heading}
+              {framingFor(refineError.kind).heading}
             </h2>
             <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           </div>
@@ -229,10 +247,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
     tabRefs.current[next]?.focus();
   };
 
-  const framing =
-    refineError === null
-      ? null
-      : (ERROR_FRAMING[refineError.kind ?? ""] ?? DEFAULT_FRAMING);
+  const framing = refineError === null ? null : framingFor(refineError.kind);
   const exhausted = refineError?.kind === "round_limit";
 
   // The ritual's tag picker is unbounded, so the strapline takes the first few
