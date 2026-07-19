@@ -530,3 +530,48 @@ No production-code defects were found in any round; Round 3's coverage gaps were
 **Phase 6 final gates:** tsc clean; lint clean; **267 passed + 2 skipped (269)**, pristine; `next build` clean. Banner ✅ + top table + Overall line flipped.
 
 **Notes for Phase 7:** (1) SWC JSXText gotcha above — use explicit `{" "}`/`{" — "}` for load-bearing whitespace at inline element boundaries, and verify served HTML, not just vitest (esbuild differs). (2) Component-test conventions established: `// @vitest-environment jsdom` pragma + explicit `import { … } from "vitest"` (repo style); RTL renders with fetch stubbed via `vi.stubGlobal` at the network boundary (never mock `useAuth`); anything rendering `<html>` uses `renderToStaticMarkup` with next/font vi.mocked. (3) Utilities now available: `font-display`/`font-body`, `bg-midnight`-style color utilities for every token, `p-md`-style spacing, `rounded-tag/control/panel/pill`, `ease-enter`, `animate-rise-fade` (+ `[animation-delay:…]` stagger), global amber `:focus-visible` ring (don't add per-element focus classes). (4) `data-reduced-motion="true"` on `<html>` already kills animations globally — Task 7.6's toggle just sets the attribute. (5) Auth context: `useAuth()` → `{ user, loading, signIn(returnTo?), signOut() }`; signed-in redirect target `/tonight` already wired from `/`.
+
+---
+
+## Phase 7 — UI flows
+
+### Task 7.1 — shared primitives (`b2d29b2`, `171b654`, `2d59cad`, `9f211bd`, `3e161d5`, `d818ff6`, `c9487a7`)
+
+**Built:** the eight components Tasks 7.3–7.5 compose from, plus the repo-wide safe-rendering guard.
+
+- `eslint.config.mjs` (`b2d29b2`): `{ rules: { "react/no-danger": "error" } }` — `dangerouslySetInnerHTML` is now a lint error everywhere. Verified the rule fires on a scratch violation before committing.
+- `bold-text.tsx` (`171b654`): `parseBold(text) → BoldSegment[]` pure function + `<BoldText text>` component. Splits on `**`; odd-indexed parts are bold runs; a trailing unbalanced marker is restored as literal `**…` text so nothing the model wrote is dropped; empty segments from adjacent markers are skipped. Bold → `<strong>`, plain → `<span>`; no HTML path exists.
+- `chip.tsx` (`2d59cad`): pill-radius `<button role="checkbox" aria-checked>`, `min-h-11` (44px), amber **border** treatment when selected (`border-amber bg-amber-glow text-amber`) — fill stays reserved for CTAs. `tone="rose"` variant (`--person-b` at 12.5% ground) for dealbreakers. `removable` appends an `aria-hidden` ✕ so the label stays the accessible name.
+- `tag-picker.tsx` (`2d59cad`): "Moods & Tones" then "Genres" `role="group"` sections (labels 12px uppercase ash, `aria-labelledby` via `useId`), preset chips from `MOOD_TAGS`/`GENRE_TAGS`, plus a custom-tag input — Enter or the Add button commits, trims, caps at 30 chars, dedupes case-insensitively. Custom tags (anything not in the preset list) render below as removable chips.
+- `poster.tsx` (`9f211bd`): plain lazy `<img>` at `https://image.tmdb.org/t/p/{w92|w185|w342}{path}`, alt `"«title» poster"`, in an `aspect-[2/3] rounded-tag bg-charcoal` box. Null `posterPath` → a `role="img"` charcoal fallback showing the title's first letter in Fraunces italic slate. Inline `@next/next/no-img-element` suppression (no image optimization on Workers).
+- `title-search.tsx` (`9f211bd`, `3e161d5`): 250ms-debounced `/api/titles/search?q=` fetch, skipped under 2 chars; a `requestSeq` ref discards stale responses; failure shows a quiet ash "Couldn't search right now." Results are a bordered list of 44px rows (small poster + title + ash year); selected titles render as removable chips above the input alongside unselected `quickPicks`. Input is `text-base` (16px) to block iOS auto-zoom.
+- `toggle-row.tsx` (`d818ff6`): `<button role="switch" aria-checked>` with label + optional description on the left and a track/knob on the right. Utility action, so no transition — DESIGN.md §Motion says saves and toggles are instant.
+- `rough-day-toggle.tsx` (`d818ff6`): switch named `"«name» had a rough day"` with sub-line "Prioritize their preferences over mine tonight", inline 24-viewBox heart SVG (1.5px stroke, rounded joins) that goes `fill="none"` → `fill="var(--amber)"`, and a standing "Only you can see this." line under it.
+- `phased-loading.tsx` (`c9487a7`): four-phase narrative in Fraunces italic inside `aria-live="polite"`; `key={index}` re-triggers `animate-rise-fade` per phase (already reduced-motion-gated globally). 900ms hold per phase while waiting; once `done`, later phases advance at 200ms. Calls `onComplete` once, only after the narrative has landed AND `done` is true.
+
+**Decisions:**
+- Chip is `role="checkbox"` (plan-specified) rather than `aria-pressed` — selection from a set, not a pressed control. A native `<button>` carries Enter/Space for free, which is asserted rather than assumed.
+- Poster inside a TitleSearch result row is wrapped in `aria-hidden` — the row's text is already the accessible name, so a second "«title» poster" label would double-announce.
+- `PhasedLoading` reads `done`/`onComplete` through refs updated in a bare effect, so the advance timer depends only on `[index, lastIndex]`. Putting `done` in the dependency array would restart the in-flight timer the moment the response landed, truncating that phase's hold.
+- Tag dedupe compares lowercased but stores the user's original casing.
+
+**Gotchas:**
+- **`title-search.tsx` originally cleared `results`/`failed` synchronously inside the debounce effect body**, which tripped `react-hooks/set-state-in-effect`. Fixed in `3e161d5` by moving the reset into the query-change and add handlers (`clearResults()`, which also bumps `requestSeq` so any in-flight response is discarded). The generalizable lesson: **a synchronous state reset driven by a user action belongs in the event handler, not an effect body** — the effect only ever schedules the async work.
+- **`PhasedLoading`'s hold length is fixed at the moment a phase is entered.** The phase in flight when the response arrives finishes its full 900ms hold; only phases entered *after* `done` fast-forward at 200ms. This is deliberate (no truncated phase mid-fade) and is what the "finishes the current 900ms hold, then fast-forwards" test pins down. Callers must not assume `done` produces an immediate transition.
+
+**Prop contracts (what Tasks 7.3–7.5 consume):**
+
+| Component | Exported props | Other exports |
+|---|---|---|
+| `BoldText` | `{ text: string }` | `parseBold(text): BoldSegment[]`, `BoldSegment { bold, text }` |
+| `Chip` | `ChipProps { label: string; selected: boolean; onToggle: () => void; tone?: "amber" \| "rose"; removable?: boolean }` | — |
+| `TagPicker` | `TagPickerProps { selected: string[]; onChange: (tags: string[]) => void; tone?: "amber" \| "rose"; customPlaceholder?: string }` | — |
+| `Poster` | `PosterProps { title: string; posterPath: string \| null; size?: "w92" \| "w185" \| "w342"; className?: string }` | — |
+| `TitleSearch` | `TitleSearchProps { selected: TitleRef[]; onChange: (titles: TitleRef[]) => void; quickPicks?: TitleRef[]; placeholder?: string }` | `TitleRef { tmdbId: number; title: string; year: number \| null; posterPath: string \| null }` |
+| `ToggleRow` | `ToggleRowProps { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void }` | — |
+| `RoughDayToggle` | `RoughDayToggleProps { name: string; checked: boolean; onChange: (checked: boolean) => void }` | — |
+| `PhasedLoading` | `PhasedLoadingProps { done: boolean; onComplete?: () => void; phases?: string[] }` | — |
+
+All eight are named exports (no default exports). Everything except `Poster` and `BoldText` is a `"use client"` component; `Poster` and `BoldText` are server-renderable.
+
+**Checks:** tsc clean; lint clean; **316 passed + 2 skipped**, pristine (49 new: bold-text 9, poster 3, chip 5, tag-picker 10, title-search 9, toggle-row 3, rough-day-toggle 4, phased-loading 6). Debounce and phase-timing tests use `vi.useFakeTimers()` with awaited advances — no arbitrary sleeps, no weakened assertions.
