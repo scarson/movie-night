@@ -191,9 +191,9 @@ export function RankedList({
               <p className="mt-md max-w-[62ch] text-base/[1.6] text-cream">{rec.explanation}</p>
 
               <div className="mt-lg flex flex-wrap items-center gap-x-md gap-y-sm">
-                {labels.map((label) => (
+                {labels.map((label, i) => (
                   <span
-                    key={label}
+                    key={i}
                     className="rounded-tag border border-slate px-sm py-2xs text-xs text-ash"
                   >
                     {label}

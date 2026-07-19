@@ -354,11 +354,16 @@ export function parseMatchingResponse(text: string, validTmdbIds: Set<number>): 
 
   const droppedIds: number[] = [];
   const recommendations: Recommendation[] = [];
+  // Nothing in the schema stops the model naming the same film twice, and every
+  // downstream consumer treats tmdbId as the identity of a recommendation.
+  const seenTmdbIds = new Set<number>();
   for (const rec of shaped.recommendations) {
     if (!validTmdbIds.has(rec.tmdbId)) {
       droppedIds.push(rec.tmdbId);
       continue;
     }
+    if (seenTmdbIds.has(rec.tmdbId)) continue;
+    seenTmdbIds.add(rec.tmdbId);
     recommendations.push({ ...rec, matchScore: Math.min(100, Math.max(0, rec.matchScore)) });
   }
 

@@ -1,6 +1,8 @@
 // ABOUTME: The taste map — editorial per-member analysis in person colors, the overlap
 // ABOUTME: zone, tension points, and a weighting line that never says who or why.
 
+import { useId } from "react";
+
 import type { TasteMap as TasteMapData, MemberTaste } from "@/types/matching";
 
 /**
@@ -39,12 +41,13 @@ function MemberSection({
   member,
   color,
   delayMs,
+  headingId,
 }: {
   member: MemberTaste;
   color: string;
   delayMs: number;
+  headingId: string;
 }) {
-  const headingId = `taste-${member.userId}`;
   return (
     <section
       role="group"
@@ -62,8 +65,10 @@ function MemberSection({
       <p className="mt-sm max-w-[62ch] text-base/[1.7] text-cream">{member.summary}</p>
       {(member.primaryVibes.length > 0 || member.genreAffinities.length > 0) && (
         <div className="mt-md flex flex-wrap gap-sm">
-          {[...member.primaryVibes, ...member.genreAffinities].map((tag) => (
-            <Tag key={tag} label={tag} color={color} />
+          {/* Keyed by position: the model can and does repeat a word across a
+              member's two lists ("Thriller" as both a vibe and a genre). */}
+          {[...member.primaryVibes, ...member.genreAffinities].map((tag, i) => (
+            <Tag key={i} label={tag} color={color} />
           ))}
         </div>
       )}
@@ -83,7 +88,12 @@ export interface TasteMapProps {
 export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
   const { members, overlap } = tasteMap;
   const solo = members.length < 2;
-  const overlapHeadingId = "taste-overlap";
+  // Ids are generated, never derived from the model's userId: two maps in one
+  // document would collide, and a userId containing a space silently breaks
+  // aria-labelledby, which is a space-separated id list.
+  const idBase = useId();
+  const memberHeadingId = (index: number) => `${idBase}-member-${index}`;
+  const overlapHeadingId = `${idBase}-overlap`;
 
   // The two tastes meeting, drawn literally: each person's color running into
   // the overlap hue. Semantic, not decoration — and never a purple wash.
@@ -106,7 +116,7 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
             className="flex flex-wrap items-center gap-x-lg gap-y-sm text-xs text-ash"
           >
             {members.map((member, i) => (
-              <li key={member.userId} className="flex items-center gap-sm">
+              <li key={i} className="flex items-center gap-sm">
                 <span
                   aria-hidden="true"
                   style={{ background: personColor(i) }}
@@ -129,10 +139,11 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
 
       {members.map((member, i) => (
         <MemberSection
-          key={member.userId}
+          key={i}
           member={member}
           color={personColor(i)}
           delayMs={nextDelay()}
+          headingId={memberHeadingId(i)}
         />
       ))}
 
@@ -154,8 +165,8 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
 
         {overlap.sharedVibes.length > 0 && (
           <div className="mt-md flex flex-wrap gap-sm">
-            {overlap.sharedVibes.map((vibe) => (
-              <Tag key={vibe} label={vibe} color={OVERLAP_COLOR} />
+            {overlap.sharedVibes.map((vibe, i) => (
+              <Tag key={i} label={vibe} color={OVERLAP_COLOR} />
             ))}
           </div>
         )}
@@ -167,8 +178,8 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
               aria-label="Where it pulls"
               className="mt-sm flex max-w-[62ch] flex-col gap-sm"
             >
-              {overlap.tensionPoints.map((point) => (
-                <li key={point} className="flex gap-sm text-base/[1.6] text-cream">
+              {overlap.tensionPoints.map((point, i) => (
+                <li key={i} className="flex gap-sm text-base/[1.6] text-cream">
                   <span aria-hidden="true" className="mt-2 h-px w-4 shrink-0 bg-ember" />
                   <span>{point}</span>
                 </li>

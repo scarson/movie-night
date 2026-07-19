@@ -497,6 +497,15 @@ describe("parseMatchingResponse", () => {
     expect(droppedIds).toEqual([999]);
   });
 
+  it("keeps only the first of a repeated tmdbId", () => {
+    // Nothing in the schema stops the model naming the same film twice, and the
+    // UI keys keep/remove on tmdbId — two rows for one film would rate as one.
+    const response = validResponse([1, 2, 2, 3]);
+    const { response: parsed } = parseMatchingResponse(JSON.stringify(response), validIds);
+
+    expect(parsed.recommendations.map((r) => r.tmdbId)).toEqual([1, 2, 3]);
+  });
+
   it("throws thin_results when fewer than 3 recommendations survive", () => {
     const response = validResponse([1, 2, 998, 999]);
     expect(() => parseMatchingResponse(JSON.stringify(response), validIds)).toThrowError(

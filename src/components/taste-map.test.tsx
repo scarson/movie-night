@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ABOUTME: Tests for the taste map — per-member analysis in person colors, the overlap
 // ABOUTME: zone, tension points, the never-attributing weighting line, and literal AI text.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { TasteMap, personColor, PERSON_COLORS } from "@/components/taste-map";
 import type { TasteMap as TasteMapData } from "@/types/matching";
@@ -152,6 +152,53 @@ describe("TasteMap", () => {
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("survives the model repeating a tag across both of a member's lists", () => {
+    // "Thriller" as both a vibe and a genre is entirely plausible output, and
+    // keying by the string alone would collide.
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const repeated: TasteMapData = {
+      members: [
+        { ...TWO.members[0], primaryVibes: ["Thriller"], genreAffinities: ["Thriller"] },
+      ],
+      overlap: {
+        summary: "Same energy twice over.",
+        sharedVibes: ["Witty", "Witty"],
+        tensionPoints: ["Identical note.", "Identical note."],
+      },
+    };
+    render(<TasteMap tasteMap={repeated} showWeightingNote={false} />);
+
+    expect(screen.getAllByText("Thriller")).toHaveLength(2);
+    expect(screen.getAllByText("Witty")).toHaveLength(2);
+    expect(screen.getAllByText("Identical note.")).toHaveLength(2);
+    expect(errors).toEqual([]);
+    spy.mockRestore();
+  });
+
+  it("keeps its heading ids to itself when two maps share a document", () => {
+    const { container: a } = render(<TasteMap tasteMap={TWO} showWeightingNote={false} />);
+    const { container: b } = render(<TasteMap tasteMap={TWO} showWeightingNote={false} />);
+
+    const idsOf = (root: HTMLElement) =>
+      [...root.querySelectorAll("[id]")].map((el) => el.id);
+    const overlap = idsOf(a).filter((id) => idsOf(b).includes(id));
+    expect(overlap).toEqual([]);
+  });
+
+  it("names a member's section even when the model returns an unusable user id", () => {
+    // userId is echoed back by the model. A space in it would break
+    // aria-labelledby, which is a space-separated id list.
+    const odd: TasteMapData = {
+      ...TWO,
+      members: [{ ...TWO.members[0], userId: "user one" }, TWO.members[1]],
+    };
+    render(<TasteMap tasteMap={odd} showWeightingNote={false} />);
+    expect(screen.getByRole("group", { name: "Alice Chen" })).toBeTruthy();
   });
 
   it("staggers section entrances at 80ms per DESIGN.md motion", () => {

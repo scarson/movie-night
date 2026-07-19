@@ -21,6 +21,8 @@ import {
 const MAX_ROUNDS = 10;
 /** Matches MAX_ID_LIST_ENTRIES in the match route — over this it 400s. */
 const MAX_REMOVED_IDS = 50;
+/** Enough to set the scene; the full list belongs on the mood screen, not here. */
+const MAX_VIBES_IN_STRAPLINE = 3;
 
 const TABS = [
   { id: "map", label: "Taste map" },
@@ -49,9 +51,6 @@ const DEFAULT_FRAMING = { heading: "That didn't work", retry: true } as const;
 
 const PRIMARY_BUTTON =
   "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white";
-const SECONDARY_BUTTON =
-  "flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash";
-
 function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
   const { user, loading } = useAuth();
@@ -236,9 +235,14 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
       : (ERROR_FRAMING[refineError.kind ?? ""] ?? DEFAULT_FRAMING);
   const exhausted = refineError?.kind === "round_limit";
 
+  // The ritual's tag picker is unbounded, so the strapline takes the first few
+  // rather than reciting the whole list back.
   const moodLine =
     session.moodVibes.length > 0
-      ? `Read against tonight's ${session.moodVibes.join(" and ").toLowerCase()} mood.`
+      ? `Read against tonight's ${session.moodVibes
+          .slice(0, MAX_VIBES_IN_STRAPLINE)
+          .join(", ")
+          .toLowerCase()} mood.`
       : "Read from your saved profiles.";
 
   return (

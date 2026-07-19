@@ -470,6 +470,44 @@ describe("results page", () => {
     expect(screen.queryByTestId("weighting-note")).toBeNull();
   });
 
+  it("names at most three vibes in the strapline, comma-separated", async () => {
+    // The ritual's tag picker is unbounded, and " and "-joining every tag turns
+    // the strapline into "cozy and cerebral and funny and tense and ...".
+    stubApi({
+      get: {
+        status: 200,
+        body: {
+          session: { ...SESSION, moodVibes: ["Cozy", "Cerebral", "Funny", "Tense"] },
+          round: 1,
+          response: RESPONSE,
+          titles: TITLES,
+        },
+      },
+    });
+    await renderResults();
+
+    expect(
+      await screen.findByText("Read against tonight's cozy, cerebral, funny mood.")
+    ).toBeTruthy();
+  });
+
+  it("falls back to the profiles when no vibe was set", async () => {
+    stubApi({
+      get: {
+        status: 200,
+        body: {
+          session: { ...SESSION, moodVibes: [] },
+          round: 1,
+          response: RESPONSE,
+          titles: TITLES,
+        },
+      },
+    });
+    await renderResults();
+
+    expect(await screen.findByText("Read from your saved profiles.")).toBeTruthy();
+  });
+
   it("hands the evening back to the hub on start over", async () => {
     stubApi();
     await renderResults();
