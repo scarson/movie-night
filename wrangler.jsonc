@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "movie-night",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "worker.ts",
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": {
+    "enabled": true,
+    "logs": { "invocation_logs": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true }
+  },
+  "triggers": { "crons": ["0 9 * * 1"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "movie-night-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}

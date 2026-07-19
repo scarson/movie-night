@@ -73,6 +73,8 @@ notes and commit messages.
 - **Task 0.1:** `wrangler` pinned to exact `4.105.0` (not `^4.105.0`) — the caret range resolves to `4.112.0` on a fresh install, and wrangler ≥4.108.0 requires `@cloudflare/workers-types@^5.x` as a peer, conflicting with the plan-pinned v4 workers-types line (ERESOLVE). Exact-pinning to `4.105.0` matches tee-times' own locked version.
 - **Task 0.1:** `@anthropic-ai/sdk` pinned to `^0.112.3`, not the plan's `^0.116.0` — `0.116.0` does not exist on the npm registry; `0.112.3` was latest published at execution time.
 - **Task 0.1:** `eslint.config.mjs` ignores list includes `"mockup.jsx"` in addition to tee-times' `.open-next/`, `.next/`, `.wrangler/` — tee-times has no such file; `mockup.jsx` is functional-spec reference material (per this plan's header) that pre-existed with `react/no-unescaped-entities` violations, not application code we intend to lint.
+- **Task 0.2:** `vitest-setup.ts` is an empty `export {}` stub, not a copy of tee-times' version — tee-times' setup file imports `vitest-axe` matchers, a dependency explicitly excluded from this project's `package.json` (Task 0.1 note: "no aws4fetch/better-sqlite3/playwright deps"). The plan's own fallback ("otherwise an empty `export {}` with ABOUTME") applies.
+- **Task 0.2:** `.dev.vars.example`'s explanatory comment points to itself (copy-and-fill instructions inline) rather than "README setup" as the plan step describes — `README.md` is a one-line stub with no setup section to point to, and adding one is out of this task's file list.
 
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
@@ -181,7 +183,7 @@ Note: tee-times pins `typescript ^6.0.3` and it type-checks Next 16 cleanly — 
 
 **Files:** Create: `wrangler.jsonc`, `open-next.config.ts`, `worker.ts`, `env.d.ts`, `vitest.config.ts`, `vitest-setup.ts`, `.dev.vars.example`
 
-- [ ] **Step 1:** `wrangler.jsonc` (observability syntax verified against CF docs 2026-07-18):
+- [x] **Step 1:** `wrangler.jsonc` (observability syntax verified against CF docs 2026-07-18):
 
 ```jsonc
 {
@@ -209,8 +211,8 @@ Note: tee-times pins `typescript ^6.0.3` and it type-checks Next 16 cleanly — 
 
 (No `routes` yet — the `movienight.scarson.io` custom domain is added in Phase 8. Cron = Mondays 09:00 UTC weekly streaming refresh.)
 
-- [ ] **Step 2:** `open-next.config.ts` — tee-times verbatim (`defineCloudflareConfig({})` with ABOUTME header).
-- [ ] **Step 3:** `worker.ts` — tee-times pattern, cron handler renamed:
+- [x] **Step 2:** `open-next.config.ts` — tee-times verbatim (`defineCloudflareConfig({})` with ABOUTME header).
+- [x] **Step 3:** `worker.ts` — tee-times pattern, cron handler renamed:
 
 ```ts
 // Custom Cloudflare Worker entry point.
@@ -237,7 +239,7 @@ export default worker;
 
 (`src/lib/cron-handler.ts` with a stub `runWeeklyRefresh(env: CloudflareEnv, fetchImpl: typeof fetch = fetch)` that logs and returns is created here so the file compiles; real logic in Phase 3 keeps that exact signature. worker.ts is excluded from tsconfig, so the `.open-next` imports don't break type-check.)
 
-- [ ] **Step 4:** `env.d.ts`:
+- [x] **Step 4:** `env.d.ts`:
 
 ```ts
 // ABOUTME: Cloudflare Workers environment bindings declaration.
@@ -253,9 +255,9 @@ interface CloudflareEnv {
 }
 ```
 
-- [ ] **Step 5:** `vitest.config.ts` — tee-times verbatim (globals, node env, `src/**/*.test.{ts,tsx}`, pool forks, alias `@` → src, setupFiles `./vitest-setup.ts`). `vitest-setup.ts`: copy tee-times' if it exists (read `/Users/sam/Code/twin-cities-tee-times/vitest-setup.ts`); otherwise an empty `export {}` with ABOUTME.
-- [ ] **Step 6:** `.dev.vars.example` listing the five secret names with placeholder values and a comment pointing to README setup. (`.gitignore` already ignores `.env*`; verify `.dev.vars` is ignored — it is NOT by default. Add a line `.dev.vars` to `.gitignore`.)
-- [ ] **Step 7:** `npx tsc --noEmit`, `npm run lint`, `npm test` (passes with no tests), commit: `chore: add Cloudflare config (wrangler observability, worker entry, env bindings, vitest)`
+- [x] **Step 5:** `vitest.config.ts` — tee-times verbatim (globals, node env, `src/**/*.test.{ts,tsx}`, pool forks, alias `@` → src, setupFiles `./vitest-setup.ts`). `vitest-setup.ts`: copy tee-times' if it exists (read `/Users/sam/Code/twin-cities-tee-times/vitest-setup.ts`); otherwise an empty `export {}` with ABOUTME.
+- [x] **Step 6:** `.dev.vars.example` listing the five secret names with placeholder values and a comment pointing to README setup. (`.gitignore` already ignores `.env*`; verify `.dev.vars` is ignored — it is NOT by default. Add a line `.dev.vars` to `.gitignore`.)
+- [x] **Step 7:** `npx tsc --noEmit`, `npm run lint`, `npm test` (passes with no tests), commit: `chore: add Cloudflare config (wrangler observability, worker entry, env bindings, vitest)`
 
 ### Task 0.3: CI workflow
 

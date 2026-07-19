@@ -1,0 +1,8 @@
+# Copy this file to .dev.vars (gitignored) and fill in real values for local dev.
+# Production secrets are set separately with `npx wrangler secret put <NAME>` (Phase 8).
+
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+JWT_SECRET=a-long-random-string-for-signing-session-jwts
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
+TMDB_API_TOKEN=your-tmdb-v4-read-access-token
