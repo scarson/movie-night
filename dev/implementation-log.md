@@ -498,3 +498,11 @@ No production-code defects were found in any round; Round 3's coverage gaps were
 **Gotchas:** Fontshare zip nests web fonts at `Satoshi_Complete/Fonts/WEB/fonts/`. next/font/local registers the family lowercase ("satoshi") — cosmetic. `.claude/launch.json` created for Browser-pane dev preview (not gitignored; committed).
 
 **Checks:** tsc clean; lint clean; 256 passed + 2 skipped (7 new), pristine; `next build` OK. Browser at 375px: midnight bg, Satoshi/Fraunces confirmed loaded via `document.fonts`, tokens live, no h-scroll, zero console errors.
+
+### Task 6.2 — auth provider + nav (`878e8a4`)
+
+**Built:** `auth-provider.tsx` (context: `{ user, loading, signIn(returnTo?), signOut() }`; single mount-time `/api/auth/me` fetch with a cancelled-flag cleanup; signIn → `/api/auth/google?returnTo=…`, signOut → POST logout then `location.href = "/"`), `use-auth.ts` (context reader, throws outside provider), `nav.tsx` (wordmark + auth area), all wired into `layout.tsx` (AuthProvider wraps Nav/content/footer).
+
+**Decisions:** Sign-in is a `<button>` (navigation with a side effect computing returnTo), not an `<a>`. Menu uses `role="menu"`/`menuitem` — the nav test queries menuitem, not link, because `role="menuitem"` on a `<Link>` replaces its ARIA link role. Avatar `<img>` carries an inline eslint suppression for `@next/next/no-img-element` (image optimization unavailable on Workers — same rationale as the plan's Task 7.1 Poster note). Loading state renders nothing on the right to avoid a sign-in flash. signOut navigation is not unit-tested (jsdom can't do navigation without non-pristine "Not implemented" errors); rendering states + single-fetch behavior are covered per plan.
+
+**Checks:** tsc clean; lint clean; 261 passed + 2 skipped (5 new), pristine. Browser 375px: wordmark in Fraunces italic, amber Sign in, no h-scroll.
