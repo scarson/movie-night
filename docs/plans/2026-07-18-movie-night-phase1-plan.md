@@ -66,11 +66,12 @@ notes and commit messages.
 
 ## Execution Status
 
-**Overall:** Phase 0 shipped.
+**Overall:** Phases 0-1 shipped.
 
 ### Discoveries
 
 - **Task 1.4:** on this execution's local Node (v26.3.0), `node:sqlite` emits no `ExperimentalWarning` at all — attaching a `process.on("warning", ...)` listener and requiring the module directly produces nothing. `node:sqlite` appears to have graduated from experimental status by Node 26. The plan's Step 0 mitigation (`NODE_OPTIONS=--disable-warning=ExperimentalWarning` on the `test` script) was still applied as instructed — it's a harmless no-op on Node 26 and remains necessary for CI's Node 24 (per Task 0.3's log entry), where the module may still warn. Future readers on Node ≥26 should not be surprised the flag appears to do nothing locally.
+- **Phase 1 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation` + WebFetch on `/d1/sql-api/foreign-keys/`) that **D1 enforces foreign key constraints by default** — "identical to the behaviour you would observe when setting `PRAGMA foreign_keys = on` in SQLite for every transaction." This confirms the schema's `ON DELETE CASCADE` clauses (sessions/profiles/group_members cascading off `users`, relied on by Task 2.3's `deleteAccount`) will actually fire in production, matching `src/test/fake-d1.ts`'s explicit `PRAGMA foreign_keys = ON`. Phase 2 executors do not need to re-verify this.
 
 ### Deviations
 
@@ -85,7 +86,7 @@ notes and commit messages.
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
 | 0 — Scaffold & config | ✅ SHIPPED (2026-07-18) | `8226a3d`, `842326f`, `ebb1dc6`, `b8d29b8` | — |
-| 1 — Types, tags, schema, db | 🚧 IN PROGRESS (claimed 2026-07-19T00:51Z, branch `claude/app-design-plan-build-b04129`) | — | — |
+| 1 — Types, tags, schema, db | ✅ SHIPPED (2026-07-18) | `c1ce289`, `4dd4f98`, `8505089`, `d3b9cc3`, `7c26642`, `1388d1f` | — |
 | 2 — Auth | ⬜ Not started | — | — |
 | 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
 | 4 — Groups | ⬜ Not started | — | — |
@@ -278,7 +279,7 @@ interface CloudflareEnv {
 
 # Phase 1 — Types, tags, D1 schema, db utils
 
-**Execution Status:** 🚧 IN PROGRESS (claimed 2026-07-19T00:51Z, branch `claude/app-design-plan-build-b04129`)
+**Execution Status:** ✅ SHIPPED at `1388d1f` on 2026-07-18
 
 ### Task 1.1: Tag vocabulary + matching response types
 
