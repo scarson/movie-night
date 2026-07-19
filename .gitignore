@@ -7,6 +7,14 @@
 dev/mockups/
 dev/gstack/
 
+# beads issue tracker
+.beads/
+
+# gas city
+.gc/
+.runtime/
+.claude/skills/core.gc-*
+
 # Logs
 logs
 *.log
