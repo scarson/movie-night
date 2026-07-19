@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from "next";
 import { fraunces, satoshi } from "@/app/fonts";
 import { AuthProvider } from "@/components/auth-provider";
 import { Nav } from "@/components/nav";
+import { ReducedMotionBoot } from "@/components/reduced-motion-boot";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
@@ -24,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
       <body className="flex min-h-dvh flex-col font-body antialiased">
+        <ReducedMotionBoot />
         <AuthProvider>
           <Nav />
           <div className="flex-1">{children}</div>
