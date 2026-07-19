@@ -99,11 +99,17 @@ export async function fetchQuickPicks(): Promise<TitleRef[]> {
   return body?.results ?? [];
 }
 
-export async function fetchGroupMembers(groupId: string): Promise<Member[] | null> {
-  const body = await getJson<{ group: { members: Member[] } }>(
+export interface GroupSummary {
+  name: string;
+  members: Member[];
+}
+
+export async function fetchGroup(groupId: string): Promise<GroupSummary | null> {
+  const body = await getJson<{ group: GroupSummary }>(
     `/api/groups/${encodeURIComponent(groupId)}`
   );
-  return body?.group.members ?? null;
+  if (body === undefined || body === null) return null;
+  return { name: body.group.name, members: body.group.members };
 }
 
 export async function saveProfile(draft: ProfileDraft): Promise<string | null> {

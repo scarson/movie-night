@@ -15,7 +15,7 @@ import { RoughDayToggle } from "@/components/rough-day-toggle";
 import {
   fetchProfileDraft,
   fetchQuickPicks,
-  fetchGroupMembers,
+  fetchGroup,
   requestMatch,
   saveProfile,
   startSession,
@@ -57,10 +57,10 @@ function Ritual() {
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const [profile, picks, groupMembers] = await Promise.all([
+      const [profile, picks, loadedGroup] = await Promise.all([
         fetchProfileDraft(),
         fetchQuickPicks(),
-        groupId === null ? Promise.resolve(EMPTY_MEMBERS) : fetchGroupMembers(groupId),
+        groupId === null ? Promise.resolve({ name: "", members: EMPTY_MEMBERS }) : fetchGroup(groupId),
       ]);
       if (cancelled) return;
       // An empty editor over a failed load would let "Continue" PUT the saved
@@ -69,13 +69,13 @@ function Ritual() {
         setLoadError("We couldn't load your profile. Reload to try again.");
         return;
       }
-      if (groupMembers === null) {
+      if (loadedGroup === null) {
         setLoadError("We couldn't load that group. Reload to try again.");
         return;
       }
       setDraft(profile);
       setQuickPicks(picks);
-      setMembers(groupMembers);
+      setMembers(loadedGroup.members);
     })();
     return () => {
       cancelled = true;
