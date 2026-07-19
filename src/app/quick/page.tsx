@@ -82,6 +82,14 @@ function Quick() {
   const others = (group?.members ?? []).filter((m) => m.userId !== user.userId);
   const atTagLimit = moodVibes.length >= MAX_QUICK_TAGS;
 
+  // A group match keeps the private rough-day toggle even if member details
+  // never loaded — the flag is the caller's own and is sent regardless. When we
+  // have no names to show, the beneficiary is framed generically. We never show
+  // or send another member's flag either way.
+  const showRoughDay = others.length > 0 || (groupId !== null && groupFailed);
+  const roughDayBeneficiary =
+    others.length > 0 ? others.map((m) => m.name).join(" & ") : "The rest of the group";
+
   const toggleTag = (tag: string) => {
     if (moodVibes.includes(tag)) {
       setMoodVibes(moodVibes.filter((t) => t !== tag));
@@ -241,10 +249,10 @@ function Quick() {
         </p>
       </div>
 
-      {others.length > 0 && (
+      {showRoughDay && (
         <div className="mt-2xl">
           <RoughDayToggle
-            name={others.map((m) => m.name).join(" & ")}
+            name={roughDayBeneficiary}
             checked={roughDay}
             onChange={setRoughDay}
           />

@@ -208,6 +208,45 @@ describe("quick match", () => {
     expect((calls[0].body as { memberFlags?: unknown }).memberFlags).toBeUndefined();
   });
 
+  it("keeps the rough-day toggle for a group match even when member details fail to load", async () => {
+    // The group id in the URL still drives a group session, so the caller must
+    // keep the ability to flag a rough day for themselves — the toggle only
+    // needs the signed-in user, and the flag is sent regardless.
+    search = "group=g1";
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        }
+        if (url === "/api/auth/me") return new Response(JSON.stringify(ALICE), { status: 200 });
+        if (url.startsWith("/api/groups/")) {
+          return new Response(JSON.stringify({ error: "boom" }), { status: 500 });
+        }
+        if (url === "/api/movie-sessions") {
+          return new Response(JSON.stringify({ sessionId: "s1" }), { status: 200 });
+        }
+        if (url.endsWith("/match")) {
+          return new Response(JSON.stringify({ round: 1 }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      })
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(await screen.findByRole("switch", { name: /rough day/i }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[0].body).toMatchObject({ groupId: "g1", roughDay: true });
+    // Still only the caller's own flag — no other member's flag is sent.
+    expect((calls[0].body as { memberFlags?: unknown }).memberFlags).toBeUndefined();
+  });
+
   it("surfaces a failed match against the session already created", async () => {
     const calls = stubApi({
       match: { status: 429, body: { error: "You've hit tonight's refinement limit", kind: "round_limit" } },
