@@ -38,7 +38,10 @@ export function TagPicker({
     if (trimmed.length === 0 || trimmed.length > MAX_TAG_LENGTH) return;
     const lowered = trimmed.toLowerCase();
     if (selected.some((t) => t.toLowerCase() === lowered)) return;
-    onChange([...selected, trimmed]);
+    // A custom entry that names a preset (any casing) is that preset — add it in
+    // canonical casing so it toggles the preset chip, not a decoupled duplicate.
+    const preset = PRESETS.find((p) => p.toLowerCase() === lowered);
+    onChange([...selected, preset ?? trimmed]);
     setInput("");
   };
 

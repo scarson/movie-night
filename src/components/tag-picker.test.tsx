@@ -75,6 +75,17 @@ describe("TagPicker", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("folds a custom entry that matches a preset into the preset's canonical casing", () => {
+    // Typing a preset's name in the wrong case must not create a second,
+    // near-duplicate custom chip alongside the preset — the header promises
+    // case-insensitive dedupe, and two decoupled toggles reach the prompt.
+    const onChange = setup([]);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "horror" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith(["Horror"]);
+  });
+
   it("rejects custom tags over 30 characters", () => {
     const onChange = setup([]);
     const input = screen.getByRole("textbox");
