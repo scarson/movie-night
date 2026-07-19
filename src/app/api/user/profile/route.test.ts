@@ -202,6 +202,27 @@ describe("/api/user/profile", () => {
     ).toBe(400);
   });
 
+  it("PUT accepts boundary values: a 30-char tag and exactly-50-entry title lists", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+    const ids50: number[] = [];
+    const rows: string[] = [];
+    for (let i = 1; i <= 50; i++) {
+      ids50.push(i);
+      rows.push(`(${i}, 'movie', 'Seeded ${i}', 2020, '[]', '', 1, '2026-01-01T00:00:00.000Z')`);
+    }
+    await db.exec(
+      `INSERT INTO titles (tmdb_id, content_type, title, year, genres, synopsis, popularity, created_at) VALUES ${rows.join(",")}`
+    );
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      await authedPut("u1", validBody({ comfortTitles: ids50, vibes: ["v".repeat(30)] }))
+    );
+    expect(response.status).toBe(200);
+  });
+
   it("PUT enriches an unknown tmdb id from TMDB and inserts it into titles", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

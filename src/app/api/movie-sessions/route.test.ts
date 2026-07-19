@@ -185,6 +185,16 @@ describe("POST /api/movie-sessions", () => {
     ]);
   });
 
+  it("accepts empty moodVibes (quick-match 'surprise us') and an exactly-200-char moodText", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+
+    const response = await post("u1", validBody({ moodVibes: [], moodText: "m".repeat(200) }));
+    expect(response.status).toBe(200);
+  });
+
   it("rejects a 10k-char moodText (limit 200) and over-long/over-many mood tags", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

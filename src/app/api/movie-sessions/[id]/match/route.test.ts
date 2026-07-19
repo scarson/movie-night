@@ -201,6 +201,19 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("accepts an exactly-300-char steeringFeedback (boundary)", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setup(db);
+    stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const response = await postMatch(sessionId, "u1", { steeringFeedback: "s".repeat(300) });
+    logSpy.mockRestore();
+
+    expect(response.status).toBe(200);
+  });
+
   it("runs the engine and returns { round, response, titles } with hydrated titles incl. lastRefreshedAt", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
