@@ -1,5 +1,5 @@
-// Custom Cloudflare Worker entry point.
-// Wraps OpenNext for HTTP requests + adds scheduled() for cron triggers.
+// ABOUTME: Custom Cloudflare Worker entry point.
+// ABOUTME: Wraps OpenNext for HTTP requests + adds scheduled() for cron triggers.
 
 import { runWithCloudflareRequestContext } from "./.open-next/cloudflare/init.js";
 import { handler } from "./.open-next/server-functions/default/handler.mjs";

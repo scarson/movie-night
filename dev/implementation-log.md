@@ -49,3 +49,13 @@
 **Check results:**
 - `npx @opennextjs/cloudflare build`: succeeded locally, matching the CI `build` job.
 - typecheck/lint/test jobs use the same commands already verified clean in Tasks 0.1/0.2.
+
+## Phase 0 group review (standing rule 8)
+
+3 review rounds against the full Phase 0 diff (correctness/conformance, security, misc sanity):
+
+- **Round 1 (correctness/conformance):** found `next.config.ts`, `eslint.config.mjs`, `postcss.config.mjs`, `worker.ts` missing `// ABOUTME:` headers — they were copied verbatim from tee-times per the plan's literal instruction, but tee-times itself doesn't header those files, and the explicit task instruction ("every code file starts with the 2-line // ABOUTME: header") is unconditional. Added headers to all four, re-ran `tsc`/`lint`/`test`/`build` — all still clean.
+- **Round 2 (security):** grepped all Phase 0 files for secret-shaped strings (API keys, tokens) — none found. Confirmed `.dev.vars.example` has only placeholder values, `.dev.vars` is gitignored, no `.dev.vars` file was ever created, `wrangler.jsonc`'s `database_id` is the documented placeholder, and CI workflow uses least-privilege `permissions: contents: read`.
+- **Round 3 (misc):** verified `opennextjs-cloudflare` binary exists in `node_modules/.bin` (used by `preview`/`deploy` scripts); confirmed `.dev.vars.example` is tracked (not accidentally gitignored by the `.env.*` pattern). No further issues.
+
+Clean after Round 1's fix — stopped at 3 rounds per standing rule 8.
