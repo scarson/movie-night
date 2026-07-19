@@ -20,6 +20,11 @@ export interface AuthState {
 
 export const AuthContext = createContext<AuthState | null>(null);
 
+/** The Google OAuth entry point, returning the user to `returnTo` once signed in. */
+export function googleSignInUrl(returnTo: string): string {
+  return `/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = (returnTo?: string) => {
     const target = returnTo ?? window.location.pathname;
-    window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(target)}`;
+    window.location.href = googleSignInUrl(target);
   };
 
   const signOut = async () => {
