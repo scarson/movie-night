@@ -97,6 +97,14 @@ notes and commit messages.
 - **Task 7.2:** the join page's sign-in is a plain `<a href={googleSignInUrl(...)}>`, not the `<button onClick={signIn()}>` used in the nav and on the landing page. The returnTo is statically known from the route, so a real link is the honest control — and it makes the returnTo assertable without mocking `useAuth` (which Phase 6 established as forbidden). `googleSignInUrl()` was extracted from `auth-provider.tsx` so both paths build the URL from one place.
 - **Task 7.2, review-driven:** `MemberAvatars` is exported from `src/components/group-picker.tsx` and reused by `src/app/groups/page.tsx` rather than duplicated. The plan's file list gives no home for a shared member-avatar primitive; if Task 7.3+ needs it in a third place, promote it to its own file then.
 - **Task 7.2, review-driven (Phase 6 file):** `src/app/globals.css`'s reduced-motion rules were changed from `animation-duration: 0.01ms !important` to `animation: none !important`. A near-zero duration does not fast-forward an animation — the engine pins it at currentTime 0, so every `animation-fill-mode: both` entrance (all `--animate-rise-fade` uses, including the Phase 6 landing page) rendered permanently invisible for reduced-motion users. Out of Task 7.2's file list but a blocking accessibility defect on pages this slice ships; guarded by `src/app/globals.css.test.ts`.
+- **Task 7.3/7.4 (blocking API gap, out of the tasks' file lists):** `GET /api/user/profile` returns title lists as bare `number[]`, and no endpoint resolved ids back to titles — so the plan's own requirement that ProfileEditor be "pre-filled from `GET /api/user/profile`" was unbuildable, and the specified `quickPicks` had no source either. `src/app/api/titles/search/route.ts` gained two read modes rather than a new route: `?ids=1,2,3` (D1 only, caller order preserved, deduped, capped at 100 — exactly one full profile's 50 comfort + 50 watchlist, so it can never truncate a real profile) and `?popular=1` (top 12 by popularity). Both take precedence over `q`. No TMDB fallback for either: the profile PUT enriches unknown ids at save time, so every saved id is already in `titles`. Shipped in `ab710bf` with 6 tests.
+- **Task 7.3:** the rough-day toggle is labelled for the person it *benefits*, not the person who sets it. `computeWeightNote()` in `src/lib/matching.ts` treats `roughDay: true` as "deprioritise this member's own preferences", so on member M's step the toggle reads "«everyone else» had a rough day / Prioritize their preferences over mine tonight" and writes `memberFlags[M]`. For groups larger than two the other names are joined with " & "; DESIGN.md's framing is explicitly two-person ("[partner] had a rough day") and does not generalise further.
+- **Task 7.3:** the signed-in user's own rough-day toggle lives on the Mood step (per the task's MoodScreen bullet) while every other member's lives on their own step (per the task's stepper bullet). Both clauses are satisfied, and it is the privacy-safest split: no member's flag is ever rendered on a surface that member doesn't own.
+- **Task 7.3:** the mockup's session-summary strip shows a "💛 Prioritizing «name»" line per person. That is omitted — it would leak exactly what DESIGN.md §Rough-Day Toggle says must stay invisible ("the generosity stays invisible"). `src/components/mood-screen.test.tsx` asserts the summary carries no rough-day signal and that the page mentions it exactly once, on the toggle its owner set.
+- **Task 7.3:** step labels are static member names, not the mockup's live-updating ones. The mockup edited each person's name in a text field; the locked single-user decision removes name editing entirely, so there is nothing left to update live.
+- **Task 7.3:** a failed profile load blocks the flow with an error instead of rendering an empty editor. An empty editor plus "Continue" would PUT the saved profile away — silent data loss. Tested.
+- **Task 7.3/7.4:** the fetch layer both flows share lives in `src/lib/session-flow.ts`, which is not in either task's file list. Duplicating profile load/save, group load, session create and match across two pages was the alternative.
+- **Task 7.4:** quick match's mood chips are capped at 3 per the task text, and a tap on a fourth now explains itself in the live region rather than doing nothing. A dead control that gives no feedback reads as broken.
 - **Task 3.2, review-driven:** `scripts/seed.ts` gained a zero-titles-discovered abort guard not explicitly specified by the plan text — found during the Phase 3 group review (silently writing/applying an empty `seed.sql` on a total discover-fetch outage was a latent correctness gap). See the Phase 3 group review log entry.
 
 | Phase | Status | Ship SHA(s) | Notes |
@@ -108,7 +116,7 @@ notes and commit messages.
 | 4 — Groups | ✅ SHIPPED (2026-07-18) | `dccf8e4`, `8419769`, `6c2e09d`, `1fc6e9a`, `100d98d` | — |
 | 5 — Matching engine + API | ✅ SHIPPED (2026-07-19) | `dabe57e`, `bd18e30`, `f9fe41e`, `206b76b` | Live evals deferred to Phase 8 (no API key locally) |
 | 6 — UI foundation | ✅ SHIPPED (2026-07-19) | `43a7392`, `878e8a4`, `b5927f6`, `46cf400` | — |
-| 7 — UI flows | ⬜ Not started | — | — |
+| 7 — UI flows | 🚧 IN PROGRESS | 7a `4f1d80a`, 7b `e61ccee` | Tasks 7.5–7.6 remain |
 | 8 — Verification & finish | ⬜ Not started | — | — |
 
 ---
@@ -902,7 +910,8 @@ API design locked here (UI consumes exactly this):
 # Phase 7 — UI flows
 
 **Execution Status:** ⬜ NOT STARTED
-Slice 7a (7.1–7.2) shipped at `4f1d80a` on branch `claude/app-design-plan-build-b04129` (commits `b2d29b2`, `171b654`, `2d59cad`, `9f211bd`, `3e161d5`, `d818ff6`, `c9487a7`, `84f3afb`, `0653910`, `4f1d80a`). Tasks 7.3–7.6 remain.
+Slice 7a (7.1–7.2) shipped at `4f1d80a` on branch `claude/app-design-plan-build-b04129` (commits `b2d29b2`, `171b654`, `2d59cad`, `9f211bd`, `3e161d5`, `d818ff6`, `c9487a7`, `84f3afb`, `0653910`, `4f1d80a`).
+Slice 7b (7.3–7.4) shipped at `e61ccee` (commits `ab710bf`, `74e715d`, `f889ad6`, `621ec45`, `e61ccee`). Tasks 7.5–7.6 remain.
 
 All tasks: load `impeccable` first; DESIGN.md binding; mockup.jsx is the FUNCTIONAL spec (what screens do), never visual. State/data comes from the Phase 5 APIs exactly as specified there. Client state kept simple: React state + the session GET endpoint for reload; no state library (YAGNI).
 
@@ -934,16 +943,16 @@ Behavioral requirements (from mockup + DESIGN.md):
 
 **Files:** Create: `src/app/ritual/page.tsx` (stepper orchestrator), `src/components/profile-editor.tsx`, `src/components/mood-screen.tsx`, `src/components/progress-steps.tsx`
 
-- [ ] Stepper: one step per group member (names as step labels, live-updating), then Mood, then Results. Per mockup flow. LOCKED DECISION: the full ritual edits ONLY the signed-in user's stored profile (ProfileEditor pre-filled from `GET /api/user/profile`, saved via PUT). There is NO cross-user profile read or write path; other members' profiles come from their saved state (design doc: "Quick-match always uses saved profile data"; full ritual on one device shows, for each OTHER member, a step with their name/avatar, a one-line note that their saved profile will be used, and their rough-day toggle (collected into `memberFlags`) — no profile data of other members is fetched or shown (no API exists for it, by design). This avoids a cross-user read/write path entirely. Deviation from mockup (which edited both people on one device) — justified by auth model; note in PR.
-- [ ] ProfileEditor sections: Comfort titles (TitleSearch + quickPicks), Watchlist (TitleSearch), I Want (TagPicker), Dealbreakers (TagPicker rose-tinted), Streaming services (chip multi-select from fixed list: Netflix, Max, Disney+, Prime Video, Hulu, Apple TV+, Paramount+, Peacock, Criterion Channel, MUBI). Saves via PUT on step advance.
-- [ ] MoodScreen: Tonight's Vibe TagPicker, discover-new ToggleRow ("Show us something new"), optional mood textarea (≤200), RoughDayToggle for the signed-in member (+ per-member toggles in couch mode via memberFlags), session summary strip (member names + counts, mood). "Find our match →" CTA → POST session → POST match → navigate to results.
-- [ ] Tests: stepper order with N members; profile PUT payload shape; mood submit creates session then match (fetch stubbed, order asserted). Commit: `feat: add full ritual flow`
+- [x] Stepper: one step per group member (names as step labels, live-updating), then Mood, then Results. Per mockup flow. LOCKED DECISION: the full ritual edits ONLY the signed-in user's stored profile (ProfileEditor pre-filled from `GET /api/user/profile`, saved via PUT). There is NO cross-user profile read or write path; other members' profiles come from their saved state (design doc: "Quick-match always uses saved profile data"; full ritual on one device shows, for each OTHER member, a step with their name/avatar, a one-line note that their saved profile will be used, and their rough-day toggle (collected into `memberFlags`) — no profile data of other members is fetched or shown (no API exists for it, by design). This avoids a cross-user read/write path entirely. Deviation from mockup (which edited both people on one device) — justified by auth model; note in PR.
+- [x] ProfileEditor sections: Comfort titles (TitleSearch + quickPicks), Watchlist (TitleSearch), I Want (TagPicker), Dealbreakers (TagPicker rose-tinted), Streaming services (chip multi-select from fixed list: Netflix, Max, Disney+, Prime Video, Hulu, Apple TV+, Paramount+, Peacock, Criterion Channel, MUBI). Saves via PUT on step advance.
+- [x] MoodScreen: Tonight's Vibe TagPicker, discover-new ToggleRow ("Show us something new"), optional mood textarea (≤200), RoughDayToggle for the signed-in member (+ per-member toggles in couch mode via memberFlags), session summary strip (member names + counts, mood). "Find our match →" CTA → POST session → POST match → navigate to results.
+- [x] Tests: stepper order with N members; profile PUT payload shape; mood submit creates session then match (fetch stubbed, order asserted). Commit: `feat: add full ritual flow`
 
 ### Task 7.4: Quick match flow
 
 **Files:** Create: `src/app/quick/page.tsx`
 
-- [ ] One screen per design doc §Quick-Match: group + members (avatars), 0–3 mood tag quick chips (hardcoded subset: Cozy, Funny, Thrilling, Romantic, Feel-Good, Cerebral, Adventurous, Lighthearted; "surprise us" default when none), private rough-day heart, single "Find our match" CTA → session+match → results. Under 30s to results is the acceptance bar. Tests: submit with zero tags works. Commit: `feat: add quick match flow`
+- [x] One screen per design doc §Quick-Match: group + members (avatars), 0–3 mood tag quick chips (hardcoded subset: Cozy, Funny, Thrilling, Romantic, Feel-Good, Cerebral, Adventurous, Lighthearted; "surprise us" default when none), private rough-day heart, single "Find our match" CTA → session+match → results. Under 30s to results is the acceptance bar. Tests: submit with zero tags works. Commit: `feat: add quick match flow`
 
 ### Task 7.5: Results — Taste Map, Ranked List, Conversational, refinement
 
