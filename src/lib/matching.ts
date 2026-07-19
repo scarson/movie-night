@@ -5,7 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { APIError, APIConnectionError } from "@anthropic-ai/sdk";
 import type { Message, MessageCreateParamsNonStreaming } from "@anthropic-ai/sdk/resources/messages";
 import { GENRE_TAG_TO_TMDB, GENRE_TAGS } from "@/config/tags";
-import { parseJsonColumn } from "@/lib/db";
+import { parseJsonColumn, chunk, D1_IN_CHUNK_SIZE } from "@/lib/db";
 import { MATCHING_RESPONSE_SCHEMA, type MatchingResponse, type Recommendation } from "@/types/matching";
 
 export const PROMPT_VERSION = "p1.0";
@@ -98,13 +98,13 @@ export async function selectCandidates(
     for (const id of profile.watchlist) referencedIds.add(id);
   }
   const missingIds = [...referencedIds].filter((id) => !pool.has(id));
-  if (missingIds.length > 0) {
-    const placeholders = missingIds.map(() => "?").join(", ");
+  for (const ids of chunk(missingIds, D1_IN_CHUNK_SIZE)) {
+    const placeholders = ids.map(() => "?").join(", ");
     const { results: referenced } = await db
       .prepare(
         `SELECT ${CANDIDATE_COLUMNS} FROM titles WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
       )
-      .bind(...missingIds)
+      .bind(...ids)
       .all<CandidateRow>();
     for (const row of referenced) pool.set(row.tmdb_id, row);
   }

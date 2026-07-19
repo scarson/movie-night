@@ -2,7 +2,7 @@
 // ABOUTME: authorization, round counting, removed-id accumulation, and member-scoped serialization.
 
 import { SOLO_GROUP_NAME } from "@/lib/groups";
-import { parseJsonColumn } from "@/lib/db";
+import { parseJsonColumn, chunk, D1_IN_CHUNK_SIZE } from "@/lib/db";
 import { MATCHING_MODEL, PROMPT_VERSION } from "@/lib/matching";
 import type { StreamingInfo } from "@/lib/tmdb";
 import type { MatchingResponse } from "@/types/matching";
@@ -271,33 +271,35 @@ export async function getTitlesMap(
   tmdbIds: number[]
 ): Promise<Record<number, TitleSummary>> {
   if (tmdbIds.length === 0) return {};
-  const placeholders = tmdbIds.map(() => "?").join(", ");
-  const { results } = await db
-    .prepare(
-      `SELECT tmdb_id, title, year, poster_path, genres, streaming, last_refreshed_at
-       FROM titles WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
-    )
-    .bind(...tmdbIds)
-    .all<{
-      tmdb_id: number;
-      title: string;
-      year: number | null;
-      poster_path: string | null;
-      genres: string;
-      streaming: string;
-      last_refreshed_at: string | null;
-    }>();
-
   const map: Record<number, TitleSummary> = {};
-  for (const row of results) {
-    map[row.tmdb_id] = {
-      title: row.title,
-      year: row.year,
-      posterPath: row.poster_path,
-      genres: parseJsonColumn<string[]>(row.genres, []),
-      streaming: parseJsonColumn<StreamingInfo>(row.streaming, {}),
-      lastRefreshedAt: row.last_refreshed_at,
-    };
+  for (const ids of chunk(tmdbIds, D1_IN_CHUNK_SIZE)) {
+    const placeholders = ids.map(() => "?").join(", ");
+    const { results } = await db
+      .prepare(
+        `SELECT tmdb_id, title, year, poster_path, genres, streaming, last_refreshed_at
+         FROM titles WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
+      )
+      .bind(...ids)
+      .all<{
+        tmdb_id: number;
+        title: string;
+        year: number | null;
+        poster_path: string | null;
+        genres: string;
+        streaming: string;
+        last_refreshed_at: string | null;
+      }>();
+
+    for (const row of results) {
+      map[row.tmdb_id] = {
+        title: row.title,
+        year: row.year,
+        posterPath: row.poster_path,
+        genres: parseJsonColumn<string[]>(row.genres, []),
+        streaming: parseJsonColumn<StreamingInfo>(row.streaming, {}),
+        lastRefreshedAt: row.last_refreshed_at,
+      };
+    }
   }
   return map;
 }

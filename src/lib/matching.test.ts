@@ -217,6 +217,35 @@ describe("selectCandidates", () => {
     expect(ids).toContain(8);
   });
 
+  it("includes more referenced-but-obscure titles than D1's bound-parameter limit", async () => {
+    // Two enthusiasts can reference 200+ niche titles that miss the popularity
+    // pool; the referenced-id lookup must chunk rather than bind them all at once.
+    const db = createFakeD1(loadMigration());
+    // Fill the 250-row popularity window with high-popularity titles so the
+    // referenced niche titles below genuinely fall outside it.
+    const poolRows: string[] = [];
+    for (let i = 1; i <= 250; i++) {
+      poolRows.push(
+        `(${1000 + i}, 'movie', 'Popular ${i}', 2020, '["Drama"]', 'Synopsis.', ${1000 - i}, '2026-01-01T00:00:00.000Z')`
+      );
+    }
+    const nicheIds = Array.from({ length: 150 }, (_, i) => 2000 + i);
+    const nicheRows = nicheIds.map(
+      (id) => `(${id}, 'movie', 'Niche ${id}', 2020, '["Drama"]', 'Synopsis.', 0.1, '2026-01-01T00:00:00.000Z')`
+    );
+    await db.exec(
+      `INSERT INTO titles (tmdb_id, content_type, title, year, genres, synopsis, popularity, created_at) VALUES ${[...poolRows, ...nicheRows].join(",")}`
+    );
+
+    const profiles = [
+      { comfortTitles: nicheIds.slice(0, 75), watchlist: nicheIds.slice(75), dealbreakers: [] },
+    ];
+    const result = await selectCandidates(db, profiles, false);
+
+    const resultIds = new Set(result.map((t) => t.tmdbId));
+    expect(nicheIds.every((id) => resultIds.has(id))).toBe(true);
+  });
+
   it("applies dealbreaker genre exclusion to comfort-referenced titles too", async () => {
     const db = createFakeD1(loadMigration());
     await seedTitle(db, 1, "Comfort Horror", { genres: ["Horror"], popularity: 1 });

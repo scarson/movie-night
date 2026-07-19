@@ -9,6 +9,16 @@ export function loadMigration(): string {
   return readFileSync(join(process.cwd(), "migrations/0001_initial_schema.sql"), "utf-8");
 }
 
+/**
+ * Cloudflare D1's hard limit on bound parameters per query. node:sqlite's own
+ * default (SQLITE_MAX_VARIABLE_NUMBER = 999) is far higher, so without this
+ * check the fake would silently accept queries that real D1 rejects — the exact
+ * blind spot that let uncapped cross-member IN(...) lists ship. Enforcing it
+ * here makes the fake honest, so any query binding >100 params fails a test.
+ * See https://developers.cloudflare.com/d1/platform/limits/
+ */
+export const D1_MAX_BOUND_PARAMS = 100;
+
 class FakeD1PreparedStatement {
   constructor(
     private readonly db: DatabaseSync,
@@ -17,6 +27,11 @@ class FakeD1PreparedStatement {
   ) {}
 
   bind(...values: unknown[]): FakeD1PreparedStatement {
+    if (values.length > D1_MAX_BOUND_PARAMS) {
+      throw new Error(
+        `D1_ERROR: too many SQL variables (${values.length} > ${D1_MAX_BOUND_PARAMS})`
+      );
+    }
     return new FakeD1PreparedStatement(this.db, this.sql, values as SQLInputValue[]);
   }
 

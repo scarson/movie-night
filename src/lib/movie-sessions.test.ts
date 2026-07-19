@@ -446,6 +446,20 @@ describe("titles helpers", () => {
     expect(await getTitlesMap(db, [])).toEqual({});
   });
 
+  it("getTitlesMap handles more ids than D1's bound-parameter limit", async () => {
+    // A two-member group can union up to 200 comfort/watchlist ids, past D1's
+    // 100-parameter ceiling. The map must chunk rather than bind them all at once.
+    const db = createFakeD1(loadMigration());
+    const ids = Array.from({ length: 150 }, (_, i) => 1000 + i);
+    for (const id of ids) await seedTitle(db, id, `Title ${id}`);
+
+    const map = await getTitlesMap(db, ids);
+
+    expect(Object.keys(map)).toHaveLength(150);
+    expect(map[1000].title).toBe("Title 1000");
+    expect(map[1149].title).toBe("Title 1149");
+  });
+
   it("formatTitleRefs renders 'Title (tmdbId N)' and skips unknown ids", async () => {
     const db = createFakeD1(loadMigration());
     await seedTitle(db, 27205, "Inception");
