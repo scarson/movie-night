@@ -408,3 +408,21 @@ No implementation defects were found requiring a code fix — Round 2's rate-lim
 
 **Commit:** `dabe57e` — `feat: add matching engine (candidates, prompt builder, parser, error taxonomy)`
 
+## Task 5.3: Live eval suite
+
+**Built:** `src/lib/matching.eval.test.ts` (no vitest config change — the `describe.skipIf` guard is sufficient; the file matches the existing `src/**/*.test.ts` include glob).
+
+**Decisions:**
+- Two live cases behind `describe.skipIf(!process.env.RUN_LIVE_EVALS)`: (1) round 1 with a fixed 30-candidate list (well-known films with their real TMDB ids, including 3 Horror and 2 War entries that must never surface) and two synthetic profiles (Iris: cerebral-thriller fan, Horror dealbreaker; Theo: cozy-romcom fan, War dealbreaker) — asserts 5–7 recs, all tmdbIds ∈ candidates, no Horror/War genre in any rec, 2 non-empty member summaries, conversational mentions both names; (2) a refinement round asserting a kept title (Inception) stays in the results and a removed title (The Dark Knight) never returns. Quality-seam assertions only, no exact-output assertions. 120s per-test timeout for real API latency.
+- A permanently-running guard test (`guards live evals behind RUN_LIVE_EVALS=1`) documents the skip per testing-pitfalls §2 (no unexplained skips) — default runs report 1 passed + 2 skipped for this file.
+- API key resolution: `process.env.ANTHROPIC_API_KEY`, falling back to parsing `.dev.vars` via the existing `parseDevVars` from `scripts/seed-lib` (same pattern as the seed script); a clear error if neither exists when the flag is set.
+- **Step 2 (live run) — BLOCKED, as anticipated by the plan:** no `.dev.vars` exists in this worktree and `ANTHROPIC_API_KEY` is not in the environment, so the live evals were NOT run (verified they skip cleanly instead: 1 passed + 2 skipped, zero network). **Phase 8 runs them** via `RUN_LIVE_EVALS=1 npm test -- src/lib/matching.eval.test.ts` once a real key is available.
+- The dealbreaker assertions here exercise the PROMPT-level enforcement path deliberately: candidates are passed directly (bypassing `selectCandidates`' SQL filter), so Horror/War titles are present in the model's candidate list and only the prompt's dealbreaker instructions keep them out.
+
+**Check results:**
+- `npx vitest run src/lib/matching.eval.test.ts` (no flag): 1 passed, 2 skipped — guard verified, no network.
+- `npx tsc --noEmit`: clean. `npm run lint`: clean.
+- `npm test`: clean, 16 files / 180 passed + 2 skipped.
+
+**Commit:** `bd18e30` — `test: add live matching eval suite behind RUN_LIVE_EVALS`
+
