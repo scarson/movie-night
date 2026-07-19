@@ -122,6 +122,33 @@ export async function joinGroup(db: D1Database, userId: string, code: string): P
   return rowToGroup(row);
 }
 
+/**
+ * Returns the group (with members) for a member-only detail view. Returns null both
+ * when the group doesn't exist AND when the requester isn't a member — the two cases
+ * are indistinguishable to the caller, so a route built on this can't leak whether a
+ * given group id exists (anti-enumeration). Also excludes "__solo__" groups, which
+ * are an internal implementation detail never surfaced through this API.
+ */
+export async function getGroupDetailForMember(
+  db: D1Database,
+  userId: string,
+  groupId: string
+): Promise<GroupWithMembers | null> {
+  const membership = await db
+    .prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?")
+    .bind(groupId, userId)
+    .first();
+  if (!membership) return null;
+
+  const row = await db
+    .prepare("SELECT id, name, invite_code, created_at FROM groups WHERE id = ? AND name != ?")
+    .bind(groupId, SOLO_GROUP_NAME)
+    .first<GroupRow>();
+  if (!row) return null;
+
+  return { ...rowToGroup(row), members: await fetchMembers(db, row.id) };
+}
+
 /** Returns every group userId belongs to, with member lists, excluding "__solo__" groups. */
 export async function getGroupsForUser(db: D1Database, userId: string): Promise<GroupWithMembers[]> {
   const { results } = await db
