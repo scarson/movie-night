@@ -66,7 +66,7 @@ notes and commit messages.
 
 ## Execution Status
 
-**Overall:** Phases 0-1 shipped.
+**Overall:** Phases 0-4 shipped. (This line was stale at "Phases 0-1" through the Phase 2/3 ships despite the table below being kept current each time — corrected here per the Living Document Contract; future executors should update this prose line, not just the table, on every phase ship.)
 
 ### Discoveries
 
@@ -74,6 +74,7 @@ notes and commit messages.
 - **Phase 1 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation` + WebFetch on `/d1/sql-api/foreign-keys/`) that **D1 enforces foreign key constraints by default** — "identical to the behaviour you would observe when setting `PRAGMA foreign_keys = on` in SQLite for every transaction." This confirms the schema's `ON DELETE CASCADE` clauses (sessions/profiles/group_members cascading off `users`, relied on by Task 2.3's `deleteAccount`) will actually fire in production, matching `src/test/fake-d1.ts`'s explicit `PRAGMA foreign_keys = ON`. Phase 2 executors do not need to re-verify this.
 - **Phase 2 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation`) that **D1's `batch()` executes as a real SQL transaction** — "Batched statements are SQL transactions... If a statement in the sequence fails, ... it aborts or rolls back the entire sequence." This confirms Task 2.3's `deleteAccount` (a 3-statement batch: anonymize session_members → anonymize movie_sessions → delete user) cannot partially apply in production, matching `src/test/fake-d1.ts`'s `BEGIN`/`COMMIT`/`ROLLBACK` emulation around `.batch()`. Any future task relying on `db.batch()` atomicity (Phase 4's group creation, Phase 5's recommendation writes) does not need to re-verify this.
 - **Task 3.3 / Phase 8 deploy blocker:** `STALE_TITLES_LIMIT` in `src/lib/cron-handler.ts` is hardcoded to 200, which assumes the deployed Cloudflare account is on the Workers Paid plan (1000 subrequests/invocation). This is unknowable at Phase 3 implementation time — it depends on which Cloudflare account Phase 8 deploys to. **Phase 8 must confirm the account's plan tier before enabling the cron trigger** and lower the constant to 40 if it's on the Free plan (50 subrequests/invocation), or every cron invocation will fail mid-run.
+- **Phase 4 group review:** `src/app/api/groups/join/route.ts` composes `checkJoinRateLimit` (SELECT) then `logJoinAttempt` (INSERT) as two separate D1 calls — a check-then-insert TOCTOU race under concurrent requests from the same user (testing-pitfalls.md §5). Investigated and explicitly accepted, not fixed: (1) reordering to log-before-check would silently shift the effective limit down by one and break the tested `checkJoinRateLimit` contract; (2) an attempt to write a concurrency test to exercise the race found this project's fake-D1 (`node:sqlite`'s synchronous `DatabaseSync`) cannot reproduce it at all — 5 concurrent `Promise.all`-fired requests at the exact boundary consistently resolved to exactly 1 success + 4 blocked, because there's no real network latency for two "concurrent" D1 calls to interleave across in this harness; (3) the residual production risk is bounded by the invite code's ~1.28×10^14-entry keyspace regardless of how the rate limit races — full reasoning in `dev/implementation-log.md`'s "Phase 4 group review" entry. **This is the same race class Task 5.4 already independently pre-accepts for the match round-limit** ("the race is ACCEPTED per eng review — blast radius is one extra $0.04 call — do not add locking") — Phase 5's monthly-match-cap check (same SELECT-count-then-act shape) will hit this again; no need to re-litigate, just be aware the decision was already made twice with consistent reasoning.
 
 ### Deviations
 
@@ -95,7 +96,7 @@ notes and commit messages.
 | 1 — Types, tags, schema, db | ✅ SHIPPED (2026-07-18) | `c1ce289`, `4dd4f98`, `8505089`, `d3b9cc3`, `7c26642`, `1388d1f` | — |
 | 2 — Auth | ✅ SHIPPED (2026-07-18) | `d911d9c`, `ccee89b`, `b22b51e`, `e4a726f`, `3083516` | — |
 | 3 — TMDB client, seed, cron | ✅ SHIPPED (2026-07-18) | `fe524c1`, `b925c81`, `bc867a9`, `d863fc6`, `bfd3065`, `e3344a3`, `fe38cfe` | — |
-| 4 — Groups | ⬜ Not started | — | — |
+| 4 — Groups | ✅ SHIPPED (2026-07-18) | `dccf8e4`, `8419769`, `6c2e09d`, `1fc6e9a`, `100d98d` | — |
 | 5 — Matching engine + API | ⬜ Not started | — | — |
 | 6 — UI foundation | ⬜ Not started | — | — |
 | 7 — UI flows | ⬜ Not started | — | — |
@@ -713,37 +714,37 @@ TMDB API v3 ground rules (verify anything beyond these against https://developer
 
 # Phase 4 — Groups
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** ✅ SHIPPED at `dccf8e4`, `8419769`, `6c2e09d`, `1fc6e9a`, `100d98d` on 2026-07-18
 
 ### Task 4.1: Group lib + invite codes
 
 **Files:** Create: `src/lib/groups.ts`, `src/lib/groups.test.ts`
 
-- [ ] **Step 1 (failing tests):** with fake D1:
+- [x] **Step 1 (failing tests):** with fake D1:
   - `createGroup(db, userId, name)` → creates group with 8-char alphanumeric invite code (nanoid custom alphabet `0-9A-Za-z` minus ambiguous `0O1lI`, length 8), adds creator as member, returns group.
   - `joinGroup(db, userId, code)` → adds member; idempotent (joining twice returns the group without duplicate row — UNIQUE constraint caught); unknown code → `null`; a code belonging to a `"__solo__"` group behaves as unknown (test).
   - `getGroupsForUser(db, userId)` → groups with member arrays (id, name, avatar_url per member); MUST exclude groups named `"__solo__"` (the solo-mode personal group created by Task 5.4) — test this.
   - `createGroup` rejects the reserved name `"__solo__"` (400 at the route layer; lib throws).
   - `leaveGroup(db, userId, groupId)` → removes group_members row only (session history preserved).
   - `checkJoinRateLimit(db, key)` → false when ≥ 10 attempts logged in last 10 minutes for `scope='group_join'` (uses `sqliteIsoNow('-10 minutes')`), true otherwise; `logJoinAttempt` inserts.
-- [ ] **Step 2:** Implement. IDs are `crypto.randomUUID()`. Invite code generation:
+- [x] **Step 2:** Implement. IDs are `crypto.randomUUID()`. Invite code generation:
 
 ```ts
 import { customAlphabet } from "nanoid";
 const inviteCode = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz", 8);
 ```
 
-- [ ] **Step 3:** Green. Commit: `feat: add group creation/join/leave with rate-limited invite codes`
+- [x] **Step 3:** Green. Commit: `feat: add group creation/join/leave with rate-limited invite codes`
 
 ### Task 4.2: Group API routes
 
 **Files:** Create: `src/app/api/groups/route.ts` (GET list mine, POST create), `src/app/api/groups/join/route.ts` (POST {code}), `src/app/api/groups/[id]/route.ts` (GET detail — members with names/avatars, member-only), `src/app/api/groups/[id]/leave/route.ts` (POST)
 
-- [ ] **Step 1:** All routes: `getCloudflareContext()` → `authenticateRequest` → 401 if unauthenticated (merge returned headers into every response, per the reference `me/route.ts` pattern). Join route: rate limit by user id AND validate code format (`/^[2-9A-Za-z]{8}$/`) before hitting DB; invalid → 400, unknown → 404 with `{ error: "That code didn't match a group" }`, rate-limited → 429. Group detail: verify requester is a member; non-members get 404 (not 403 — don't leak existence). Join success response contains group id + name ONLY (no member PII pre-join, per CEO review).
-- [ ] **Step 2:** Input limits: group name ≤ 50 chars (trim; reject empty). 
-- [ ] **Step 3:** Route-level tests: extract any nontrivial validation into `src/lib/groups.ts` (already tested); routes stay thin. Type-check + lint. Commit: `feat: add group API routes`
+- [x] **Step 1:** All routes: `getCloudflareContext()` → `authenticateRequest` → 401 if unauthenticated (merge returned headers into every response, per the reference `me/route.ts` pattern). Join route: rate limit by user id AND validate code format (`/^[2-9A-Za-z]{8}$/`) before hitting DB; invalid → 400, unknown → 404 with `{ error: "That code didn't match a group" }`, rate-limited → 429. Group detail: verify requester is a member; non-members get 404 (not 403 — don't leak existence). Join success response contains group id + name ONLY (no member PII pre-join, per CEO review).
+- [x] **Step 2:** Input limits: group name ≤ 50 chars (trim; reject empty). 
+- [x] **Step 3:** Route-level tests: extract any nontrivial validation into `src/lib/groups.ts` (already tested); routes stay thin. Type-check + lint. Commit: `feat: add group API routes`
 
-**After completing Phase 4:** group review (abuse perspective: code enumeration, PII leakage).
+**After completing Phase 4:** group review (abuse perspective: code enumeration, PII leakage). **Done** — see `dev/implementation-log.md` "Phase 4 group review" for the full 4-round writeup, including the rate-limit-bypass investigation (a check-then-log TOCTOU race was found, investigated, found unreproducible in this project's synchronous fake-D1 test harness, and explicitly accepted as a bounded, low-severity risk consistent with the plan's own Task 5.4 precedent for the same race class — no code fix applied; one real error-path test gap was found and closed instead).
 
 ---
 
