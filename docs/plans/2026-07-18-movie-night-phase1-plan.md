@@ -876,8 +876,8 @@ API design locked here (UI consumes exactly this):
 
 **Files:** Create: `src/components/auth-provider.tsx`, `src/components/nav.tsx`, `src/hooks/use-auth.ts`
 
-- [ ] **Step 1:** `use-auth` fetches `/api/auth/me` once (client), exposes `{ user, loading, signIn(returnTo), signOut() }` (signIn navigates to `/api/auth/google?returnTo=...`; signOut POSTs logout then reloads). AuthProvider = context wrapper used in layout.
-- [ ] **Step 2:** Nav: minimal top bar — wordmark "Movie Night" in Fraunces italic, right side: avatar + name menu (Profile, Sign out) or "Sign in" text-amber link. Mobile-first; 44px touch targets. Tests: renders signed-out state; renders user name when `/api/auth/me` stubbed (fetch stubbed at test level, not a mocked hook).
+- [x] **Step 1:** `use-auth` fetches `/api/auth/me` once (client), exposes `{ user, loading, signIn(returnTo), signOut() }` (signIn navigates to `/api/auth/google?returnTo=...`; signOut POSTs logout then reloads). AuthProvider = context wrapper used in layout.
+- [x] **Step 2:** Nav: minimal top bar — wordmark "Movie Night" in Fraunces italic, right side: avatar + name menu (Profile, Sign out) or "Sign in" text-amber link. Mobile-first; 44px touch targets. Tests: renders signed-out state; renders user name when `/api/auth/me` stubbed (fetch stubbed at test level, not a mocked hook).
 - [ ] **Step 3:** Commit: `feat: add auth provider and nav`
 
 ### Task 6.3: Landing page + privacy policy

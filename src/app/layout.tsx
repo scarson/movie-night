@@ -2,6 +2,8 @@
 // ABOUTME: Pages render inside a full-height column; content width convention is 680px.
 import type { Metadata } from "next";
 import { fraunces, satoshi } from "@/app/fonts";
+import { AuthProvider } from "@/components/auth-provider";
+import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
@@ -18,8 +20,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
       <body className="flex min-h-dvh flex-col font-body antialiased">
-        <div className="flex-1">{children}</div>
-        <SiteFooter />
+        <AuthProvider>
+          <Nav />
+          <div className="flex-1">{children}</div>
+          <SiteFooter />
+        </AuthProvider>
       </body>
     </html>
   );
