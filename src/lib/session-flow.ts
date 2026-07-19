@@ -2,6 +2,8 @@
 // ABOUTME: profile load/save, quick picks, group members, session create and match.
 import type { ProfileDraft } from "@/components/profile-editor";
 import type { TitleRef } from "@/components/title-search";
+import type { SessionView, TitleSummary } from "@/lib/movie-sessions";
+import type { MatchingResponse } from "@/types/matching";
 
 export interface Member {
   userId: string;
@@ -29,12 +31,16 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/** POSTs/PUTs and returns the server's user-facing error string, or null on success. */
+/**
+ * POSTs/PUTs and returns the server's user-facing error string, or null on
+ * success. `kind` carries the matching error taxonomy through untouched so the
+ * results page can branch on it; every other caller ignores it.
+ */
 async function send<T>(
   url: string,
   method: "POST" | "PUT",
   body: unknown
-): Promise<{ data: T | null; error: string | null }> {
+): Promise<{ data: T | null; error: string | null; kind: string | null }> {
   try {
     const res = await fetch(url, {
       method,
@@ -42,14 +48,14 @@ async function send<T>(
       body: JSON.stringify(body),
     });
     const parsed = (await res.json().catch(() => null)) as
-      | (T & { error?: string })
+      | (T & { error?: string; kind?: string })
       | null;
     if (!res.ok) {
-      return { data: null, error: parsed?.error ?? GENERIC_ERROR };
+      return { data: null, error: parsed?.error ?? GENERIC_ERROR, kind: parsed?.kind ?? null };
     }
-    return { data: parsed as T, error: null };
+    return { data: parsed as T, error: null, kind: null };
   } catch {
-    return { data: null, error: GENERIC_ERROR };
+    return { data: null, error: GENERIC_ERROR, kind: null };
   }
 }
 
@@ -160,4 +166,45 @@ export async function requestMatch(sessionId: string): Promise<string | null> {
     {}
   );
   return error;
+}
+
+/** One matching round's payload, from either the session GET or a match POST. */
+export interface MatchRound {
+  round: number;
+  response: MatchingResponse;
+  titles: Record<number, TitleSummary>;
+}
+
+export interface SessionResults {
+  session: SessionView;
+  /** 0 when the session exists but has never been matched. */
+  round: number;
+  response: MatchingResponse | null;
+  titles: Record<number, TitleSummary>;
+}
+
+/** Reloads a session's latest round. Null means "we cannot show this tonight". */
+export async function fetchSessionResults(sessionId: string): Promise<SessionResults | null> {
+  return getJson<SessionResults>(`/api/movie-sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export interface RefinementInput {
+  keptTmdbIds: number[];
+  removedTmdbIds: number[];
+  steeringFeedback: string;
+}
+
+/**
+ * Runs a refinement round. Unlike `requestMatch` this surfaces the payload and
+ * the error `kind`, because the results page has to render both.
+ */
+export async function runMatchRound(
+  sessionId: string,
+  input: RefinementInput
+): Promise<{ data: MatchRound | null; error: string | null; kind: string | null }> {
+  return send<MatchRound>(
+    `/api/movie-sessions/${encodeURIComponent(sessionId)}/match`,
+    "POST",
+    input
+  );
 }

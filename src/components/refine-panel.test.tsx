@@ -108,6 +108,19 @@ describe("RefinePanel", () => {
     );
   });
 
+  it("closes refinement when the server says the budget is spent, whatever the count says", () => {
+    // The round number only advances on a SUCCESSFUL round, so a round_limit
+    // rejection leaves it below the ceiling — the server's word has to win.
+    const onRegenerate = vi.fn();
+    render(<RefinePanel {...BASE} round={4} exhausted onRegenerate={onRegenerate} />);
+
+    expect(regenerate().hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/last round of the night/i)).toBeTruthy();
+    expect(screen.getByText("Round 4 of 10")).toBeTruthy();
+    fireEvent.click(regenerate());
+    expect(onRegenerate).not.toHaveBeenCalled();
+  });
+
   it("stands down while a round is already running", () => {
     const onRegenerate = vi.fn();
     render(<RefinePanel {...BASE} busy onRegenerate={onRegenerate} />);

@@ -26,6 +26,11 @@ export interface RefinePanelProps {
   onRegenerate: () => void;
   onStartOver: () => void;
   busy?: boolean;
+  /**
+   * The server rejected the last round for hitting the limit. The round number
+   * only advances on success, so it cannot be inferred from the count alone.
+   */
+  exhausted?: boolean;
 }
 
 export function RefinePanel({
@@ -39,13 +44,14 @@ export function RefinePanel({
   onRegenerate,
   onStartOver,
   busy = false,
+  exhausted = false,
 }: RefinePanelProps) {
   const headingId = useId();
   const noteId = useId();
 
   const hasRatings = keptCount > 0 || removedCount > 0;
   const hasFeedback = steering.trim() !== "";
-  const spent = round >= maxRounds;
+  const spent = round >= maxRounds || exhausted;
 
   return (
     <section
