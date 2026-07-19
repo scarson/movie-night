@@ -148,3 +148,24 @@ No implementation defects were found across any round — all four rounds' findi
 **D1 local table list** (`npx wrangler d1 execute movie-night-db --local --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"`): `_cf_METADATA`, `group_members`, `groups`, `movie_sessions`, `profiles`, `rate_limit_log`, `recommendations`, `session_members`, `sessions`, `sqlite_sequence`, `tension_axes`, `titles`, `users`, `watch_history`, `watch_ratings` — all 13 schema tables present; `sqlite_sequence` (AUTOINCREMENT) and `_cf_METADATA` (Miniflare's own bookkeeping) are expected extras.
 
 **Phase 1 commits:** `c1ce289` (tag vocab + matching types), `4dd4f98` (docs sync), `8505089` (D1 schema + row types), `d3b9cc3` (db utils), `7c26642` (fake-D1 helper), `1388d1f` (review-driven test strengthening).
+
+## Task 2.1: src/lib/auth.ts
+
+**Built:** `src/lib/auth.ts`, `src/lib/auth.test.ts`.
+
+**Decisions:**
+- `src/lib/auth.ts` ported verbatim from `/Users/sam/Code/twin-cities-tee-times/src/lib/auth.ts`, changing ONLY `COOKIE_SESSION = "mn-session"`, `COOKIE_REFRESH = "mn-refresh"`, and the ABOUTME wording, per the plan's explicit instruction. Both encoded gotchas preserved unchanged: `DELETE FROM sessions ... RETURNING` for atomic refresh-token claim (prevents double-rotation races), and the 15m JWT / 90d refresh token lifetimes.
+- `src/lib/auth.test.ts` ported from tee-times' `src/lib/auth.test.ts` wholesale (per plan Step 1: "If tee-times has `src/lib/auth.test.ts`, port those tests wholesale first"), with two adaptations beyond the cookie-name swap:
+  1. Cookie names `tct-session`/`tct-refresh` → `mn-session`/`mn-refresh` throughout.
+  2. Replaced tee-times' jest-style `createMockD1()` (mock `mockFirst`/`mockRun` call sequencing) with this project's `createFakeD1(loadMigration())` helper from Task 1.4 — real SQLite via `node:sqlite`, seeded through small `seedUser`/`seedSession` test helpers. This is stronger than the reference: the rotation test now asserts actual DB state (old session row gone, exactly one new row for the user) instead of asserting a mock was called, and the "race condition" test simplifies to "no session row exists for that refresh-token hash" (DELETE...RETURNING naturally returns null for both never-existed and already-claimed-by-a-concurrent-request cases — they're indistinguishable, which is the correct real-world semantics).
+  3. Added a known-vector `sha256("abc")` test (plan Step 1's explicit requirement) alongside the existing determinism test.
+- The reference's "user was deleted" branch (session row found, but the joined `users` row is missing) is unreachable in the fake-D1 test given the schema's `sessions.user_id REFERENCES users(id) ON DELETE CASCADE` — deleting a user always cascades its sessions in the same statement, so a session can never outlive its user. tee-times' own suite didn't test this branch either (it's defensive dead code under FK enforcement). Not added as a test; noted here rather than silently skipped.
+- Ran red first: `Cannot find module '/src/lib/auth'` on all 24 tests, confirming expected failure before implementing.
+
+**Check results:**
+- `npx vitest run src/lib/auth.test.ts`: red first (module not found, 24/24 failing as expected); green after implementation (24/24 passed).
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 4 files / 42 tests passed.
+
+**Commit:** `d911d9c` — `feat: port auth utilities with mn- cookie prefix`
