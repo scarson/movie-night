@@ -1,8 +1,8 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents (Codex, Cursor, Cline, Aider, and other AGENTS.md-aware frameworks) when working with code in this repository.
 
-> **Sibling sync.** This file has a sibling at `AGENTS.md` carrying the same rules for the other agent framework. When updating either, update the other — the two files should stay identical except for framework-specific phrasing (agent names, tool names, the intro line, and this reminder). If you make a change here and you're not sure whether to apply it there, apply it there.
+> **Sibling sync.** This file has a sibling at `CLAUDE.md` carrying the same rules for the other agent framework. When updating either, update the other — the two files should stay identical except for framework-specific phrasing (agent names, tool names, the intro line, and this reminder). If you make a change here and you're not sure whether to apply it there, apply it there.
 
 ## Project Overview
 
@@ -157,8 +157,8 @@ When asked to do something, just do it - including obvious follow-up actions nee
 
 ## Issue tracking
 
-- You MUST use your TodoWrite tool to keep track of what you're doing 
-- You MUST NEVER discard tasks from your TodoWrite todo list without Sam's explicit approval
+- You MUST use your framework's todo/task-tracking tool to keep track of what you're doing 
+- You MUST NEVER discard tasks from your todo list without Sam's explicit approval
 
 ## Systematic Debugging Process
 
@@ -201,7 +201,7 @@ YOU MUST follow this debugging framework for ANY technical issue:
 
 ## Build & Dev Commands
 
-<!-- NOTE: Claude Code's Bash tool runs bash (Unix syntax). Use bash/forward-slash paths. -->
+<!-- NOTE: Shell commands run bash (Unix syntax). Use bash/forward-slash paths. -->
 <!-- WORKTREE COMMANDS: Use `git -C <path>` instead of `cd <path> && git <command>` to avoid permission prompts. -->
 <!-- For npm/npx in worktrees, `cd <path> && npm ...` will prompt — that's expected and acceptable. -->
 
@@ -346,7 +346,7 @@ Several domains are covered by both superpowers and gstack (review, debugging, s
 | Shipping/PR | `finishing-a-development-branch` | `/ship` |
 | Brainstorming | `brainstorming` | `/office-hours` |
 
-**Workflow skills** (invoke with the Skill tool):
+**Workflow skills** (invoke via your framework's skill mechanism, or read the skill file and follow it):
 
 | Skill | When to use |
 |-------|-------------|

@@ -3,6 +3,9 @@
 .claude/settings.local.json
 .private-journal/
 
+# Git worktrees — see docs/git-strategy.md
+.claude/worktrees/
+
 # Dev artifacts (local symlinks, not tracked)
 dev/mockups/
 dev/gstack/
