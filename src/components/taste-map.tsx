@@ -55,13 +55,13 @@ function MemberSection({
       style={{ borderColor: color, animationDelay: `${delayMs}ms` }}
       className="animate-rise-fade border-t pt-md"
     >
-      <h3
+      <h2
         id={headingId}
         style={{ color }}
         className="break-words font-display text-xl font-semibold"
       >
         {member.name}
-      </h3>
+      </h2>
       <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{member.summary}</p>
       {(member.primaryVibes.length > 0 || member.genreAffinities.length > 0) && (
         <div className="mt-md flex flex-wrap gap-sm">
@@ -154,13 +154,13 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
         className="animate-rise-fade"
       >
         <div aria-hidden="true" style={{ background: meetingRule }} className="h-0.5" />
-        <h3
+        <h2
           id={overlapHeadingId}
           style={{ color: OVERLAP_COLOR }}
           className="mt-md break-words font-display text-xl font-semibold"
         >
           {solo ? "What ties it together" : "Where you meet"}
-        </h3>
+        </h2>
         <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{overlap.summary}</p>
 
         {overlap.sharedVibes.length > 0 && (
@@ -173,7 +173,7 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
 
         {overlap.tensionPoints.length > 0 && (
           <div className="mt-lg">
-            <h4 className="text-xs uppercase tracking-wider text-ash">Where it pulls</h4>
+            <h3 className="break-words text-xs uppercase tracking-wider text-ash">Where it pulls</h3>
             <ul
               aria-label="Where it pulls"
               className="mt-sm flex max-w-[62ch] flex-col gap-sm"
@@ -195,8 +195,8 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
           style={{ animationDelay: `${nextDelay()}ms` }}
           className="animate-rise-fade max-w-[62ch] border-t border-slate pt-md text-sm text-ash"
         >
-          At your request, tonight&apos;s picks lean toward everyone else.{" "}
-          <span className="text-ash/70">Only you can see this.</span>
+          At your request, tonight&apos;s picks lean toward everyone else. Only
+          you can see this.
         </p>
       )}
     </div>

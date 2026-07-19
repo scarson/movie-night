@@ -508,6 +508,42 @@ describe("results page", () => {
     expect(await screen.findByText("Read from your saved profiles.")).toBeTruthy();
   });
 
+  it("keeps the heading outline unbroken in every view", async () => {
+    stubApi();
+    await renderResults();
+    await screen.findByRole("tab", { name: /taste map/i });
+
+    // Screen-reader users navigate by heading; h1 straight to h3 reads as a
+    // missing level. Every view must descend one step at a time.
+    // Document order, not sorted: a later h2 elsewhere on the page does not
+    // repair an h1 followed immediately by an h3.
+    const levels = () =>
+      screen.getAllByRole("heading").map((h) => Number(h.tagName.slice(1)));
+
+    for (const view of [/taste map/i, /picks/i, /words/i]) {
+      fireEvent.click(screen.getByRole("tab", { name: view }));
+      const seen = levels();
+      expect(seen[0]).toBe(1);
+      for (let i = 1; i < seen.length; i++) {
+        expect(seen[i] - seen[i - 1]).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("announces a failed round as a heading, not just styled text", async () => {
+    vi.useFakeTimers();
+    stubApi({
+      match: { status: 503, body: { error: "Taking a nap", kind: "timeout" } },
+    });
+    await renderResults();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("refine-error-heading").tagName).toBe("H2");
+  });
+
   it("hands the evening back to the hub on start over", async () => {
     stubApi();
     await renderResults();

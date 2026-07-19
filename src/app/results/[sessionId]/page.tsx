@@ -69,7 +69,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   );
 
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const errorHeadingRef = useRef<HTMLParagraphElement | null>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const tabBaseId = useId();
 
   useEffect(() => {
@@ -194,14 +194,14 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         </p>
         {refineError !== null && (
           <div role="alert" className="mt-lg">
-            <p
+            <h2
               ref={errorHeadingRef}
               tabIndex={-1}
               data-testid="refine-error-heading"
               className="font-display text-xl font-semibold text-warm-white"
             >
               {(ERROR_FRAMING[refineError.kind ?? ""] ?? DEFAULT_FRAMING).heading}
-            </p>
+            </h2>
             <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           </div>
         )}
@@ -316,14 +316,14 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           role="alert"
           className="mt-2xl rounded-panel border border-ember p-lg"
         >
-          <p
+          <h2
             ref={errorHeadingRef}
             tabIndex={-1}
             data-testid="refine-error-heading"
             className="font-display text-xl font-semibold text-warm-white"
           >
             {framing.heading}
-          </p>
+          </h2>
           <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           <div className="mt-md flex flex-wrap gap-sm">
             {framing.retry && (

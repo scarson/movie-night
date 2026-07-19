@@ -74,7 +74,7 @@ export function RefinePanel({
       {(hasRatings || carriedRemovedCount > 0) && (
         <div className="mt-md flex flex-wrap gap-x-md gap-y-2xs text-sm tabular-nums">
           {keptCount > 0 && <span className="text-sage">{`${keptCount} kept`}</span>}
-          {removedCount > 0 && <span className="text-ember">{`${removedCount} removed`}</span>}
+          {removedCount > 0 && <span className="text-cream">{`${removedCount} removed`}</span>}
           {carriedRemovedCount > 0 && (
             <span className="text-ash">{`+ ${carriedRemovedCount} from earlier rounds`}</span>
           )}
@@ -107,7 +107,7 @@ export function RefinePanel({
           data-testid="regenerate"
           disabled={spent || busy}
           onClick={onRegenerate}
-          className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:bg-slate disabled:text-ash"
+          className="flex min-h-12 items-center justify-center rounded-control border border-transparent bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:border-slate disabled:bg-transparent disabled:text-ash"
         >
           {refineButtonLabel(hasRatings, hasFeedback)}
         </button>

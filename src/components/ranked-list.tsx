@@ -173,13 +173,13 @@ export function RankedList({
             </div>
 
             <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2">
-              <h3
+              <h2
                 className={`break-words font-display text-[1.75rem]/[1.15] font-bold text-warm-white ${
                   removed ? "line-through" : ""
                 }`}
               >
                 {name}
-              </h3>
+              </h2>
               <span className="sr-only">{`${name}, ${rec.matchScore}% match`}</span>
               {meta !== "" && <p className="mt-2xs break-words text-sm text-ash">{meta}</p>}
 
