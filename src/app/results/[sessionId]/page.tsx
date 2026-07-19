@@ -74,7 +74,8 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   const router = useRouter();
 
   const [results, setResults] = useState<SessionResults | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState<"missing" | "error" | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [tab, setTab] = useState<TabId>("map");
   const [ratings, setRatings] = useState<Record<number, Rating>>({});
   const [carriedRemoved, setCarriedRemoved] = useState<number[]>([]);
@@ -99,16 +100,16 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
     (async () => {
       const loaded = await fetchSessionResults(sessionId);
       if (cancelled) return;
-      if (loaded === null) {
-        setLoadFailed(true);
+      if (loaded.status === "ok") {
+        setResults(loaded.results);
         return;
       }
-      setResults(loaded);
+      setLoadError(loaded.status);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user, sessionId]);
+  }, [user, sessionId, reloadNonce]);
 
   // The control that failed is inside the panel that just changed; without this
   // the keyboard user is left on <body> with no idea anything happened. `busy`
@@ -143,7 +144,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   if (!user) return null;
 
-  if (loadFailed) {
+  if (loadError === "missing") {
     return (
       <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
@@ -156,6 +157,38 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         <Link href="/tonight" className={`${PRIMARY_BUTTON} mt-xl w-fit`}>
           Back to tonight
         </Link>
+      </main>
+    );
+  }
+
+  if (loadError === "error") {
+    return (
+      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+        <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
+          We couldn&apos;t reach tonight&apos;s picks
+        </h1>
+        <p role="alert" className="mt-md max-w-[62ch] text-base text-cream">
+          That looked like a connection blip, not a missing session — give it another
+          go.
+        </p>
+        <div className="mt-xl flex flex-col gap-sm sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              setReloadNonce((n) => n + 1);
+            }}
+            className={PRIMARY_BUTTON}
+          >
+            Try again
+          </button>
+          <Link
+            href="/tonight"
+            className="inline-flex min-h-12 items-center text-base font-medium text-amber hover:text-warm-white"
+          >
+            Back to tonight
+          </Link>
+        </div>
       </main>
     );
   }

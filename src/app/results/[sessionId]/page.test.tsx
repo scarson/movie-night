@@ -420,6 +420,40 @@ describe("results page", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 
+  it("offers a retry on a transient load failure instead of claiming the session is gone", async () => {
+    // A 500 (or a network blip) says nothing about whether the session exists;
+    // asserting "doesn't exist or isn't yours" over a transient blip is wrong,
+    // and a dead-end "Back to tonight" link is the only way out.
+    let attempt = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/auth/me") return new Response(JSON.stringify(ALICE), { status: 200 });
+        if (url.startsWith("/api/movie-sessions/")) {
+          attempt++;
+          if (attempt === 1) {
+            return new Response(JSON.stringify({ error: "boom" }), { status: 500 });
+          }
+          return new Response(
+            JSON.stringify({ session: SESSION, round: 1, response: RESPONSE, titles: TITLES }),
+            { status: 200 }
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+    await renderResults();
+
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeTruthy();
+    expect(screen.queryByText(/isn't yours to see/i)).toBeNull();
+    expect(screen.queryByRole("heading", { name: /can't find tonight/i })).toBeNull();
+
+    // Retrying re-fetches; the second attempt succeeds and the picks render.
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("tab", { name: /taste map/i })).toBeTruthy();
+  });
+
   it("asks before matching a session that has no round yet", async () => {
     const calls = stubApi({
       get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },

@@ -183,9 +183,31 @@ export interface SessionResults {
   titles: Record<number, TitleSummary>;
 }
 
-/** Reloads a session's latest round. Null means "we cannot show this tonight". */
-export async function fetchSessionResults(sessionId: string): Promise<SessionResults | null> {
-  return getJson<SessionResults>(`/api/movie-sessions/${encodeURIComponent(sessionId)}`);
+/**
+ * Reloads a session's latest round.
+ *
+ * `"missing"` is only the member-scoped GET's 404, which is deliberately the
+ * same for an unknown session and a session the caller isn't a member of — the
+ * two must stay indistinguishable, so callers can assert neither over the other.
+ * `"error"` is a transient failure (network throw, 5xx, unparseable body) and
+ * says nothing about whether the session exists.
+ */
+export type SessionLoad =
+  | { status: "ok"; results: SessionResults }
+  | { status: "missing" }
+  | { status: "error" };
+
+export async function fetchSessionResults(sessionId: string): Promise<SessionLoad> {
+  try {
+    const res = await fetch(`/api/movie-sessions/${encodeURIComponent(sessionId)}`);
+    if (res.ok) {
+      const data = (await res.json().catch(() => null)) as SessionResults | null;
+      return data === null ? { status: "error" } : { status: "ok", results: data };
+    }
+    return res.status === 404 ? { status: "missing" } : { status: "error" };
+  } catch {
+    return { status: "error" };
+  }
 }
 
 export interface RefinementInput {
