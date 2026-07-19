@@ -36,10 +36,20 @@ export async function runWeeklyRefresh(
   let errors = 0;
   let pending: D1PreparedStatement[] = [];
 
+  // Commit the queued chunk. Clear `pending` before awaiting so a failed batch
+  // isn't re-submitted (and grown) on the next chunk boundary, count titles
+  // only once the write commits, and swallow the failure so one bad chunk
+  // neither aborts the run nor propagates out of the final flush.
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
-    await db.batch(pending);
+    const batch = pending;
     pending = [];
+    try {
+      await db.batch(batch);
+      refreshed += batch.length;
+    } catch {
+      errors += batch.length;
+    }
   };
 
   for (const row of stale.results) {
@@ -61,7 +71,6 @@ export async function runWeeklyRefresh(
             row.content_type
           )
       );
-      refreshed++;
 
       if (pending.length >= BATCH_CHUNK_SIZE) {
         await flush();

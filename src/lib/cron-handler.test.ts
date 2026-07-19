@@ -202,4 +202,30 @@ describe("runWeeklyRefresh", () => {
     expect((batchSpy.mock.calls[0][0] as unknown[]).length).toBe(25);
     expect((batchSpy.mock.calls[1][0] as unknown[]).length).toBe(5);
   });
+
+  it("counts a failed batch as errors (not refreshed) and does not throw or resubmit it", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitle(db, { tmdbId: 1, title: "A", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 2, title: "B", popularity: 20, lastRefreshedAt: null });
+
+    // A batch write that always rejects: the summary must report the chunk as
+    // errors (not queued-and-counted-as-refreshed), the function must resolve
+    // rather than propagate the final-flush failure, and the failed statements
+    // must not be re-submitted on the next chunk boundary.
+    const batchSpy = vi.fn(() => Promise.reject(new Error("D1 batch write failed")));
+    const failingDb = { ...db, batch: batchSpy } as unknown as D1Database;
+    const fetchStub = vi.fn((url: string | URL) => {
+      const id = Number(new URL(String(url)).pathname.split("/").pop());
+      return Promise.resolve(jsonResponse(detailFixture(id)));
+    });
+    const log = vi.fn();
+
+    await expect(
+      runWeeklyRefresh(fakeEnv(failingDb), fetchStub as unknown as typeof fetch, log)
+    ).resolves.toBeUndefined();
+
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({ event: "cron_refresh", refreshed: 0, errors: 2 });
+    // One flush attempt for the two-statement batch — never resubmitted.
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+  });
 });
