@@ -227,3 +227,24 @@ No implementation defects found across any round. Stopped at 3 rounds per standi
 
 **Phase 2 commits:** `d911d9c` (auth utilities), `ccee89b` (docs sync), `b22b51e` (OAuth routes), `e4a726f` (docs sync), `3083516` (account deletion).
 
+## Task 3.1: TMDB client
+
+**Built:** `src/lib/tmdb.ts`, `src/lib/tmdb.test.ts`, `src/test/fixtures/tmdb-discover-page.json`, `src/test/fixtures/tmdb-movie-detail.json`, `src/test/fixtures/tmdb-search.json`.
+
+**Fixture provenance (per the plan's documented fallback):** no `.dev.vars` exists in this worktree (confirmed via `ls`), so no real TMDB token was available to capture live responses. WebFetch against `developer.themoviedb.org/reference/{discover-movie,movie-details,movie-search,movie-keywords,movie-credits,movie-watch-providers,genre-movie-list}` returned only the parameter/schema shell for each page — the interactive "Try It" response examples require a live session and aren't present in the static HTML. Fixtures were instead transcribed from TMDB API v3's stable, versioned response contract using real, well-known movie ids/titles (Inception `27205`, The Dark Knight `155`) so field names, nesting, and value shapes are honest rather than invented. This is recorded inline in `tmdb.test.ts`'s header comment as well as here.
+
+**Decisions:**
+- Test written first per TDD (`src/lib/tmdb.test.ts`): ran red — `Cannot find module './tmdb'` — before implementing. 15 tests covering: `discoverPageToTitles` (field mapping, empty `release_date`/null `poster_path` → null, genre_ids with no map entry silently dropped), `detailToTitle` (genres from the embedded `genres:[{id,name}]` array, not `genre_ids`; defensive genre-map fallback when a name is empty/missing), `detailToEnrichment` (top-8 cast by `order` — including an out-of-order input to prove the sort, not just a lucky pre-sorted fixture; keyword name strings; US streaming subset; empty-object fallback when the US entry or the whole `credits`/`keywords`/`watch/providers` block is absent), `searchResultsToSummaries`, and the four fetch wrappers' URL/header construction against an injected `fetch` stub (asserts *our* request construction, not TMDB's behavior) plus a 401→`TmdbError` case.
+- API design decision (plan specifies function signatures but not how they compose): `discoverPageToTitles` + `detailToEnrichment` is the pairing the seed script (Task 3.2) will use — discover pages are cheap and give base fields (title/year/genres/synopsis/poster/votes/popularity) for many titles per request, then one detail fetch per title supplies only the cast/keywords/streaming enrichment. `detailToTitle` builds a *complete* `TitleFields` from a detail response alone with no discover call — reserved for Task 5.4's PUT-enrichment path (profile references a `tmdbId` not yet in `titles`, fetched directly by id, no discover step involved). This composition isn't spelled out in the plan; recording it here so Task 3.2/5.4 executors don't have to re-derive it.
+- `detailToTitle(json, genreMap)` — the plan requires the `genreMap` parameter even though detail responses embed `{id, name}` genre objects. Made it a genuine defensive fallback (`genre.name || genreMap[genre.id]`) rather than an unused parameter, tested explicitly (a genres entry with an empty/undefined name still resolves via the map). Avoids an unused-parameter lint smell while keeping the plan's exact signature.
+- `tmdbGet<T>(path, params, token, fetchImpl)` is the single thin wrapper all four network functions route through: builds `https://api.themoviedb.org/3${path}` via `URL`/`searchParams` (correct percent-encoding for the literal `watch/providers` value in `append_to_response`), sets `Authorization: Bearer ${token}` + `accept: application/json`, throws `TmdbError` (has a `.status` field) on non-ok responses. Seed script's "abort on 401" (Task 3.2) can check `err.status === 401`.
+- No `posterUrl()` helper added — poster URL construction (`https://image.tmdb.org/t/p/w342...`) belongs to the UI layer (Task 7.1's Poster component) per the schema comment that `titles.poster_path` stores only the TMDB path fragment; adding it here would be scope creep per standing rule 6.
+
+**Check results:**
+- `npx vitest run src/lib/tmdb.test.ts`: red first (module not found, confirmed); green after implementation (15/15 passed).
+- `npx tsc --noEmit`: one error on first pass (`credits.cast` slice typed as `{order:number}[]` didn't structurally satisfy `TmdbCastMember[]` in the "shuffled input" test) — fixed by importing and casting through `TmdbCastMember` directly instead of an inline structural type. Clean after.
+- `npm run lint`: clean.
+- `npm test`: clean, 6 files / 62 tests passed.
+
+**Commit:** `fe524c1` — `feat: add TMDB client with fixture-tested transforms`
+
