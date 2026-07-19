@@ -750,7 +750,7 @@ const inviteCode = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpq
 
 # Phase 5 — Matching engine + session/profile API
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** 🚧 IN PROGRESS — claimed 2026-07-19T04:58:21Z (see latest branch commits for liveness) on branch `claude/app-design-plan-build-b04129`
 
 ### Task 5.1: (moved) Fake-D1 test helper
 
