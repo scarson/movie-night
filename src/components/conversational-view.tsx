@@ -26,8 +26,8 @@ export function ConversationalView({ text }: ConversationalViewProps) {
           style={{ animationDelay: `${index * STAGGER_MS}ms` }}
           className={
             hasLead && index === 0
-              ? "animate-rise-fade font-display text-xl/[1.5] text-warm-white"
-              : "animate-rise-fade mt-lg text-base/[1.75] text-cream"
+              ? "animate-rise-fade break-words font-display text-xl/[1.5] text-warm-white"
+              : "animate-rise-fade mt-lg break-words text-base/[1.75] text-cream"
           }
         >
           <BoldText text={paragraph} />

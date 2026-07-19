@@ -174,27 +174,27 @@ export function RankedList({
 
             <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2">
               <h3
-                className={`font-display text-[1.75rem]/[1.15] font-bold text-warm-white ${
+                className={`break-words font-display text-[1.75rem]/[1.15] font-bold text-warm-white ${
                   removed ? "line-through" : ""
                 }`}
               >
                 {name}
               </h3>
               <span className="sr-only">{`${name}, ${rec.matchScore}% match`}</span>
-              {meta !== "" && <p className="mt-2xs text-sm text-ash">{meta}</p>}
+              {meta !== "" && <p className="mt-2xs break-words text-sm text-ash">{meta}</p>}
 
               {kept && <p className="mt-sm text-sm text-sage">Kept for the next round</p>}
               {removed && (
                 <p className="mt-sm text-sm text-ember">Won&apos;t come back next round</p>
               )}
 
-              <p className="mt-md max-w-[62ch] text-base/[1.6] text-cream">{rec.explanation}</p>
+              <p className="mt-md max-w-[62ch] break-words text-base/[1.6] text-cream">{rec.explanation}</p>
 
               <div className="mt-lg flex flex-wrap items-center gap-x-md gap-y-sm">
                 {labels.map((label, i) => (
                   <span
                     key={i}
-                    className="rounded-tag border border-slate px-sm py-2xs text-xs text-ash"
+                    className="max-w-full break-words rounded-tag border border-slate px-sm py-2xs text-xs text-ash"
                   >
                     {label}
                   </span>

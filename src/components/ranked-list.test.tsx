@@ -184,6 +184,17 @@ describe("RankedList", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 
+  it("lets an unbreakable title or explanation break rather than widen the page", () => {
+    // Titles come from the catalog and explanations from the model; a single
+    // long token used to push the item box to ~846px inside a 343px column.
+    render(<Harness />);
+    const item = screen.getAllByRole("listitem")[0];
+    const title = within(item).getByText("Inception");
+    const explanation = within(item).getByText(RECS[0].explanation);
+    expect(title.className).toContain("break-words");
+    expect(explanation.className).toContain("break-words");
+  });
+
   it("staggers item entrances at 80ms per DESIGN.md motion", () => {
     render(<Harness />);
     const items = screen.getAllByRole("listitem");

@@ -201,6 +201,20 @@ describe("TasteMap", () => {
     expect(screen.getByRole("group", { name: "Alice Chen" })).toBeTruthy();
   });
 
+  it("lets an unbreakable word break rather than widen the page", () => {
+    // Names, vibes and prose here are all model- or user-authored. One long
+    // token used to push the document ~110px wider than the viewport; jsdom
+    // does no layout, so this pins the mechanism the browser check verified.
+    const { container } = render(<TasteMap tasteMap={TWO} showWeightingNote={false} />);
+    const textNodes = [
+      ...container.querySelectorAll<HTMLElement>("h3, p, li > span, .rounded-pill"),
+    ].filter((el) => (el.textContent ?? "").trim() !== "");
+    expect(textNodes.length).toBeGreaterThan(4);
+    for (const el of textNodes) {
+      expect(el.className).toContain("break-words");
+    }
+  });
+
   it("staggers section entrances at 80ms per DESIGN.md motion", () => {
     const { container } = render(<TasteMap tasteMap={TWO} showWeightingNote={false} />);
     const staggered = [...container.querySelectorAll<HTMLElement>(".animate-rise-fade")];

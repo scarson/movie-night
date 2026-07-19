@@ -30,7 +30,7 @@ function Tag({ label, color }: { label: string; color: string }) {
   return (
     <span
       style={{ color, borderColor: color }}
-      className="inline-flex items-center rounded-pill border px-md py-2xs text-xs"
+      className="inline-flex max-w-full items-center break-words rounded-pill border px-md py-2xs text-xs"
     >
       {label}
     </span>
@@ -58,11 +58,11 @@ function MemberSection({
       <h3
         id={headingId}
         style={{ color }}
-        className="font-display text-xl font-semibold"
+        className="break-words font-display text-xl font-semibold"
       >
         {member.name}
       </h3>
-      <p className="mt-sm max-w-[62ch] text-base/[1.7] text-cream">{member.summary}</p>
+      <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{member.summary}</p>
       {(member.primaryVibes.length > 0 || member.genreAffinities.length > 0) && (
         <div className="mt-md flex flex-wrap gap-sm">
           {/* Keyed by position: the model can and does repeat a word across a
@@ -157,11 +157,11 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
         <h3
           id={overlapHeadingId}
           style={{ color: OVERLAP_COLOR }}
-          className="mt-md font-display text-xl font-semibold"
+          className="mt-md break-words font-display text-xl font-semibold"
         >
           {solo ? "What ties it together" : "Where you meet"}
         </h3>
-        <p className="mt-sm max-w-[62ch] text-base/[1.7] text-cream">{overlap.summary}</p>
+        <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{overlap.summary}</p>
 
         {overlap.sharedVibes.length > 0 && (
           <div className="mt-md flex flex-wrap gap-sm">
@@ -179,9 +179,9 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
               className="mt-sm flex max-w-[62ch] flex-col gap-sm"
             >
               {overlap.tensionPoints.map((point, i) => (
-                <li key={i} className="flex gap-sm text-base/[1.6] text-cream">
+                <li key={i} className="flex gap-sm break-words text-base/[1.6] text-cream">
                   <span aria-hidden="true" className="mt-2 h-px w-4 shrink-0 bg-ember" />
-                  <span>{point}</span>
+                  <span className="min-w-0 break-words">{point}</span>
                 </li>
               ))}
             </ul>

@@ -202,7 +202,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
             >
               {(ERROR_FRAMING[refineError.kind ?? ""] ?? DEFAULT_FRAMING).heading}
             </p>
-            <p className="mt-2xs max-w-[62ch] text-base text-cream">{refineError.message}</p>
+            <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           </div>
         )}
         <button
@@ -250,7 +250,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         Tonight, then.
       </h1>
-      <p className="mt-sm max-w-[62ch] text-base text-ash">{moodLine}</p>
+      <p className="mt-sm max-w-[62ch] break-words text-base text-ash">{moodLine}</p>
 
       <div
         role="tablist"
@@ -324,7 +324,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           >
             {framing.heading}
           </p>
-          <p className="mt-2xs max-w-[62ch] text-base text-cream">{refineError.message}</p>
+          <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           <div className="mt-md flex flex-wrap gap-sm">
             {framing.retry && (
               <button type="button" onClick={regenerate} className={PRIMARY_BUTTON}>
