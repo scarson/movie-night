@@ -66,11 +66,17 @@ notes and commit messages.
 
 ## Execution Status
 
-**Overall:** Not started.
+**Overall:** Phase 0 in progress.
+
+### Deviations
+
+- **Task 0.1:** `wrangler` pinned to exact `4.105.0` (not `^4.105.0`) — the caret range resolves to `4.112.0` on a fresh install, and wrangler ≥4.108.0 requires `@cloudflare/workers-types@^5.x` as a peer, conflicting with the plan-pinned v4 workers-types line (ERESOLVE). Exact-pinning to `4.105.0` matches tee-times' own locked version.
+- **Task 0.1:** `@anthropic-ai/sdk` pinned to `^0.112.3`, not the plan's `^0.116.0` — `0.116.0` does not exist on the npm registry; `0.112.3` was latest published at execution time.
+- **Task 0.1:** `eslint.config.mjs` ignores list includes `"mockup.jsx"` in addition to tee-times' `.open-next/`, `.next/`, `.wrangler/` — tee-times has no such file; `mockup.jsx` is functional-spec reference material (per this plan's header) that pre-existed with `react/no-unescaped-entities` violations, not application code we intend to lint.
 
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
-| 0 — Scaffold & config | ⬜ Not started | — | — |
+| 0 — Scaffold & config | 🚧 IN PROGRESS (claimed 2026-07-19T00:42:11Z, branch `claude/app-design-plan-build-b04129`) | — | — |
 | 1 — Types, tags, schema, db | ⬜ Not started | — | — |
 | 2 — Auth | ⬜ Not started | — | — |
 | 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
@@ -103,7 +109,7 @@ notes and commit messages.
 
 # Phase 0 — Scaffold & config
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** 🚧 IN PROGRESS (claimed 2026-07-19T00:42:11Z, branch `claude/app-design-plan-build-b04129`)
 
 ### Task 0.1: Initialize Next.js project skeleton
 
@@ -111,7 +117,7 @@ notes and commit messages.
 
 Do NOT run `create-next-app` (it fights the existing repo). Author files directly, mirroring tee-times (`/Users/sam/Code/twin-cities-tee-times/package.json`, `next.config.ts`, `tsconfig.json`) with these differences: name `movie-night`, no aws4fetch/better-sqlite3/playwright deps, add `@anthropic-ai/sdk` and `nanoid` (^5) deps.
 
-- [ ] **Step 1:** Write `package.json`:
+- [x] **Step 1:** Write `package.json`:
 
 ```json
 {
@@ -164,12 +170,12 @@ Do NOT run `create-next-app` (it fights the existing repo). Author files directl
 
 Note: tee-times pins `typescript ^6.0.3` and it type-checks Next 16 cleanly — keep it (the header's "TypeScript 5 (strict)" in CLAUDE.md refers to language edition; if `^6.0.3` causes trouble, fall back to `^5.9` and record a Deviation).
 
-- [ ] **Step 2:** `next.config.ts` — copy tee-times minimal config verbatim (`const nextConfig: NextConfig = {}; export default nextConfig;`) and add the OpenNext dev initializer if tee-times has it; check `/Users/sam/Code/twin-cities-tee-times/next.config.ts` — it does NOT call `initializeOpenNextCloudflareForDev()`, so neither do we (getCloudflareContext works in `next dev` via the async mode only if initialized; since tee-times ships without it and uses `npm run preview` for CF-context testing, match that. Record a Deviation if you find dev-mode D1 access is needed and add `initializeOpenNextCloudflareForDev()` per OpenNext docs).
-- [ ] **Step 3:** `tsconfig.json` — copy tee-times verbatim (strict, `@/*` → `./src/*`, types `@cloudflare/workers-types`, exclude `worker.ts`).
-- [ ] **Step 4:** `eslint.config.mjs` + `postcss.config.mjs` — copy from tee-times (flat config with `eslint-config-next`; postcss with `@tailwindcss/postcss`).
-- [ ] **Step 5:** Minimal `src/app/layout.tsx`, `src/app/page.tsx` ("Movie Night" placeholder h1 — replaced in Phase 6), `src/app/globals.css` with `@import "tailwindcss";`.
-- [ ] **Step 6:** `npm install` → `npx tsc --noEmit` passes → `npm run lint` passes → `npm run build` succeeds.
-- [ ] **Step 7:** Commit: `chore: scaffold Next.js 16 project (mirrors twin-cities-tee-times config)`
+- [x] **Step 2:** `next.config.ts` — copy tee-times minimal config verbatim (`const nextConfig: NextConfig = {}; export default nextConfig;`) and add the OpenNext dev initializer if tee-times has it; check `/Users/sam/Code/twin-cities-tee-times/next.config.ts` — it does NOT call `initializeOpenNextCloudflareForDev()`, so neither do we (getCloudflareContext works in `next dev` via the async mode only if initialized; since tee-times ships without it and uses `npm run preview` for CF-context testing, match that. Record a Deviation if you find dev-mode D1 access is needed and add `initializeOpenNextCloudflareForDev()` per OpenNext docs).
+- [x] **Step 3:** `tsconfig.json` — copy tee-times verbatim (strict, `@/*` → `./src/*`, types `@cloudflare/workers-types`, exclude `worker.ts`).
+- [x] **Step 4:** `eslint.config.mjs` + `postcss.config.mjs` — copy from tee-times (flat config with `eslint-config-next`; postcss with `@tailwindcss/postcss`).
+- [x] **Step 5:** Minimal `src/app/layout.tsx`, `src/app/page.tsx` ("Movie Night" placeholder h1 — replaced in Phase 6), `src/app/globals.css` with `@import "tailwindcss";`.
+- [x] **Step 6:** `npm install` → `npx tsc --noEmit` passes → `npm run lint` passes → `npm run build` succeeds.
+- [x] **Step 7:** Commit: `chore: scaffold Next.js 16 project (mirrors twin-cities-tee-times config)`
 
 ### Task 0.2: Cloudflare config — wrangler.jsonc, open-next.config.ts, worker.ts, env.d.ts, vitest
 

@@ -89,6 +89,14 @@ web_modules/
 # Next.js build output
 .next
 out
+next-env.d.ts
+
+# Cloudflare / OpenNext build output
+.open-next/
+.wrangler/
+
+# macOS
+.DS_Store
 
 # Nuxt.js build / generate output
 .nuxt
