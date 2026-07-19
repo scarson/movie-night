@@ -274,3 +274,26 @@ No implementation defects found across any round. Stopped at 3 rounds per standi
 
 **Commit:** `bc867a9` — `feat: add TMDB seed script`
 
+## Task 3.3: Weekly streaming-refresh cron
+
+**Built:** `src/lib/cron-handler.test.ts`. Modified: `src/lib/cron-handler.ts` (replaced the Phase 0 no-op stub with the real implementation).
+
+**Decisions:**
+- Test written first per TDD against the real Phase 0 stub (not a missing module, since the file/signature already existed from Task 0.2): 7 tests, all red against the stub (each failed on assertions — the stub does nothing — confirming the expected failure mode) before implementing.
+- **Signature deviation from the locked 2-arg stub, done deliberately per the dispatching instruction:** added a third optional parameter `log: (line: string) => void = console.log`, matching the injected-logger pattern the plan establishes for the matching engine (Task 5.2: "via an injected log parameter... keeps test output pristine AND asserts log shape"). This is additive-only — `worker.ts`'s existing single-argument call site (`runWeeklyRefresh(env)`) still compiles and behaves identically (defaults to `console.log`), so the Task 0.2 stub's contract ("Phase 3 keeps that exact signature") is honored for every existing caller; only the *optional* tail was extended. Without this, the structured summary log line test would have needed a `vi.spyOn(console, "log")`, which is exactly the pattern testing-pitfalls §1 (test output pristine) discourages when a cleaner injection point is available and already precedented in this codebase.
+- Query for the refresh candidate set: `SELECT tmdb_id, content_type FROM titles WHERE last_refreshed_at IS NULL OR last_refreshed_at < ${sqliteIsoNow("-7 days")} ORDER BY popularity DESC LIMIT 200`. `sqliteIsoNow`'s modifier is interpolated directly into the SQL text (not bound) — this exact pattern was reviewed and confirmed safe in the Phase 1 group review because the modifier is always a hardcoded string literal, never request-derived; `"-7 days"` here is likewise a hardcoded literal.
+- `STALE_TITLES_LIMIT = 200` is a module constant, not read from `env` — the plan's Free-vs-Paid-plan note ("~200 TMDB fetches per run requires the Workers Paid plan's 1000-subrequest limit... if the account is Free at deploy time, set LIMIT 40") describes a deploy-time fact not knowable during Phase 3 implementation. Left at 200 with a comment pointing here; **Phase 8 must confirm the Cloudflare account's plan tier before deploying the cron trigger and lower this constant to 40 if it's Free** — otherwise the cron invocation will hit the subrequest limit and fail mid-run on every execution.
+- Both `tmdb_id` AND `content_type` are selected and used in the `UPDATE ... WHERE` clause, even though the seed script (Task 3.2) only ever inserts `content_type = 'movie'` rows today — `titles`' primary key is the composite `(tmdb_id, content_type)`, and matching on `tmdb_id` alone would silently update the wrong row (or both) once TV rows exist. Cheap correctness now avoids a real bug later when TV support lands.
+- Update scope is exactly what the plan specifies — `streaming`, `popularity`, `vote_count`, `vote_average`, `last_refreshed_at` — deliberately NOT `title`/`genres`/`synopsis`/`poster_path`/`top_cast`/`keywords`. A weekly refresh's job is "is this still streaming where we said, and is it still as popular/well-rated as we thought," not a full re-seed; re-touching cast/keywords on every refresh would also be 10x the TMDB payload for no benefit this task needs.
+- Continues past per-title failures: each `fetchMovieDetail` + `detailToEnrichment` call is wrapped in its own `try/catch`; a failure increments `errors` and the loop moves on — no statement is queued for that title, so its `last_refreshed_at` stays stale (and it'll be picked up again next week, or sooner if it's still in the top-200 by popularity). Tested with a 500 response for one of two titles: the failing title's `last_refreshed_at` remains `NULL`, the succeeding title's is updated, and the summary line reports `{refreshed: 1, errors: 1}`.
+- `db.batch` chunking: pending `UPDATE` statements accumulate in an array and flush via `db.batch()` once they reach 25, with a final flush after the loop for any remainder. Tested by seeding 30 stale titles (all succeeding) and asserting `db.batch` (spied via `vi.spyOn`) is called exactly twice, with chunk sizes 25 and 5 — proves the chunking boundary, not just "batch was called."
+- The 200-cap itself is tested by seeding 205 stale titles (via a single bulk `INSERT ... VALUES (...),(...),...` through the fake D1's `exec()` for speed, not 205 round-tripped `.run()` calls) and asserting the fetch stub was called exactly 200 times — a real boundary test per testing-pitfalls §4 (oversized inputs / bounded growth), not just "it doesn't crash with a lot of rows."
+
+**Check results:**
+- `npx vitest run src/lib/cron-handler.test.ts`: red first against the Phase 0 stub (7/7 failing on assertions, confirming the stub is a no-op); green after implementation (7/7 passed).
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 8 files / 86 tests passed.
+
+**Commit:** `bfd3065` — `feat: implement weekly TMDB streaming refresh cron`
+
