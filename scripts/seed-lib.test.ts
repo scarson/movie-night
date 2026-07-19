@@ -1,6 +1,7 @@
 // ABOUTME: Tests for the seed script's pure helpers — SQL statement construction
 // ABOUTME: (escaping, NULL handling, JSON serialization) and .dev.vars parsing.
 import { describe, expect, it } from "vitest";
+import { createFakeD1, loadMigration } from "../src/test/fake-d1";
 import { parseDevVars, titleToInsertStatement, type SeedTitle } from "./seed-lib";
 
 const BASE_TITLE: SeedTitle = {
@@ -103,6 +104,66 @@ describe("titleToInsertStatement numeric coercion", () => {
     const sql = titleToInsertStatement({ ...BASE_TITLE, tmdbId: 27205.9 }, "2026-07-18T00:00:00.000Z");
 
     expect(sql).toContain("(27205, 'movie'");
+  });
+});
+
+describe("titleToInsertStatement — real SQLite round-trip (data-integrity check)", () => {
+  // These execute the generated SQL against the same node:sqlite engine the
+  // fake D1 (and, per the Phase 1 group review, real D1 itself) run on —
+  // proving the statement is genuinely valid SQL and the escaped values
+  // decode back to the exact original strings, not just "looks escaped."
+  async function execAndRead(sql: string) {
+    const db = createFakeD1(loadMigration());
+    await db.exec(sql);
+    return db.prepare("SELECT * FROM titles WHERE tmdb_id = ?").bind(BASE_TITLE.tmdbId).first<Record<string, unknown>>();
+  }
+
+  it("round-trips a title containing single quotes, a backslash, and a newline exactly", async () => {
+    const hostileTitle = "Ocean's \"Eleven\": A Heist\\Tale\nPart Two";
+    const sql = titleToInsertStatement({ ...BASE_TITLE, title: hostileTitle }, "2026-07-18T00:00:00.000Z");
+
+    const row = await execAndRead(sql);
+
+    expect(row).not.toBeNull();
+    expect(row!.title).toBe(hostileTitle);
+  });
+
+  it("round-trips unicode and emoji characters in the title and synopsis exactly", async () => {
+    const unicodeTitle = "七人の侍 🎬✨";
+    const unicodeSynopsis = "Un film sur des samouraïs — 侍 — protecting a village. 🗡️";
+    const sql = titleToInsertStatement(
+      { ...BASE_TITLE, title: unicodeTitle, synopsis: unicodeSynopsis },
+      "2026-07-18T00:00:00.000Z"
+    );
+
+    const row = await execAndRead(sql);
+
+    expect(row!.title).toBe(unicodeTitle);
+    expect(row!.synopsis).toBe(unicodeSynopsis);
+  });
+
+  it("round-trips a genres/streaming payload attempting a SQL-statement-close injection as literal JSON text, not executable SQL", async () => {
+    const hostileGenre = "Action'); DROP TABLE titles; --";
+    const sql = titleToInsertStatement({ ...BASE_TITLE, genres: [hostileGenre] }, "2026-07-18T00:00:00.000Z");
+
+    const db = createFakeD1(loadMigration());
+    await db.exec(sql);
+    // If the injection had escaped the string literal, this table would no longer exist.
+    const stillExists = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='titles'").first();
+    expect(stillExists).not.toBeNull();
+
+    const row = await db.prepare("SELECT genres FROM titles WHERE tmdb_id = ?").bind(BASE_TITLE.tmdbId).first<{
+      genres: string;
+    }>();
+    expect(JSON.parse(row!.genres)).toEqual([hostileGenre]);
+  });
+
+  it("round-trips an empty string title/synopsis (not confused with NULL)", async () => {
+    const sql = titleToInsertStatement({ ...BASE_TITLE, synopsis: "" }, "2026-07-18T00:00:00.000Z");
+
+    const row = await execAndRead(sql);
+
+    expect(row!.synopsis).toBe("");
   });
 });
 

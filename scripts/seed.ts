@@ -96,6 +96,13 @@ async function main(): Promise<void> {
     await sleep(THROTTLE_MS);
   }
 
+  if (titlesById.size === 0) {
+    console.error(
+      "Discovered 0 titles across all requested pages — aborting before writing scripts/seed.sql. Check the warnings above (every discover-page fetch may have failed)."
+    );
+    process.exit(1);
+  }
+
   console.log(`Discovered ${titlesById.size} unique title(s). Fetching per-title enrichment (cast/keywords/streaming)...`);
 
   const now = new Date().toISOString();
