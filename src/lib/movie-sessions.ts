@@ -169,10 +169,10 @@ export async function getSessionForMember(
   const row = await db
     .prepare(
       `SELECT ms.id, ms.group_id, ms.mood_vibes, ms.mood_text, ms.discover_new, ms.is_quick_match,
-              ms.created_at, sm.rough_day, g.name as group_name
+              ms.created_at, sm.rough_day,
+              (SELECT COUNT(*) FROM session_members WHERE session_id = ms.id) as member_count
        FROM movie_sessions ms
        JOIN session_members sm ON sm.session_id = ms.id AND sm.user_id = ?
-       JOIN groups g ON g.id = ms.group_id
        WHERE ms.id = ?`
     )
     .bind(userId, sessionId)
@@ -185,7 +185,7 @@ export async function getSessionForMember(
       is_quick_match: number;
       created_at: string;
       rough_day: number;
-      group_name: string;
+      member_count: number;
     }>();
   if (!row) return null;
 
@@ -196,7 +196,10 @@ export async function getSessionForMember(
     moodText: row.mood_text,
     discoverNew: row.discover_new === 1,
     isQuickMatch: row.is_quick_match === 1,
-    solo: row.group_name === SOLO_GROUP_NAME,
+    // Solo is a property of the session's membership, not the group's name —
+    // matching the client (members.length < 2) and CLAUDE.md. A single-member
+    // regular group is solo too, so the prompt never seeks overlap for one.
+    solo: row.member_count < 2,
     createdAt: row.created_at,
     roughDay: row.rough_day === 1,
   };

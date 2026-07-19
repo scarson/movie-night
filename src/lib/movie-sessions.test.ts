@@ -370,6 +370,31 @@ describe("getSessionForMember (rough-day privacy)", () => {
     const view = await getSessionForMember(db, sessionId, "u1");
     expect(view?.solo).toBe(true);
   });
+
+  it("marks a one-member regular group as solo (member count, not group name)", async () => {
+    // A user who creates a named group and starts a session before their
+    // partner joins has a single-member group. Solo must be detected from the
+    // member count — matching the client and CLAUDE.md — so the prompt never
+    // asks the model to find overlap or tension for a group of one.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp-solo1", ["u1"]);
+    const sessionId = await newSession(db, { groupId: "grp-solo1" });
+
+    const view = await getSessionForMember(db, sessionId, "u1");
+    expect(view?.solo).toBe(true);
+  });
+
+  it("marks a two-member group session as not solo", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedUser(db, "u2", "Alex");
+    await seedGroupWithMembers(db, "grp2", ["u1", "u2"]);
+    const sessionId = await newSession(db, { groupId: "grp2" });
+
+    const view = await getSessionForMember(db, sessionId, "u1");
+    expect(view?.solo).toBe(false);
+  });
 });
 
 describe("getSessionMembersWithProfiles", () => {
