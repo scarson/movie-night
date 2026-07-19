@@ -79,7 +79,7 @@ notes and commit messages.
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
 | 0 — Scaffold & config | ✅ SHIPPED (2026-07-18) | `8226a3d`, `842326f`, `ebb1dc6`, `b8d29b8` | — |
-| 1 — Types, tags, schema, db | ⬜ Not started | — | — |
+| 1 — Types, tags, schema, db | 🚧 IN PROGRESS (claimed 2026-07-19T00:51Z, branch `claude/app-design-plan-build-b04129`) | — | — |
 | 2 — Auth | ⬜ Not started | — | — |
 | 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
 | 4 — Groups | ⬜ Not started | — | — |
@@ -272,13 +272,13 @@ interface CloudflareEnv {
 
 # Phase 1 — Types, tags, D1 schema, db utils
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** 🚧 IN PROGRESS (claimed 2026-07-19T00:51Z, branch `claude/app-design-plan-build-b04129`)
 
 ### Task 1.1: Tag vocabulary + matching response types
 
 **Files:** Create: `src/config/tags.ts`, `src/types/matching.ts`, `src/types/matching.test.ts` (schema-shape test)
 
-- [ ] **Step 1:** `src/config/tags.ts` — exact vocabulary from mockup.jsx:
+- [x] **Step 1:** `src/config/tags.ts` — exact vocabulary from mockup.jsx:
 
 ```ts
 // ABOUTME: Shared tag vocabulary for taste profiles and session moods.
@@ -298,8 +298,8 @@ export const GENRE_TAGS = [
 export const ALL_TAGS = [...MOOD_TAGS, ...GENRE_TAGS];
 ```
 
-- [ ] **Step 2 (failing test first):** `src/types/matching.test.ts` asserts `MATCHING_RESPONSE_SCHEMA` is a valid JSON schema object with `additionalProperties: false` at every object level and required arrays covering all properties (walk the schema recursively). Run: `npx vitest run src/types/matching.test.ts` → FAIL (module missing).
-- [ ] **Step 3:** `src/types/matching.ts` — TypeScript interfaces + the JSON schema used for Anthropic structured outputs. Member-generic (N members, not personA/personB):
+- [x] **Step 2 (failing test first):** `src/types/matching.test.ts` asserts `MATCHING_RESPONSE_SCHEMA` is a valid JSON schema object with `additionalProperties: false` at every object level and required arrays covering all properties (walk the schema recursively). Run: `npx vitest run src/types/matching.test.ts` → FAIL (module missing).
+- [x] **Step 3:** `src/types/matching.ts` — TypeScript interfaces + the JSON schema used for Anthropic structured outputs. Member-generic (N members, not personA/personB):
 
 ```ts
 // ABOUTME: Matching engine response types and the JSON schema enforced via
@@ -393,7 +393,7 @@ export const MATCHING_RESPONSE_SCHEMA = {
 
 (Structured outputs don't support `minimum`/`maximum`, so matchScore bounds are validated in the parser, Task 5.2. For solo sessions the prompt instructs `overlap.tensionPoints: []` and a single member entry.)
 
-- [ ] **Step 4:** Test green. Commit: `feat: add tag vocabulary and matching response types/schema`
+- [x] **Step 4:** Test green. Commit: `feat: add tag vocabulary and matching response types/schema`
 
 ### Task 1.2: D1 schema migration
 
