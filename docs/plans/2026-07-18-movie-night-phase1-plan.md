@@ -66,7 +66,7 @@ notes and commit messages.
 
 ## Execution Status
 
-**Overall:** Phase 0 in progress.
+**Overall:** Phase 0 shipped.
 
 ### Deviations
 
@@ -78,7 +78,7 @@ notes and commit messages.
 
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
-| 0 — Scaffold & config | 🚧 IN PROGRESS (claimed 2026-07-19T00:42:11Z, branch `claude/app-design-plan-build-b04129`) | — | — |
+| 0 — Scaffold & config | ✅ SHIPPED (2026-07-18) | `8226a3d`, `842326f`, `ebb1dc6`, `b8d29b8` | — |
 | 1 — Types, tags, schema, db | ⬜ Not started | — | — |
 | 2 — Auth | ⬜ Not started | — | — |
 | 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
@@ -111,7 +111,7 @@ notes and commit messages.
 
 # Phase 0 — Scaffold & config
 
-**Execution Status:** 🚧 IN PROGRESS (claimed 2026-07-19T00:42:11Z, branch `claude/app-design-plan-build-b04129`)
+**Execution Status:** ✅ SHIPPED at `b8d29b8` on 2026-07-18
 
 ### Task 0.1: Initialize Next.js project skeleton
 
