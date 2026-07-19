@@ -103,6 +103,22 @@ describe("Join by invite page", () => {
     ).toBe("/tonight");
   });
 
+  it("moves focus to the confirmation heading after joining", async () => {
+    stubApi({
+      signedIn: true,
+      join: { status: 200, body: { id: "g1", name: "Sunday Nights" } },
+    });
+    await renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /join this group/i }));
+    // The button unmounts when the success screen replaces it; without this the
+    // keyboard user lands on <body> and nothing announces the outcome.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("heading", { level: 1 })
+      )
+    );
+  });
+
   it("shows the server's message when the code doesn't match, and allows a retry", async () => {
     stubApi({
       signedIn: true,

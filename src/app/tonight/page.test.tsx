@@ -78,6 +78,17 @@ describe("Tonight hub", () => {
     ).toBeDefined();
   });
 
+  it("drops the greeting rather than showing a dangling comma when there is no name", async () => {
+    // Google's `name` claim is optional; the callback stores "" when it's absent.
+    stubApi({
+      me: { status: 200, body: { ...ALICE, name: "" } },
+      groups: { status: 200, body: { groups: [] } },
+    });
+    renderHub();
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("Who's watching tonight?");
+  });
+
   it("sends signed-out visitors back to the landing page", async () => {
     stubApi({ me: { status: 401, body: { error: "Unauthorized" } } });
     renderHub();

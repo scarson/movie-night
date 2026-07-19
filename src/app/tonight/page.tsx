@@ -49,27 +49,28 @@ export default function Tonight() {
 
   if (!user) return null;
 
-  const firstName = user.name.split(" ")[0];
+  // Google's `name` claim is optional, so the stored name can be empty.
+  const firstName = user.name.trim().split(" ")[0];
   const target = selected === null ? "" : `?group=${encodeURIComponent(selected)}`;
 
   return (
     <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
-        {firstName}, who&apos;s watching tonight?
+        {firstName ? `${firstName}, who's watching tonight?` : "Who's watching tonight?"}
       </h1>
 
       <div className="mt-xl">
         {groups === null ? (
           <div className="space-y-sm">
             <p className="sr-only">Loading your groups…</p>
-            <div aria-hidden="true" className="h-[76px] rounded-panel bg-charcoal" />
-            <div aria-hidden="true" className="h-[76px] rounded-panel bg-charcoal" />
+            <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
+            <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
           </div>
         ) : (
           <div className="animate-rise-fade">
             <GroupPicker groups={groups} value={selected} onChange={setSelected} />
             {groupsFailed && (
-              <p className="mt-sm text-sm text-ember">
+              <p role="alert" className="mt-sm text-sm text-ember">
                 Couldn&apos;t load your groups — you can still watch solo.
               </p>
             )}
@@ -96,14 +97,14 @@ export default function Tonight() {
         through them first — comfort films, dealbreakers, tonight&apos;s mood.
       </p>
 
-      <p className="mt-3xl border-t border-slate pt-lg">
+      <div className="mt-3xl border-t border-slate pt-lg">
         <Link
           href="/groups"
           className="inline-flex min-h-11 items-center text-sm font-medium text-amber hover:text-warm-white"
         >
           Groups &amp; invites
         </Link>
-      </p>
+      </div>
     </main>
   );
 }

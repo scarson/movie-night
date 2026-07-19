@@ -36,12 +36,12 @@ export function MemberAvatars({ members }: { members: GroupOption["members"] }) 
             src={member.avatarUrl}
             alt=""
             referrerPolicy="no-referrer"
-            className="h-7 w-7 rounded-pill ring-2 ring-midnight"
+            className="h-7 w-7 rounded-pill border-2 border-midnight"
           />
         ) : (
           <span
             key={member.userId}
-            className="flex h-7 w-7 items-center justify-center rounded-pill bg-slate text-sm text-cream ring-2 ring-midnight"
+            className="flex h-7 w-7 items-center justify-center rounded-pill border-2 border-midnight bg-slate text-sm text-cream"
           >
             {member.name.charAt(0)}
           </span>
@@ -63,7 +63,9 @@ export function GroupPicker({ groups, value, onChange }: GroupPickerProps) {
     } has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-amber`;
 
   return (
-    <fieldset role="radiogroup" aria-labelledby={legendId}>
+    // `min-w-0` overrides the UA's `min-inline-size: min-content` on fieldset —
+    // without it the group rows refuse to shrink and force page-wide h-scroll.
+    <fieldset role="radiogroup" aria-labelledby={legendId} className="min-w-0">
       <legend id={legendId} className="sr-only">
         Who&apos;s watching tonight?
       </legend>

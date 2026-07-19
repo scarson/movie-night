@@ -2,7 +2,7 @@
 // ABOUTME: The group name is never revealed before joining (no pre-join lookup exists).
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { googleSignInUrl } from "@/components/auth-provider";
@@ -20,6 +20,14 @@ export default function JoinPage({
   const [joined, setJoined] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const successRef = useRef<HTMLHeadingElement>(null);
+
+  // The join button unmounts when the success screen replaces it, so focus is
+  // handed to the new heading — it both announces the outcome and keeps the
+  // keyboard user in place.
+  useEffect(() => {
+    if (joined) successRef.current?.focus();
+  }, [joined]);
 
   async function join() {
     setBusy(true);
@@ -51,7 +59,7 @@ export default function JoinPage({
     <main className="mx-auto w-full max-w-[520px] px-md pb-4xl pt-3xl">
       {joined ? (
         <div className="animate-rise-fade">
-          <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
+          <h1 ref={successRef} tabIndex={-1} className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
             You&apos;re in.
           </h1>
           <p className="mt-lg text-xl text-cream">{joined.name}</p>
@@ -75,7 +83,7 @@ export default function JoinPage({
           <p className="mt-xl text-xs font-medium uppercase tracking-wider text-ash">
             Invite code
           </p>
-          <p className="mt-sm rounded-panel border border-slate bg-charcoal px-lg py-md text-center text-[1.75rem] font-semibold tracking-[0.2em] text-amber tabular-nums">
+          <p className="mt-sm break-all rounded-panel border border-slate bg-charcoal px-lg py-md text-center text-[1.75rem] font-semibold tracking-[0.2em] text-amber tabular-nums [text-indent:0.2em]">
             {code}
           </p>
 
@@ -99,13 +107,14 @@ export default function JoinPage({
               <p className="mt-lg max-w-[42ch] text-base text-ash">
                 Sign in first — then you can confirm the join.
               </p>
-              <Link
+              {/* A plain anchor, not next/link: this leaves the App Router for
+                  an OAuth endpoint, so there is no client transition to make. */}
+              <a
                 href={googleSignInUrl(`/groups/join/${code}`)}
-                prefetch={false}
                 className={`${PRIMARY_BUTTON} mt-lg`}
               >
                 Sign in with Google
-              </Link>
+              </a>
             </>
           )}
 

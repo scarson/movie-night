@@ -22,6 +22,17 @@ function inviteLink(code: string): string {
   return `${origin}/groups/join/${code}`;
 }
 
+/**
+ * Reads the invite code out of whatever the user pasted. The card next to this
+ * field shows a full URL beside a Copy button, so pasting the link is the likely
+ * first attempt; the code is its last path segment. Case is never normalized —
+ * invite codes are case-sensitive.
+ */
+function inviteCodeFrom(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1);
+}
+
 /** Fetches the caller's groups. Returns null on any failure — callers decide what to show. */
 async function fetchGroupList(): Promise<GroupSummary[] | null> {
   try {
@@ -45,9 +56,21 @@ export default function Groups() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [leaveError, setLeaveError] = useState<{
+    groupId: string;
+    message: string;
+  } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmingLeave, setConfirmingLeave] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Opening or closing the leave confirm unmounts whatever the keyboard user was
+  // on, so focus is handed off deliberately: to the confirm on open, back to the
+  // trigger on cancel, and to the section heading once the group is gone.
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const leaveTriggers = useRef<Record<string, HTMLButtonElement | null>>({});
+  const focusAfterClose = useRef<string | "heading" | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -83,6 +106,18 @@ export default function Groups() {
     setGroups((current) => list ?? current ?? []);
     setListFailed(list === null);
   }
+
+  useEffect(() => {
+    if (confirmingLeave !== null) {
+      confirmRef.current?.focus();
+      return;
+    }
+    const target = focusAfterClose.current;
+    if (target === null) return;
+    focusAfterClose.current = null;
+    if (target === "heading") titleRef.current?.focus();
+    else leaveTriggers.current[target]?.focus();
+  }, [confirmingLeave, groups]);
 
   useEffect(() => {
     if (copied === null) return;
@@ -132,8 +167,7 @@ export default function Groups() {
 
   async function joinGroup(event: React.FormEvent) {
     event.preventDefault();
-    // Invite codes are case-sensitive — trim only, never normalize the case.
-    const trimmed = code.trim();
+    const trimmed = inviteCodeFrom(code);
     if (trimmed.length === 0 || busy) return;
     setJoinError(null);
     setBusy("join");
@@ -154,8 +188,16 @@ export default function Groups() {
 
   async function leaveGroup(id: string) {
     setBusy(`leave-${id}`);
-    await post(`/api/groups/${id}/leave`, {}, "Couldn't leave that group.");
+    setLeaveError(null);
+    const failure = await post(
+      `/api/groups/${id}/leave`,
+      {},
+      "Couldn't leave that group."
+    );
     if (!mounted.current) return;
+    setLeaveError(failure === null ? null : { groupId: id, message: failure });
+    // Still a member on failure, so send focus back to the control that started it.
+    focusAfterClose.current = failure ? id : "heading";
     setConfirmingLeave(null);
     await reloadGroups();
     if (mounted.current) setBusy(null);
@@ -175,17 +217,31 @@ export default function Groups() {
 
   const fieldClasses =
     "min-h-11 w-full rounded-control border border-slate bg-charcoal px-md text-base text-cream placeholder:text-ash";
+  // Outline is the default control here; amber fill marks the one primary action
+  // on the page, matching the hub's primary/secondary pairing.
   const submitClasses =
     "min-h-11 shrink-0 rounded-control border border-slate px-lg text-base font-medium text-cream transition-colors duration-100 hover:border-ash disabled:opacity-50";
+  const primaryClasses =
+    "min-h-11 shrink-0 rounded-control bg-amber px-lg text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50";
 
   return (
     <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
-      <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
+      <h1 ref={titleRef} tabIndex={-1} className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         Groups
       </h1>
       <p className="mt-md max-w-[52ch] text-base text-ash">
         A group is whoever&apos;s on the couch. Movie Night reads every member&apos;s
         saved taste profile before it recommends anything.
+      </p>
+
+      {/* One live region for the page: announcing from inside a button would
+          collide with that button's own accessible-name change. */}
+      <p role="status" className="sr-only">
+        {copied === null
+          ? ""
+          : `Invite link for ${
+              groups?.find((group) => group.id === copied)?.name ?? "the group"
+            } copied`}
       </p>
 
       <section aria-labelledby="your-groups" className="mt-2xl">
@@ -196,7 +252,7 @@ export default function Groups() {
         {groups === null ? (
           <>
             <p className="sr-only">Loading your groups…</p>
-            <div aria-hidden="true" className="h-[168px] rounded-panel bg-charcoal" />
+            <div aria-hidden="true" className="h-48 rounded-panel bg-charcoal" />
           </>
         ) : groups.length === 0 ? (
           <div className="rounded-panel border border-slate bg-charcoal p-lg">
@@ -228,21 +284,26 @@ export default function Groups() {
                   Invite link
                 </p>
                 <div className="mt-sm flex flex-col gap-sm sm:flex-row sm:items-center">
-                  <code className="min-w-0 flex-1 truncate rounded-control border border-slate bg-midnight px-md py-sm font-body text-sm tracking-wide text-cream">
+                  <span className="min-w-0 flex-1 truncate rounded-control border border-slate bg-midnight px-md py-sm text-sm tracking-wide text-cream">
                     {inviteLink(group.inviteCode)}
-                  </code>
+                  </span>
+                  {/* The button reports its own outcome — no reserved row to
+                      fill in, so nothing below it shifts when the label flips. */}
                   <button
                     type="button"
                     onClick={() => void copyInvite(group)}
-                    aria-label={`Copy invite link for ${group.name}`}
-                    className={submitClasses}
+                    aria-label={
+                      copied === group.id
+                        ? `Invite link for ${group.name} copied`
+                        : `Copy invite link for ${group.name}`
+                    }
+                    className={`${submitClasses} ${
+                      copied === group.id ? "border-sage text-sage" : ""
+                    }`}
                   >
-                    Copy
+                    {copied === group.id ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <p role="status" className="mt-xs h-4 text-sm text-sage">
-                  {copied === group.id ? "Copied" : ""}
-                </p>
 
                 <div className="mt-lg border-t border-slate pt-md">
                   {confirmingLeave === group.id ? (
@@ -254,15 +315,21 @@ export default function Groups() {
                       <span className="flex shrink-0 gap-sm">
                         <button
                           type="button"
+                          ref={confirmRef}
                           onClick={() => void leaveGroup(group.id)}
                           disabled={busy === `leave-${group.id}`}
-                          className="min-h-11 rounded-control border border-ember px-md text-sm font-medium text-ember transition-colors duration-100 hover:bg-ember hover:text-midnight disabled:opacity-50"
+                          // Ember carries the destructive signal as the border;
+                          // ember *text* on charcoal is only 4.1:1, under AA.
+                          className="min-h-11 rounded-control border border-ember px-md text-sm font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight disabled:opacity-50"
                         >
                           Yes, leave
                         </button>
                         <button
                           type="button"
-                          onClick={() => setConfirmingLeave(null)}
+                          onClick={() => {
+                            focusAfterClose.current = group.id;
+                            setConfirmingLeave(null);
+                          }}
                           className="min-h-11 rounded-control px-md text-sm font-medium text-cream hover:text-warm-white"
                         >
                           Cancel
@@ -272,12 +339,20 @@ export default function Groups() {
                   ) : (
                     <button
                       type="button"
+                      ref={(node) => {
+                        leaveTriggers.current[group.id] = node;
+                      }}
                       onClick={() => setConfirmingLeave(group.id)}
                       aria-label={`Leave group ${group.name}`}
-                      className="inline-flex min-h-11 items-center text-sm font-medium text-ash transition-colors duration-100 hover:text-ember"
+                      className="inline-flex min-h-11 items-center text-sm font-medium text-ash transition-colors duration-100 hover:text-cream"
                     >
                       Leave group
                     </button>
+                  )}
+                  {leaveError?.groupId === group.id && confirmingLeave === null && (
+                    <p role="alert" className="mt-sm text-sm text-ember">
+                      {leaveError.message}
+                    </p>
                   )}
                 </div>
               </li>
@@ -286,7 +361,7 @@ export default function Groups() {
         )}
 
         {listFailed && (
-          <p className="mt-sm text-sm text-ember">
+          <p role="alert" className="mt-sm text-sm text-ember">
             Couldn&apos;t load your groups — reload to try again.
           </p>
         )}
@@ -313,7 +388,7 @@ export default function Groups() {
             <button
               type="submit"
               disabled={busy === "create"}
-              className={`${submitClasses} mt-sm w-full`}
+              className={`${primaryClasses} mt-sm w-full`}
             >
               {busy === "create" ? "Creating…" : "Create group"}
             </button>
@@ -337,7 +412,6 @@ export default function Groups() {
               id="invite-code"
               type="text"
               value={code}
-              maxLength={8}
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -364,14 +438,14 @@ export default function Groups() {
         </section>
       </div>
 
-      <p className="mt-3xl border-t border-slate pt-lg">
+      <div className="mt-3xl border-t border-slate pt-lg">
         <Link
           href="/tonight"
           className="inline-flex min-h-11 items-center text-sm font-medium text-amber hover:text-warm-white"
         >
           Back to tonight
         </Link>
-      </p>
+      </div>
     </main>
   );
 }

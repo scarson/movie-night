@@ -127,13 +127,19 @@ body {
 }
 
 /* Reduced motion: honor the OS setting and the in-app animation toggle
-   (data-reduced-motion set on <html> by the profile settings toggle). */
+   (data-reduced-motion set on <html> by the profile settings toggle).
+
+   Animations are switched OFF, not shortened. A near-zero animation-duration
+   does not fast-forward an animation to its end state — the engine pins it at
+   currentTime 0, so anything using `animation-fill-mode: both` (every
+   --animate-rise-fade entrance) stays stuck on its `from` keyframe at
+   opacity 0. `animation: none` drops the animation entirely and the element
+   renders at its natural, fully visible style. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
@@ -142,8 +148,7 @@ body {
 [data-reduced-motion="true"] *,
 [data-reduced-motion="true"] *::before,
 [data-reduced-motion="true"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
+  animation: none !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }

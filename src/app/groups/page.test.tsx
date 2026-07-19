@@ -20,6 +20,14 @@ const ALICE = {
 };
 const BOB = { userId: "u2", name: "Bob Reyes", avatarUrl: null };
 
+const FILM_CLUB = {
+  id: "g2",
+  name: "The Film Club",
+  inviteCode: "Qm7xKp2R",
+  createdAt: "2026-01-02T00:00:00.000Z",
+  members: [ALICE, BOB],
+};
+
 const SUNDAY = {
   id: "g1",
   name: "Sunday Nights",
@@ -119,7 +127,21 @@ describe("Groups page", () => {
         `${window.location.origin}/groups/join/aB23cdEF`
       )
     );
-    expect(await screen.findByText(/copied/i)).toBeDefined();
+    expect(await screen.findByText(/^copied$/i)).toBeDefined();
+  });
+
+  it("announces the copied state on the control itself, not in reserved space", async () => {
+    stubApi({ groups: [SUNDAY] });
+    renderGroups();
+    const copy = await screen.findByRole("button", { name: /copy invite link/i });
+    fireEvent.click(copy);
+    // The same control reports the outcome, so nothing shifts and the change is
+    // announced: its accessible name flips rather than a placeholder row filling in.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /invite link for Sunday Nights copied/i })
+      ).toBe(copy)
+    );
   });
 
   it("creates a group and shows it in the list", async () => {
@@ -187,6 +209,28 @@ describe("Groups page", () => {
     expect(await screen.findByText("Sunday Nights")).toBeDefined();
   });
 
+  it("accepts a pasted invite link, not just the bare code", async () => {
+    // The card shows a full URL next to a Copy button, so pasting the whole
+    // link into the code field is the likely first attempt.
+    const api = stubApi({
+      groups: [],
+      post: {
+        "/api/groups/join": { status: 200, body: { id: "g1", name: "Sunday Nights" } },
+      },
+    });
+    renderGroups();
+    fireEvent.change(await screen.findByLabelText(/invite code/i), {
+      target: { value: "https://movienight.example/groups/join/aB23cdEF" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^join group$/i }));
+
+    await waitFor(() =>
+      expect(api.calls.find((c) => c.url === "/api/groups/join")?.body).toEqual({
+        code: "aB23cdEF",
+      })
+    );
+  });
+
   it("shows the API's message when a code doesn't match", async () => {
     stubApi({
       groups: [],
@@ -225,6 +269,71 @@ describe("Groups page", () => {
       expect(api.calls.some((c) => c.url === "/api/groups/g1/leave")).toBe(true)
     );
     await waitFor(() => expect(screen.queryByText("Sunday Nights")).toBe(null));
+  });
+
+  it("moves focus to the confirm when the leave step opens", async () => {
+    stubApi({ groups: [SUNDAY] });
+    renderGroups();
+    fireEvent.click(await screen.findByRole("button", { name: /leave group/i }));
+    // The trigger unmounts when the confirm replaces it; without this the
+    // keyboard user is dropped on <body> mid-flow.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: /^yes, leave$/i })
+      )
+    );
+  });
+
+  it("returns focus to the leave control when the user backs out", async () => {
+    stubApi({ groups: [SUNDAY] });
+    renderGroups();
+    fireEvent.click(await screen.findByRole("button", { name: /leave group/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: /leave group/i })
+      )
+    );
+  });
+
+  it("lands focus on the visible page heading once a group is left", async () => {
+    const api = stubApi({
+      groups: [SUNDAY],
+      post: { "/api/groups/g1/leave": { status: 200, body: { ok: true } } },
+    });
+    renderGroups();
+    fireEvent.click(await screen.findByRole("button", { name: /leave group/i }));
+    api.state.groups = [];
+    fireEvent.click(screen.getByRole("button", { name: /^yes, leave$/i }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("heading", { level: 1, name: "Groups" })
+      )
+    );
+  });
+
+  it("surfaces a leave failure on the group it belongs to, and only there", async () => {
+    const api = stubApi({
+      groups: [SUNDAY, FILM_CLUB],
+      post: {
+        "/api/groups/g1/leave": { status: 500, body: { error: "Failed to leave group" } },
+      },
+    });
+    renderGroups();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /leave group Sunday Nights/i })
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^yes, leave$/i }));
+
+    // Exactly one card reports it — a page-wide error string would show twice.
+    const alerts = await screen.findAllByText("Failed to leave group");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].closest("li")).toBe(
+      screen.getByText("Sunday Nights").closest("li")
+    );
+    // Still a member, so the card stays.
+    expect(screen.getByText("Sunday Nights")).toBeDefined();
+    expect(api.calls.some((c) => c.url === "/api/groups/g1/leave")).toBe(true);
   });
 
   it("lets the user back out of leaving", async () => {
