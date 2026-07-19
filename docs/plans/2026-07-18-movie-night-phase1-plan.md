@@ -66,7 +66,7 @@ notes and commit messages.
 
 ## Execution Status
 
-**Overall:** Phases 0-4 shipped. (This line was stale at "Phases 0-1" through the Phase 2/3 ships despite the table below being kept current each time — corrected here per the Living Document Contract; future executors should update this prose line, not just the table, on every phase ship.)
+**Overall:** Phases 0-5 shipped. (This line was stale at "Phases 0-1" through the Phase 2/3 ships despite the table below being kept current each time — corrected here per the Living Document Contract; future executors should update this prose line, not just the table, on every phase ship.)
 
 ### Discoveries
 
@@ -98,7 +98,7 @@ notes and commit messages.
 | 2 — Auth | ✅ SHIPPED (2026-07-18) | `d911d9c`, `ccee89b`, `b22b51e`, `e4a726f`, `3083516` | — |
 | 3 — TMDB client, seed, cron | ✅ SHIPPED (2026-07-18) | `fe524c1`, `b925c81`, `bc867a9`, `d863fc6`, `bfd3065`, `e3344a3`, `fe38cfe` | — |
 | 4 — Groups | ✅ SHIPPED (2026-07-18) | `dccf8e4`, `8419769`, `6c2e09d`, `1fc6e9a`, `100d98d` | — |
-| 5 — Matching engine + API | ⬜ Not started | — | — |
+| 5 — Matching engine + API | ✅ SHIPPED (2026-07-19) | `dabe57e`, `bd18e30`, `f9fe41e`, `206b76b` | Live evals deferred to Phase 8 (no API key locally) |
 | 6 — UI foundation | ⬜ Not started | — | — |
 | 7 — UI flows | ⬜ Not started | — | — |
 | 8 — Verification & finish | ⬜ Not started | — | — |
@@ -751,7 +751,7 @@ const inviteCode = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpq
 
 # Phase 5 — Matching engine + session/profile API
 
-**Execution Status:** 🚧 IN PROGRESS — claimed 2026-07-19T04:58:21Z (see latest branch commits for liveness) on branch `claude/app-design-plan-build-b04129`
+**Execution Status:** ✅ SHIPPED at `dabe57e` (5.2), `bd18e30` (5.3), `f9fe41e` (5.4), `206b76b` (group review) on 2026-07-19. Live evals (Task 5.3 Step 2) deferred to Phase 8 — no ANTHROPIC_API_KEY in this worktree; suite verified to skip cleanly.
 
 ### Task 5.1: (moved) Fake-D1 test helper
 
@@ -814,20 +814,20 @@ Response handling (CRITICAL): on `claude-sonnet-5` with adaptive thinking, `resp
 
 **Structured logging:** via an injected `log: (line: string) => void` parameter defaulting to `console.log` (tests inject a spy — keeps test output pristine AND asserts log shape). After every call, `log(JSON.stringify({event:"matching_call", group_id, session_id, round, member_count, candidate_count, model: MATCHING_MODEL, prompt_version: PROMPT_VERSION, latency_ms, tokens_in: usage.input_tokens, tokens_out: usage.output_tokens, response_valid, dropped_ids}))`.
 
-- [ ] **Step 1 (failing tests, no network):**
+- [x] **Step 1 (failing tests, no network):**
   - `selectCandidates`: seeds fake D1 with titles; asserts dealbreaker-genre exclusion, comfort-title inclusion, discovery exclusion, 200 cap, ordering.
   - `buildMatchingPrompt`: snapshot-free structural assertions — system contains the injection guardrail verbatim; user message contains each member name + their lists; roughDay: exactly-one-toggled case yields a weight note naming the OTHER member and NOT revealing the toggler ("had a rough day" must NOT appear with the toggler's name); both-toggled → equal-weight note; solo → no overlap/tension language, `solo` instructions present; refinement round includes kept/removed titles; candidate lines contain `tmdbId |`.
   - Input length clamps: member name ≤ 50 chars, custom tag ≤ 30, moodText ≤ 200, steering ≤ 300, comfortTitles/watchlist ≤ 50 entries each — `buildMatchingPrompt` truncates over-length inputs (test with 10k-char strings and 200-entry arrays; prompt must not contain them unclamped).
   - `parseMatchingResponse`: valid JSON round-trip; unknown tmdbId dropped; < 3 survivors throws `thin_results`; garbage throws `malformed`; matchScore 150 → clamped 100; string fields with `<script>` stripped of angle brackets.
-- [ ] **Step 2:** Implement. `callClaude` accepts an injected client factory for tests (never call the network in unit tests).
-- [ ] **Step 3:** Green. Commit: `feat: add matching engine (candidates, prompt builder, parser, error taxonomy)`
+- [x] **Step 2:** Implement. `callClaude` accepts an injected client factory for tests (never call the network in unit tests).
+- [x] **Step 3:** Green. Commit: `feat: add matching engine (candidates, prompt builder, parser, error taxonomy)`
 
 ### Task 5.3: Live eval suite (real API, opt-in)
 
 **Files:** Create: `src/lib/matching.eval.test.ts` (no vitest config change — the skipIf guard is sufficient)
 
-- [ ] **Step 1:** Eval tests run ONLY when `RUN_LIVE_EVALS=1` (guard with `describe.skipIf(!process.env.RUN_LIVE_EVALS)`); excluded from default `npm test` glob is NOT needed if skipIf works — keep them in `src/lib/matching.eval.test.ts` and assert the skip. They call the real Anthropic API with a fixed 30-candidate list (hardcoded well-known films with real TMDB ids) and two synthetic profiles (cerebral-thriller fan with Horror dealbreaker; cozy-romcom fan with War dealbreaker). Assertions (quality seams, not exact outputs): response parses; 5–7 recs; no rec has genre Horror or War; every tmdbId ∈ candidates; tasteMap has 2 members with non-empty summaries; conversational mentions both names. A second case: refinement round keeps a kept title in results and never returns a removed title.
-- [ ] **Step 2:** Run once locally with a real key to confirm (if `ANTHROPIC_API_KEY` present in `.dev.vars`; else note in log — Phase 8 runs it). Commit: `test: add live matching eval suite behind RUN_LIVE_EVALS`
+- [x] **Step 1:** Eval tests run ONLY when `RUN_LIVE_EVALS=1` (guard with `describe.skipIf(!process.env.RUN_LIVE_EVALS)`); excluded from default `npm test` glob is NOT needed if skipIf works — keep them in `src/lib/matching.eval.test.ts` and assert the skip. They call the real Anthropic API with a fixed 30-candidate list (hardcoded well-known films with real TMDB ids) and two synthetic profiles (cerebral-thriller fan with Horror dealbreaker; cozy-romcom fan with War dealbreaker). Assertions (quality seams, not exact outputs): response parses; 5–7 recs; no rec has genre Horror or War; every tmdbId ∈ candidates; tasteMap has 2 members with non-empty summaries; conversational mentions both names. A second case: refinement round keeps a kept title in results and never returns a removed title.
+- [x] **Step 2:** Run once locally with a real key to confirm (if `ANTHROPIC_API_KEY` present in `.dev.vars`; else note in log — Phase 8 runs it). Commit: `test: add live matching eval suite behind RUN_LIVE_EVALS`
 
 ### Task 5.4: Profile + session + matching API routes
 
@@ -842,9 +842,9 @@ API design locked here (UI consumes exactly this):
 - `POST /api/movie-sessions/[id]/match` body `{ keptTmdbIds: number[], removedTmdbIds: number[], steeringFeedback: string }` (all optional; empty on round 1) → member-only; round = COUNT(recommendations for session)+1; reject round > 10 with 429 (plain SELECT-then-insert; the race is ACCEPTED per eng review — blast radius is one extra $0.04 call — do not add locking) `{ error: "You've hit tonight's refinement limit" }`; monthly cap: `SELECT COUNT(*) FROM recommendations WHERE created_at >= strftime('%Y-%m-01T00:00:00Z','now')` ≥ `MONTHLY_MATCH_LIMIT` (default 2000) → 429 generic message. Loads profiles of all session members, accumulates removed ids across prior rounds, runs engine, inserts recommendations row, returns `{ round, response: MatchingResponse, titles: { [tmdbId]: { title, year, posterPath, genres, streaming, lastRefreshedAt } } }` (titles map hydrated from D1 so the UI never fuzzy-matches; `lastRefreshedAt` feeds the staleness badge in Task 7.5).
 - `GET /api/movie-sessions/[id]` → session + latest round + titles map (for reload). Member-only: requester must be in `session_members`; others get 404.
 - **Privacy check (mandatory test):** no API response ever includes another member's `rough_day` value. `session_members.rough_day` is returned only for the requesting user.
-- [ ] **Step 1 (failing tests):** `src/lib/movie-sessions.test.ts` over fake D1: session creation (group + solo-group-on-demand), member flags authorization (non-member memberFlags rejected), round counting, removed-id accumulation across rounds, monthly cap query, rough-day privacy (serializer excludes others' flags).
-- [ ] **Step 2:** Implement lib + thin routes (engine's `callClaude` injected; route tests don't hit network).
-- [ ] **Step 3:** Green; type-check; lint. Commit: `feat: add profile, title search, and matching session APIs`
+- [x] **Step 1 (failing tests):** `src/lib/movie-sessions.test.ts` over fake D1: session creation (group + solo-group-on-demand), member flags authorization (non-member memberFlags rejected), round counting, removed-id accumulation across rounds, monthly cap query, rough-day privacy (serializer excludes others' flags).
+- [x] **Step 2:** Implement lib + thin routes (engine's `callClaude` injected; route tests don't hit network).
+- [x] **Step 3:** Green; type-check; lint. Commit: `feat: add profile, title search, and matching session APIs`
 
 **After completing Phase 5:** group review — security perspective mandatory: prompt-injection guardrail present, input clamps enforced at route AND prompt layer, rough-day privacy, rate limits. Also run the adversarial prompt-injection test manually in Phase 8.
 
