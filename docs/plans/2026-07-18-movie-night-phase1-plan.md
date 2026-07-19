@@ -72,6 +72,7 @@ notes and commit messages.
 
 - **Task 1.4:** on this execution's local Node (v26.3.0), `node:sqlite` emits no `ExperimentalWarning` at all — attaching a `process.on("warning", ...)` listener and requiring the module directly produces nothing. `node:sqlite` appears to have graduated from experimental status by Node 26. The plan's Step 0 mitigation (`NODE_OPTIONS=--disable-warning=ExperimentalWarning` on the `test` script) was still applied as instructed — it's a harmless no-op on Node 26 and remains necessary for CI's Node 24 (per Task 0.3's log entry), where the module may still warn. Future readers on Node ≥26 should not be surprised the flag appears to do nothing locally.
 - **Phase 1 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation` + WebFetch on `/d1/sql-api/foreign-keys/`) that **D1 enforces foreign key constraints by default** — "identical to the behaviour you would observe when setting `PRAGMA foreign_keys = on` in SQLite for every transaction." This confirms the schema's `ON DELETE CASCADE` clauses (sessions/profiles/group_members cascading off `users`, relied on by Task 2.3's `deleteAccount`) will actually fire in production, matching `src/test/fake-d1.ts`'s explicit `PRAGMA foreign_keys = ON`. Phase 2 executors do not need to re-verify this.
+- **Phase 2 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation`) that **D1's `batch()` executes as a real SQL transaction** — "Batched statements are SQL transactions... If a statement in the sequence fails, ... it aborts or rolls back the entire sequence." This confirms Task 2.3's `deleteAccount` (a 3-statement batch: anonymize session_members → anonymize movie_sessions → delete user) cannot partially apply in production, matching `src/test/fake-d1.ts`'s `BEGIN`/`COMMIT`/`ROLLBACK` emulation around `.batch()`. Any future task relying on `db.batch()` atomicity (Phase 4's group creation, Phase 5's recommendation writes) does not need to re-verify this.
 
 ### Deviations
 
@@ -87,7 +88,7 @@ notes and commit messages.
 |---|---|---|---|
 | 0 — Scaffold & config | ✅ SHIPPED (2026-07-18) | `8226a3d`, `842326f`, `ebb1dc6`, `b8d29b8` | — |
 | 1 — Types, tags, schema, db | ✅ SHIPPED (2026-07-18) | `c1ce289`, `4dd4f98`, `8505089`, `d3b9cc3`, `7c26642`, `1388d1f` | — |
-| 2 — Auth | ⬜ Not started | — | — |
+| 2 — Auth | ✅ SHIPPED (2026-07-18) | `d911d9c`, `ccee89b`, `b22b51e`, `e4a726f`, `3083516` | — |
 | 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
 | 4 — Groups | ⬜ Not started | — | — |
 | 5 — Matching engine + API | ⬜ Not started | — | — |
@@ -597,7 +598,7 @@ A minimal in-memory implementation of the `D1Database` subset our code uses, bac
 
 # Phase 2 — Auth (port from twin-cities-tee-times)
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** ✅ SHIPPED at `d911d9c`, `ccee89b`, `b22b51e`, `e4a726f`, `3083516` on 2026-07-18
 
 The reference implementation is battle-tested and reviewed. Port it faithfully; the ONLY intended changes are listed per task. Two known gotchas already encoded in the reference (do not "fix" them away):
 - **Redirect responses MUST set cookies via `response.cookies.set()`** — raw `headers.append("Set-Cookie", ...)` is silently stripped by OpenNext on Cloudflare Workers redirect responses (comment in reference callback route).
@@ -607,27 +608,27 @@ The reference implementation is battle-tested and reviewed. Port it faithfully; 
 
 **Files:** Create: `src/lib/auth.ts`, `src/lib/auth.test.ts`
 
-- [ ] **Step 1 (failing tests first):** Port the pure-helper tests: `sha256` known-vector ("abc" → `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`), `createJWT`/`verifyJWT` round-trip + expiry rejection + wrong-secret rejection, `validateReturnTo` cases (`null`→`/`, `/x`→`/x`, `//evil`→`/`, `http://evil`→`/`, `\` payloads→`/`). If tee-times has `src/lib/auth.test.ts`, port those tests wholesale first.
-- [ ] **Step 2:** Copy `/Users/sam/Code/twin-cities-tee-times/src/lib/auth.ts` verbatim, changing ONLY: `COOKIE_SESSION = "mn-session"`, `COOKIE_REFRESH = "mn-refresh"` and the ABOUTME wording. Keep `authenticateRequest(request, db, jwtSecret)` signature, DELETE RETURNING rotation, MAX 15m JWT / 90d refresh.
-- [ ] **Step 3:** Green. Commit: `feat: port auth utilities with mn- cookie prefix`
+- [x] **Step 1 (failing tests first):** Port the pure-helper tests: `sha256` known-vector ("abc" → `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`), `createJWT`/`verifyJWT` round-trip + expiry rejection + wrong-secret rejection, `validateReturnTo` cases (`null`→`/`, `/x`→`/x`, `//evil`→`/`, `http://evil`→`/`, `\` payloads→`/`). If tee-times has `src/lib/auth.test.ts`, port those tests wholesale first.
+- [x] **Step 2:** Copy `/Users/sam/Code/twin-cities-tee-times/src/lib/auth.ts` verbatim, changing ONLY: `COOKIE_SESSION = "mn-session"`, `COOKIE_REFRESH = "mn-refresh"` and the ABOUTME wording. Keep `authenticateRequest(request, db, jwtSecret)` signature, DELETE RETURNING rotation, MAX 15m JWT / 90d refresh.
+- [x] **Step 3:** Green. Commit: `feat: port auth utilities with mn- cookie prefix`
 
 ### Task 2.2: OAuth routes
 
 **Files:** Create: `src/app/api/auth/google/route.ts`, `src/app/api/auth/google/callback/route.ts`, `src/app/api/auth/logout/route.ts`, `src/app/api/auth/me/route.ts`
 
-- [ ] **Step 1:** Port all four routes from tee-times (`src/app/api/auth/...`), changing ONLY:
+- [x] **Step 1:** Port all four routes from tee-times (`src/app/api/auth/...`), changing ONLY:
   - cookie names → `mn-oauth-state`, `mn-oauth-verifier`, `mn-session`, `mn-refresh`
   - callback additionally reads `claims.picture` (Google avatar) and upserts it into `users.avatar_url` (extend the INSERT ... ON CONFLICT to `avatar_url = excluded.avatar_url`); the users INSERT includes `avatar_url` and `updated_at`.
   - `/api/auth/me` returns `{ userId, email, name, avatarUrl }` (join users; include avatar_url).
-- [ ] **Step 2:** Type-check + lint. Route-handler logic is exercised end-to-end in Phase 8 manual verification (OAuth cannot be meaningfully unit-tested without mocking Google — per testing rules we do NOT write mock-only tests for it).
-- [ ] **Step 3:** Commit: `feat: add Google OAuth routes (login, callback, logout, me)`
+- [x] **Step 2:** Type-check + lint. Route-handler logic is exercised end-to-end in Phase 8 manual verification (OAuth cannot be meaningfully unit-tested without mocking Google — per testing rules we do NOT write mock-only tests for it).
+- [x] **Step 3:** Commit: `feat: add Google OAuth routes (login, callback, logout, me)`
 
 ### Task 2.3: Account deletion (anonymize, never cascade shared history)
 
 **Files:** Create: `src/app/api/user/account/route.ts`, `src/lib/account.ts`, `src/lib/account.test.ts`
 
-- [ ] **Step 1 (failing test):** `deleteAccount(db, userId)` — seed a user in two groups with session_members rows and a profile; after call: users row gone (cascades sessions/profile/group_members), but `session_members` rows for that user REMAIN with `user_id = 'deleted'` sentinel, and `movie_sessions.initiated_by_user_id` for their sessions becomes `'deleted'`. Implement `deleteAccount` against the `D1Database` interface and test it with the fake-D1 helper from Task 1.4 (already available by this phase).
-- [ ] **Step 2:** Implement `src/lib/account.ts`:
+- [x] **Step 1 (failing test):** `deleteAccount(db, userId)` — seed a user in two groups with session_members rows and a profile; after call: users row gone (cascades sessions/profile/group_members), but `session_members` rows for that user REMAIN with `user_id = 'deleted'` sentinel, and `movie_sessions.initiated_by_user_id` for their sessions becomes `'deleted'`. Implement `deleteAccount` against the `D1Database` interface and test it with the fake-D1 helper from Task 1.4 (already available by this phase).
+- [x] **Step 2:** Implement `src/lib/account.ts`:
 
 ```ts
 export async function deleteAccount(db: D1Database, userId: string): Promise<void> {
@@ -650,7 +651,7 @@ export async function deleteAccount(db: D1Database, userId: string): Promise<voi
 
 `DELETE /api/user/account` route: `authenticateRequest` → `deleteAccount` → `clearAuthCookies` → `{ ok: true }`.
 
-- [ ] **Step 3:** Green. Commit: `feat: add account deletion with shared-record anonymization`
+- [x] **Step 3:** Green. Commit: `feat: add account deletion with shared-record anonymization`
 
 **After completing Phase 2:** group review (security perspective mandatory: state validation, open redirects, cookie flags, session rotation).
 
