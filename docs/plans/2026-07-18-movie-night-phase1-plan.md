@@ -73,6 +73,7 @@ notes and commit messages.
 - **Task 1.4:** on this execution's local Node (v26.3.0), `node:sqlite` emits no `ExperimentalWarning` at all — attaching a `process.on("warning", ...)` listener and requiring the module directly produces nothing. `node:sqlite` appears to have graduated from experimental status by Node 26. The plan's Step 0 mitigation (`NODE_OPTIONS=--disable-warning=ExperimentalWarning` on the `test` script) was still applied as instructed — it's a harmless no-op on Node 26 and remains necessary for CI's Node 24 (per Task 0.3's log entry), where the module may still warn. Future readers on Node ≥26 should not be surprised the flag appears to do nothing locally.
 - **Phase 1 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation` + WebFetch on `/d1/sql-api/foreign-keys/`) that **D1 enforces foreign key constraints by default** — "identical to the behaviour you would observe when setting `PRAGMA foreign_keys = on` in SQLite for every transaction." This confirms the schema's `ON DELETE CASCADE` clauses (sessions/profiles/group_members cascading off `users`, relied on by Task 2.3's `deleteAccount`) will actually fire in production, matching `src/test/fake-d1.ts`'s explicit `PRAGMA foreign_keys = ON`. Phase 2 executors do not need to re-verify this.
 - **Phase 2 group review:** verified against live Cloudflare docs (`search_cloudflare_documentation`) that **D1's `batch()` executes as a real SQL transaction** — "Batched statements are SQL transactions... If a statement in the sequence fails, ... it aborts or rolls back the entire sequence." This confirms Task 2.3's `deleteAccount` (a 3-statement batch: anonymize session_members → anonymize movie_sessions → delete user) cannot partially apply in production, matching `src/test/fake-d1.ts`'s `BEGIN`/`COMMIT`/`ROLLBACK` emulation around `.batch()`. Any future task relying on `db.batch()` atomicity (Phase 4's group creation, Phase 5's recommendation writes) does not need to re-verify this.
+- **Task 3.3 / Phase 8 deploy blocker:** `STALE_TITLES_LIMIT` in `src/lib/cron-handler.ts` is hardcoded to 200, which assumes the deployed Cloudflare account is on the Workers Paid plan (1000 subrequests/invocation). This is unknowable at Phase 3 implementation time — it depends on which Cloudflare account Phase 8 deploys to. **Phase 8 must confirm the account's plan tier before enabling the cron trigger** and lower the constant to 40 if it's on the Free plan (50 subrequests/invocation), or every cron invocation will fail mid-run.
 
 ### Deviations
 
@@ -83,13 +84,17 @@ notes and commit messages.
 - **Task 0.2:** `.dev.vars.example`'s explanatory comment points to itself (copy-and-fill instructions inline) rather than "README setup" as the plan step describes — `README.md` is a one-line stub with no setup section to point to, and adding one is out of this task's file list.
 - **Task 1.2:** `src/types/db.ts` contains only the 10 row interfaces the plan names explicitly (`UserRow` … `RateLimitRow`), not one per every table in the migration — the plan's Step 2 prose says "matching every table above" but then enumerates exactly 10 names, omitting `watch_history`, `watch_ratings`, `tension_axes` (the three tables the migration's own SQL comment calls out as "Phase 2 tables … created empty now"). Treated the enumerated name list as authoritative per standing rule 6 (no scope beyond the task); row types for those three tables are deferred to whichever Phase 2 task first reads/writes them.
 - **Task 1.2:** local D1 table-list verification returned 15 rows, not the plan's predicted 14 (`SELECT name FROM sqlite_master WHERE type='table'` → 13 schema tables + `sqlite_sequence` + `_cf_METADATA`). `_cf_METADATA` is a table Wrangler's local D1 (Miniflare) emulator creates itself for its own bookkeeping — not part of our schema, not present in the migration file, harmless.
+- **Task 3.1:** no `.dev.vars` / `TMDB_API_TOKEN` was available in this worktree, and the plan's documented fallback (transcribe fixtures from `developer.themoviedb.org/reference`) itself needed a sub-deviation: the docs site's "Try It" response examples require a live interactive session and are not present in the static HTML WebFetch retrieves (confirmed by fetching all 7 relevant endpoint doc pages — each returned only the parameter/schema shell). Fixtures were transcribed from TMDB API v3's stable, versioned response contract (known field names/shapes) using real movie ids (Inception `27205`, The Dark Knight `155`) instead, with provenance recorded in `src/lib/tmdb.test.ts`'s header comment and `dev/implementation-log.md`.
+- **Task 3.1:** the plan specifies `discoverPageToTitles`/`detailToTitle`/`detailToEnrichment` signatures but not how they compose in the seed script — resolved as: `discoverPageToTitles` + `detailToEnrichment` for the seed script's main flow (base fields from cheap discover pages, enrichment-only detail fetch per title), `detailToTitle` reserved for Task 5.4's single-id PUT-enrichment path. See the Task 3.1 log entry for the full rationale.
+- **Task 3.3:** `runWeeklyRefresh`'s locked 2-arg stub signature (`env`, `fetchImpl = fetch`) gained a third optional parameter, `log: (line: string) => void = console.log`, matching the injected-logger pattern the plan specifies for the Task 5.2 matching engine. Additive-only (existing single-argument call sites, including `worker.ts`, are unaffected); done to keep the structured `cron_refresh` summary line test-asserted via an injection point rather than a `console.log` spy, per testing-pitfalls §1 (test output pristine).
+- **Task 3.2, review-driven:** `scripts/seed.ts` gained a zero-titles-discovered abort guard not explicitly specified by the plan text — found during the Phase 3 group review (silently writing/applying an empty `seed.sql` on a total discover-fetch outage was a latent correctness gap). See the Phase 3 group review log entry.
 
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
 | 0 — Scaffold & config | ✅ SHIPPED (2026-07-18) | `8226a3d`, `842326f`, `ebb1dc6`, `b8d29b8` | — |
 | 1 — Types, tags, schema, db | ✅ SHIPPED (2026-07-18) | `c1ce289`, `4dd4f98`, `8505089`, `d3b9cc3`, `7c26642`, `1388d1f` | — |
 | 2 — Auth | ✅ SHIPPED (2026-07-18) | `d911d9c`, `ccee89b`, `b22b51e`, `e4a726f`, `3083516` | — |
-| 3 — TMDB client, seed, cron | ⬜ Not started | — | — |
+| 3 — TMDB client, seed, cron | ✅ SHIPPED (2026-07-18) | `fe524c1`, `b925c81`, `bc867a9`, `d863fc6`, `bfd3065`, `e3344a3`, `fe38cfe` | — |
 | 4 — Groups | ⬜ Not started | — | — |
 | 5 — Matching engine + API | ⬜ Not started | — | — |
 | 6 — UI foundation | ⬜ Not started | — | — |
@@ -659,7 +664,7 @@ export async function deleteAccount(db: D1Database, userId: string): Promise<voi
 
 # Phase 3 — TMDB client, seed script, cron
 
-**Execution Status:** ⬜ NOT STARTED
+**Execution Status:** ✅ SHIPPED at `fe524c1`, `b925c81`, `bc867a9`, `d863fc6`, `bfd3065`, `e3344a3`, `fe38cfe` on 2026-07-18
 
 TMDB API v3 ground rules (verify anything beyond these against https://developer.themoviedb.org/reference before coding — WebFetch is allowed):
 - Auth: `Authorization: Bearer ${TMDB_API_TOKEN}` header (the "API Read Access Token"), `accept: application/json`.
@@ -673,34 +678,34 @@ TMDB API v3 ground rules (verify anything beyond these against https://developer
 
 **Files:** Create: `src/lib/tmdb.ts`, `src/lib/tmdb.test.ts`, `src/test/fixtures/tmdb-movie-detail.json`, `src/test/fixtures/tmdb-discover-page.json`, `src/test/fixtures/tmdb-search.json`
 
-- [ ] **Step 1:** Build fixtures by fetching real sample responses ONCE (with WebFetch or curl using the `.dev.vars` token if present; if no token available, transcribe the documented response shapes from developer.themoviedb.org — mark the fixture header comment accordingly). Fixtures must include: a discover page (results array with id/title/release_date/genre_ids/overview/poster_path/vote_count/vote_average/popularity), a movie detail with `keywords.keywords[]`, `credits.cast[]`, `"watch/providers".results.US`, and a search response.
-- [ ] **Step 2 (failing tests):** Test the pure transformation layer against fixtures (NOT the network): `discoverPageToTitles(json, genreMap)` maps fields correctly (year extracted from release_date, genre_ids → names via map, poster_path preserved); `detailToTitle(json, genreMap)` maps a full detail response to a `TitleRow`-shaped object (detail responses carry `genres: [{id,name}]`, NOT `genre_ids` — used by the Task 5.4 PUT-enrichment path); `detailToEnrichment(json)` extracts top-8 cast names by `order`, keyword name strings, and the US streaming subset `{link, flatrate: string[], rent: string[], buy: string[]}` (absent US → `{}`); `searchResultsToSummaries(json)` maps id/title/year/poster_path. Fetch functions themselves are thin `fetch` wrappers (`tmdbGet(path, params, token)`) — tested only for URL/header construction via an injected fetch stub asserting the request (this tests OUR construction logic, not TMDB).
-- [ ] **Step 3:** Implement `src/lib/tmdb.ts`: `tmdbGet` + `fetchGenreMap`, `fetchDiscoverPage`, `fetchMovieDetail`, `searchMovies` + the three pure transforms. All network functions take `token: string` explicitly (no env access inside lib).
-- [ ] **Step 4:** Green. Commit: `feat: add TMDB client with fixture-tested transforms`
+- [x] **Step 1:** Build fixtures by fetching real sample responses ONCE (with WebFetch or curl using the `.dev.vars` token if present; if no token available, transcribe the documented response shapes from developer.themoviedb.org — mark the fixture header comment accordingly). Fixtures must include: a discover page (results array with id/title/release_date/genre_ids/overview/poster_path/vote_count/vote_average/popularity), a movie detail with `keywords.keywords[]`, `credits.cast[]`, `"watch/providers".results.US`, and a search response.
+- [x] **Step 2 (failing tests):** Test the pure transformation layer against fixtures (NOT the network): `discoverPageToTitles(json, genreMap)` maps fields correctly (year extracted from release_date, genre_ids → names via map, poster_path preserved); `detailToTitle(json, genreMap)` maps a full detail response to a `TitleRow`-shaped object (detail responses carry `genres: [{id,name}]`, NOT `genre_ids` — used by the Task 5.4 PUT-enrichment path); `detailToEnrichment(json)` extracts top-8 cast names by `order`, keyword name strings, and the US streaming subset `{link, flatrate: string[], rent: string[], buy: string[]}` (absent US → `{}`); `searchResultsToSummaries(json)` maps id/title/year/poster_path. Fetch functions themselves are thin `fetch` wrappers (`tmdbGet(path, params, token)`) — tested only for URL/header construction via an injected fetch stub asserting the request (this tests OUR construction logic, not TMDB).
+- [x] **Step 3:** Implement `src/lib/tmdb.ts`: `tmdbGet` + `fetchGenreMap`, `fetchDiscoverPage`, `fetchMovieDetail`, `searchMovies` + the three pure transforms. All network functions take `token: string` explicitly (no env access inside lib).
+- [x] **Step 4:** Green. Commit: `feat: add TMDB client with fixture-tested transforms`
 
 ### Task 3.2: Seed script
 
 **Files:** Create: `scripts/seed.ts`
 
-- [ ] **Step 1:** Script behavior (runs under `npx tsx`, Node context — `process.env` allowed here). Token resolution: read `TMDB_API_TOKEN` from `process.env`, falling back to parsing `.dev.vars` with a ~5-line KEY=VALUE parser (tsx does not load `.dev.vars` automatically); abort with a clear message if absent. Steps:
+- [x] **Step 1:** Script behavior (runs under `npx tsx`, Node context — `process.env` allowed here). Token resolution: read `TMDB_API_TOKEN` from `process.env`, falling back to parsing `.dev.vars` with a ~5-line KEY=VALUE parser (tsx does not load `.dev.vars` automatically); abort with a clear message if absent. Steps:
   1. Fetch genre map.
   2. Fetch discover pages 1..N (default N=50 → ~1000 titles; `--pages` flag) with `vote_count.gte=50`, throttled (50ms between requests).
   3. For each title, fetch detail (keywords/credits/watch-providers), throttled.
   4. Emit `scripts/seed.sql` with `INSERT OR REPLACE INTO titles (...) VALUES (...)` rows; because the detail fetch includes watch-providers, set `last_refreshed_at` to now (the cron then skips fresh rows for 7 days) (SQL-escape via a small `sqlQuote` helper: `'` → `''`; no string interpolation of unescaped user data).
   5. If `--local` flag: shell out to `npx wrangler d1 execute movie-night-db --local --file=scripts/seed.sql`. With `--remote`: same minus `--local` (used in Phase 8).
   Progress logs every 25 titles; abort with a clear message on HTTP 401 (bad token).
-- [ ] **Step 2:** Add `scripts/seed.sql` to `.gitignore`.
-- [ ] **Step 3:** Test: extract `titleToInsertStatement(title)` as a pure function into `scripts/seed-lib.ts` (imported by seed.ts) with a vitest test in `scripts/seed-lib.test.ts` covering SQL escaping (title containing `'`), NULL handling (missing poster/year), and JSON column serialization. Update vitest include to `["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"]`.
-- [ ] **Step 4:** If a TMDB token is available in `.dev.vars`, run `npm run seed:local -- --pages 2` and verify `SELECT COUNT(*) FROM titles` ≥ 30. If no token, note it in the implementation log — Phase 8 blocks on a real seed.
-- [ ] **Step 5:** Commit: `feat: add TMDB seed script`
+- [x] **Step 2:** Add `scripts/seed.sql` to `.gitignore`.
+- [x] **Step 3:** Test: extract `titleToInsertStatement(title)` as a pure function into `scripts/seed-lib.ts` (imported by seed.ts) with a vitest test in `scripts/seed-lib.test.ts` covering SQL escaping (title containing `'`), NULL handling (missing poster/year), and JSON column serialization. Update vitest include to `["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"]`.
+- [x] **Step 4:** If a TMDB token is available in `.dev.vars`, run `npm run seed:local -- --pages 2` and verify `SELECT COUNT(*) FROM titles` ≥ 30. If no token, note it in the implementation log — Phase 8 blocks on a real seed.
+- [x] **Step 5:** Commit: `feat: add TMDB seed script`
 
 ### Task 3.3: Weekly streaming-refresh cron
 
 **Files:** Modify: `src/lib/cron-handler.ts` (replace stub). Create: `src/lib/cron-handler.test.ts`
 
-- [ ] **Step 1 (failing test):** `runWeeklyRefresh(env)` with an injected fetch stub + fake D1: refreshes streaming + popularity for the 200 most-popular stale titles (`last_refreshed_at IS NULL OR < now-7d`), updates `last_refreshed_at`, logs a structured JSON summary line `{"event":"cron_refresh","refreshed":N,"errors":M}` via console.log, and continues past individual title failures (error counted, not thrown).
-- [ ] **Step 2:** Implement. Query stale titles ordered by popularity DESC LIMIT 200 (NOTE: ~200 TMDB fetches per run requires the Workers Paid plan's 1000-subrequest limit; the Free plan caps at 50/invocation — if the account is Free at deploy time, set LIMIT 40); for each, `fetchMovieDetail` → update `streaming`, `popularity`, `vote_count`, `vote_average`, `last_refreshed_at = now`. Batch updates with `db.batch` in chunks of 25. Accept `fetchImpl` param defaulting to global fetch (for tests).
-- [ ] **Step 3:** Green. Commit: `feat: implement weekly TMDB streaming refresh cron`
+- [x] **Step 1 (failing test):** `runWeeklyRefresh(env)` with an injected fetch stub + fake D1: refreshes streaming + popularity for the 200 most-popular stale titles (`last_refreshed_at IS NULL OR < now-7d`), updates `last_refreshed_at`, logs a structured JSON summary line `{"event":"cron_refresh","refreshed":N,"errors":M}` via console.log, and continues past individual title failures (error counted, not thrown).
+- [x] **Step 2:** Implement. Query stale titles ordered by popularity DESC LIMIT 200 (NOTE: ~200 TMDB fetches per run requires the Workers Paid plan's 1000-subrequest limit; the Free plan caps at 50/invocation — if the account is Free at deploy time, set LIMIT 40); for each, `fetchMovieDetail` → update `streaming`, `popularity`, `vote_count`, `vote_average`, `last_refreshed_at = now`. Batch updates with `db.batch` in chunks of 25. Accept `fetchImpl` param defaulting to global fetch (for tests).
+- [x] **Step 3:** Green. Commit: `feat: implement weekly TMDB streaming refresh cron`
 
 **After completing Phase 3:** group review.
 
