@@ -127,6 +127,44 @@ describe("quick match", () => {
     expect(fourth.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("says why a fourth tag did nothing instead of ignoring the tap", async () => {
+    stubApi();
+    await renderQuick();
+
+    for (const tag of ["Cozy", "Funny", "Thrilling"]) {
+      fireEvent.click(screen.getByRole("checkbox", { name: tag }));
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: "Romantic" }));
+
+    expect(screen.getByText(/remove one first/i)).toBeTruthy();
+
+    // Freeing a slot clears the notice rather than leaving it stuck.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cozy" }));
+    expect(screen.queryByText(/remove one first/i)).toBeNull();
+  });
+
+  it("says the group could not be loaded rather than looking like a solo match", async () => {
+    search = "group=g1";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/auth/me") {
+          return new Response(JSON.stringify(ALICE), { status: 200 });
+        }
+        if (url.startsWith("/api/groups/")) {
+          return new Response(JSON.stringify({ error: "boom" }), { status: 500 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+    await renderQuick();
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/group/i);
+    // The CTA still works — the group id in the URL is what the server matches on.
+    expect(screen.getByRole("button", { name: /find our match/i })).toBeTruthy();
+  });
+
   it("says it will surprise us while no tag is chosen", async () => {
     stubApi();
     await renderQuick();

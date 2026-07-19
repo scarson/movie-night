@@ -9,14 +9,6 @@ export interface Member {
   avatarUrl: string | null;
 }
 
-export const EMPTY_DRAFT: ProfileDraft = {
-  comfortTitles: [],
-  watchlist: [],
-  vibes: [],
-  dealbreakers: [],
-  streamingServices: [],
-};
-
 const GENERIC_ERROR = "Something went wrong. Check your connection and try again.";
 
 interface SavedProfile {
@@ -108,7 +100,7 @@ export async function fetchGroup(groupId: string): Promise<GroupSummary | null> 
   const body = await getJson<{ group: GroupSummary }>(
     `/api/groups/${encodeURIComponent(groupId)}`
   );
-  if (body === undefined || body === null) return null;
+  if (body === null) return null;
   return { name: body.group.name, members: body.group.members };
 }
 
@@ -136,7 +128,7 @@ export interface StartSessionArgs {
 
 export async function startSession(
   args: StartSessionArgs
-): Promise<{ sessionId: string | null; error: string }> {
+): Promise<{ sessionId: string | null; error: string | null }> {
   const flags: Record<string, { roughDay: boolean }> = {};
   for (const [userId, roughDay] of Object.entries(args.memberFlags)) {
     if (roughDay) flags[userId] = { roughDay: true };
@@ -155,7 +147,9 @@ export async function startSession(
       ...(Object.keys(flags).length > 0 ? { memberFlags: flags } : {}),
     }
   );
-  return { sessionId: data?.sessionId ?? null, error: error ?? GENERIC_ERROR };
+  const sessionId = data?.sessionId ?? null;
+  // A 200 with no sessionId is still a failure the caller has to render.
+  return { sessionId, error: sessionId === null ? (error ?? GENERIC_ERROR) : null };
 }
 
 /** Runs a matching round. Returns the server's user-facing error, or null on success. */

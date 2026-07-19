@@ -165,6 +165,21 @@ describe("ritual stepper", () => {
     });
   });
 
+  it("moves focus to the new step's heading so the change is announced", async () => {
+    search = "group=g1";
+    const calls = stubApi();
+    await renderRitual();
+    await screen.findByRole("checkbox", { name: /Arrival/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }))
+    );
+    expect(document.activeElement?.textContent).toContain("Bob Reyes");
+  });
+
   it("refuses to render the editor when the saved profile could not be loaded", async () => {
     stubApi({ profile: { status: 500, body: { error: "boom" } } });
     render(
@@ -273,6 +288,9 @@ describe("ritual submit", () => {
       expect.stringContaining("projectionist")
     );
     expect(push).not.toHaveBeenCalled();
+
+    // Focus must land somewhere real — the CTA it was on has unmounted.
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
 
     // Retry re-runs the match against the session already created.
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));

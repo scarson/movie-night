@@ -2,7 +2,7 @@
 // ABOUTME: The whole point is speed: nothing here blocks the CTA.
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Chip } from "@/components/chip";
@@ -36,24 +36,40 @@ function Quick() {
   const groupId = useSearchParams().get("group");
 
   const [group, setGroup] = useState<GroupSummary | null>(null);
+  const [groupFailed, setGroupFailed] = useState(false);
   const [moodVibes, setMoodVibes] = useState<string[]>([]);
+  const [limitHit, setLimitHit] = useState(false);
   const [roughDay, setRoughDay] = useState(false);
 
   const [matching, setMatching] = useState(false);
   const [matchDone, setMatchDone] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const tagsLabelId = useId();
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [loading, user, router]);
+
+  // The CTA the user was on unmounts with the error screen; without this the
+  // focus ring falls off onto <body>.
+  useEffect(() => {
+    if (matchError !== null) errorHeadingRef.current?.focus();
+  }, [matchError]);
 
   useEffect(() => {
     if (!user || groupId === null) return;
     let cancelled = false;
     (async () => {
       const loaded = await fetchGroup(groupId);
-      if (cancelled || loaded === null) return;
+      if (cancelled) return;
+      // Falling back to the solo-looking screen would hide who this match is
+      // actually for — the group id in the URL still drives the session.
+      if (loaded === null) {
+        setGroupFailed(true);
+        return;
+      }
       setGroup(loaded);
     })();
     return () => {
@@ -69,9 +85,14 @@ function Quick() {
   const toggleTag = (tag: string) => {
     if (moodVibes.includes(tag)) {
       setMoodVibes(moodVibes.filter((t) => t !== tag));
+      setLimitHit(false);
       return;
     }
-    if (atTagLimit) return;
+    // A tap that does nothing and says nothing reads as a broken control.
+    if (atTagLimit) {
+      setLimitHit(true);
+      return;
+    }
     setMoodVibes([...moodVibes, tag]);
   };
 
@@ -124,7 +145,11 @@ function Quick() {
   if (matchError !== null) {
     return (
       <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
-        <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
+        <h1
+          ref={errorHeadingRef}
+          tabIndex={-1}
+          className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white"
+        >
           Not tonight, apparently
         </h1>
         <p role="alert" className="mt-md text-base text-cream">
@@ -168,6 +193,13 @@ function Quick() {
         What are we feeling?
       </h1>
 
+      {groupFailed && (
+        <p role="alert" className="mt-lg text-sm text-ember">
+          We couldn&apos;t load your group just now — the match is still for the
+          whole group.
+        </p>
+      )}
+
       {watching !== null && (
         <div className="mt-lg flex items-center gap-md">
           <MemberAvatars members={group?.members ?? []} />
@@ -180,12 +212,12 @@ function Quick() {
       )}
 
       <div className="mt-2xl">
-        <p id="quick-tags-label" className="text-base text-cream">
+        <p id={tagsLabelId} className="text-base text-cream">
           Pick up to three, or skip straight to the match.
         </p>
         <div
           role="group"
-          aria-labelledby="quick-tags-label"
+          aria-labelledby={tagsLabelId}
           className="mt-md flex flex-wrap gap-sm"
         >
           {QUICK_TAGS.map((tag) => {
@@ -200,10 +232,12 @@ function Quick() {
             );
           })}
         </div>
-        <p aria-live="polite" className="mt-sm text-sm tabular-nums text-ash">
-          {moodVibes.length === 0
-            ? "No vibe set — surprise us, from your saved profiles."
-            : `${moodVibes.length} of ${MAX_QUICK_TAGS} chosen`}
+        <p aria-live="polite" className={`mt-sm text-sm tabular-nums ${limitHit ? "text-ember" : "text-ash"}`}>
+          {limitHit
+            ? `${MAX_QUICK_TAGS} is the limit — remove one first.`
+            : moodVibes.length === 0
+              ? "No vibe set — surprise us, from your saved profiles."
+              : `${moodVibes.length} of ${MAX_QUICK_TAGS} chosen`}
         </p>
       </div>
 

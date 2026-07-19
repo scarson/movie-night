@@ -88,6 +88,16 @@ describe("MoodScreen", () => {
     expect(mentions).toHaveLength(1);
   });
 
+  it("lists two members who share a name without a duplicate-key warning", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<MoodScreen {...baseProps({ otherMemberNames: ["Alex", "Alex"] })} />);
+
+    const summary = screen.getByRole("group", { name: /session/i });
+    expect(within(summary).getAllByText("Alex")).toHaveLength(2);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("tells you the picks are unweighted when no mood is chosen", () => {
     render(<MoodScreen {...baseProps({ moodVibes: [] })} />);
     expect(screen.getByText(/surprise us/i)).toBeTruthy();

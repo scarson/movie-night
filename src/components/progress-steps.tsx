@@ -8,18 +8,34 @@ export interface ProgressStepsProps {
   onStepSelect: (index: number) => void;
 }
 
+function Check() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M5 12.5 10 17.5 19 7"
+        stroke="var(--amber)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Amber fill is reserved for CTAs (DESIGN.md's three-level hierarchy), so the
+// current step is marked with the border-and-glow "active state" treatment.
 function Marker({ state, position }: { state: "done" | "current" | "upcoming"; position: number }) {
   const base =
     "flex h-7 w-7 shrink-0 items-center justify-center rounded-pill border text-sm tabular-nums";
   const tone =
     state === "current"
-      ? "border-amber bg-amber text-midnight font-semibold"
+      ? "border-amber bg-amber-glow font-semibold text-amber"
       : state === "done"
         ? "border-amber text-amber"
         : "border-slate text-ash";
   return (
     <span aria-hidden="true" className={`${base} ${tone}`}>
-      {state === "done" ? "✓" : position}
+      {state === "done" ? <Check /> : position}
     </span>
   );
 }

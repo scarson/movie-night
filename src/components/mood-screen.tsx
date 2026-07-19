@@ -38,6 +38,8 @@ export function MoodScreen({
   const vibeId = useId();
   const noteId = useId();
   const summaryId = useId();
+  // A hard-coded DOM id would collide the moment two of these ever coexist.
+  const noteFieldId = useId();
 
   return (
     <div>
@@ -68,7 +70,7 @@ export function MoodScreen({
       <div className="mt-2xl">
         <label
           id={noteId}
-          htmlFor="mood-note"
+          htmlFor={noteFieldId}
           className="block font-display text-xl font-semibold text-warm-white"
         >
           Anything else?
@@ -77,7 +79,7 @@ export function MoodScreen({
           Optional. Describe the evening in your own words.
         </p>
         <textarea
-          id="mood-note"
+          id={noteFieldId}
           value={moodText}
           maxLength={MAX_MOOD_TEXT}
           rows={3}
@@ -109,7 +111,7 @@ export function MoodScreen({
         aria-labelledby={summaryId}
         className="mt-3xl rounded-panel border border-slate bg-charcoal p-lg"
       >
-        <h2 id={summaryId} className="text-sm font-semibold uppercase tracking-wide text-ash">
+        <h2 id={summaryId} className="text-xs font-medium uppercase tracking-wider text-ash">
           Session summary
         </h2>
         <dl className="mt-md space-y-md">
@@ -123,8 +125,9 @@ export function MoodScreen({
               {you.watchlistCount} watchlist
             </dd>
           </div>
-          {otherMemberNames.map((name) => (
-            <div key={name}>
+          {otherMemberNames.map((name, index) => (
+            // Two members can share a name; position is what makes the row unique.
+            <div key={`${name}-${index}`}>
               <dt className="text-base font-medium text-cream">{name}</dt>
               <dd className="mt-2xs text-sm text-ash">Using their saved profile</dd>
             </div>

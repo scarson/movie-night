@@ -2,7 +2,7 @@
 // ABOUTME: Only the signed-in user's profile is editable; others bring their saved one.
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
@@ -44,14 +44,28 @@ function Ritual() {
   const [roughDay, setRoughDay] = useState(false);
   const [memberFlags, setMemberFlags] = useState<Record<string, boolean>>({});
 
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
   const [matching, setMatching] = useState(false);
   const [matchDone, setMatchDone] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [loading, user, router]);
+
+  // The CTA the user was on unmounts with the error screen; without this the
+  // focus ring falls off onto <body>.
+  useEffect(() => {
+    if (matchError !== null) errorHeadingRef.current?.focus();
+  }, [matchError]);
+
+  // A stepper that swaps its content without moving focus leaves screen-reader
+  // and keyboard users on a button whose surroundings silently changed.
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [step]);
 
   useEffect(() => {
     if (!user) return;
@@ -173,7 +187,11 @@ function Ritual() {
   if (matchError !== null) {
     return (
       <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
-        <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
+        <h1
+          ref={errorHeadingRef}
+          tabIndex={-1}
+          className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white"
+        >
           Not tonight, apparently
         </h1>
         <p role="alert" className="mt-md text-base text-cream">
@@ -217,7 +235,11 @@ function Ritual() {
       <div className="mt-2xl">
         {step === 0 && (
           <>
-            <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]"
+            >
               What do you love?
             </h1>
             <p className="mt-sm max-w-[62ch] text-base text-ash">
@@ -234,7 +256,11 @@ function Ritual() {
           <>
             <div className="flex items-center gap-md">
               <MemberAvatars members={[currentMember]} />
-              <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
+              <h1
+                ref={headingRef}
+                tabIndex={-1}
+                className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white"
+              >
                 {currentMember.name}
               </h1>
             </div>
@@ -257,7 +283,11 @@ function Ritual() {
 
         {step === moodStep && (
           <>
-            <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]"
+            >
               What are we feeling tonight?
             </h1>
             <div className="mt-2xl">
