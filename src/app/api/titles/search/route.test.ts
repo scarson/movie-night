@@ -51,6 +51,17 @@ async function search(q: string | null, userId = "u1"): Promise<Response> {
   return GET(new NextRequest(url, { headers: { cookie: `mn-session=${jwt}` } }));
 }
 
+/** Calls the route with a raw query string (for the ids= / popular= modes). */
+async function lookup(queryString: string, userId = "u1"): Promise<Response> {
+  const jwt = await createJWT({ userId, email: `${userId}@example.com` }, JWT_SECRET);
+  const { GET } = await import("./route");
+  return GET(
+    new NextRequest(`https://example.com/api/titles/search?${queryString}`, {
+      headers: { cookie: `mn-session=${jwt}` },
+    })
+  );
+}
+
 function tmdbSearchResponse(entries: Array<{ id: number; title: string }>) {
   return {
     page: 1,
@@ -201,5 +212,108 @@ describe("GET /api/titles/search", () => {
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(String(errorSpy.mock.calls[0][1])).toContain("500");
     errorSpy.mockRestore();
+  });
+});
+
+describe("GET /api/titles/search?ids= (saved-id resolution)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+
+    const { GET } = await import("./route");
+    const response = await GET(new NextRequest("https://example.com/api/titles/search?ids=1,2"));
+    expect(response.status).toBe(401);
+  });
+
+  it("resolves ids in the order requested, skipping unknown ids, without calling TMDB", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    await seedTitle(db, 1, "Alien", 10);
+    await seedTitle(db, 2, "Arrival", 90);
+    const fetchStub = vi.fn();
+    vi.stubGlobal("fetch", fetchStub);
+
+    // Requested order is the user's saved order — NOT popularity order.
+    const body = await (await lookup("ids=2,999,1")).json<{ results: Array<{ tmdbId: number }> }>();
+    expect(body.results.map((r) => r.tmdbId)).toEqual([2, 1]);
+    expect(body.results[0]).toEqual({ tmdbId: 2, title: "Arrival", year: 2020, posterPath: "/p.jpg" });
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-integer id entries and returns empty when none survive", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    await seedTitle(db, 1, "Alien");
+    vi.stubGlobal("fetch", vi.fn());
+
+    expect(await (await lookup("ids=abc,,1.5")).json()).toEqual({ results: [] });
+    expect(await (await lookup("ids=")).json()).toEqual({ results: [] });
+  });
+
+  it("caps resolution at 100 ids", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    for (let i = 1; i <= 120; i++) await seedTitle(db, i, `Title ${i}`);
+    vi.stubGlobal("fetch", vi.fn());
+
+    const ids = Array.from({ length: 120 }, (_, i) => i + 1).join(",");
+    const body = await (await lookup(`ids=${ids}`)).json<{ results: unknown[] }>();
+    expect(body.results).toHaveLength(100);
+  });
+
+  it("takes precedence over q so a stray query can't change the resolved set", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    await seedTitle(db, 1, "Alien");
+    await seedTitle(db, 2, "Arrival");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const body = await (await lookup("ids=1&q=arrival")).json<{ results: Array<{ tmdbId: number }> }>();
+    expect(body.results.map((r) => r.tmdbId)).toEqual([1]);
+  });
+});
+
+describe("GET /api/titles/search?popular=1 (quick picks)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the most popular catalog titles, capped at 12, without calling TMDB", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    for (let i = 1; i <= 15; i++) await seedTitle(db, i, `Title ${i}`, i);
+    const fetchStub = vi.fn();
+    vi.stubGlobal("fetch", fetchStub);
+
+    const body = await (await lookup("popular=1")).json<{ results: Array<{ tmdbId: number }> }>();
+    expect(body.results).toHaveLength(12);
+    expect(body.results[0].tmdbId).toBe(15); // highest popularity first
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty list on an unseeded catalog rather than erroring", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1");
+    vi.stubGlobal("fetch", vi.fn());
+
+    expect(await (await lookup("popular=1")).json()).toEqual({ results: [] });
   });
 });
