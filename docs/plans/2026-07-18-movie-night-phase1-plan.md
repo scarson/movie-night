@@ -75,6 +75,8 @@ notes and commit messages.
 - **Task 0.1:** `eslint.config.mjs` ignores list includes `"mockup.jsx"` in addition to tee-times' `.open-next/`, `.next/`, `.wrangler/` — tee-times has no such file; `mockup.jsx` is functional-spec reference material (per this plan's header) that pre-existed with `react/no-unescaped-entities` violations, not application code we intend to lint.
 - **Task 0.2:** `vitest-setup.ts` is an empty `export {}` stub, not a copy of tee-times' version — tee-times' setup file imports `vitest-axe` matchers, a dependency explicitly excluded from this project's `package.json` (Task 0.1 note: "no aws4fetch/better-sqlite3/playwright deps"). The plan's own fallback ("otherwise an empty `export {}` with ABOUTME") applies.
 - **Task 0.2:** `.dev.vars.example`'s explanatory comment points to itself (copy-and-fill instructions inline) rather than "README setup" as the plan step describes — `README.md` is a one-line stub with no setup section to point to, and adding one is out of this task's file list.
+- **Task 1.2:** `src/types/db.ts` contains only the 10 row interfaces the plan names explicitly (`UserRow` … `RateLimitRow`), not one per every table in the migration — the plan's Step 2 prose says "matching every table above" but then enumerates exactly 10 names, omitting `watch_history`, `watch_ratings`, `tension_axes` (the three tables the migration's own SQL comment calls out as "Phase 2 tables … created empty now"). Treated the enumerated name list as authoritative per standing rule 6 (no scope beyond the task); row types for those three tables are deferred to whichever Phase 2 task first reads/writes them.
+- **Task 1.2:** local D1 table-list verification returned 15 rows, not the plan's predicted 14 (`SELECT name FROM sqlite_master WHERE type='table'` → 13 schema tables + `sqlite_sequence` + `_cf_METADATA`). `_cf_METADATA` is a table Wrangler's local D1 (Miniflare) emulator creates itself for its own bookkeeping — not part of our schema, not present in the migration file, harmless.
 
 | Phase | Status | Ship SHA(s) | Notes |
 |---|---|---|---|
@@ -399,7 +401,7 @@ export const MATCHING_RESPONSE_SCHEMA = {
 
 **Files:** Create: `migrations/0001_initial_schema.sql`, `src/types/db.ts`
 
-- [ ] **Step 1:** Write the migration. Full content:
+- [x] **Step 1:** Write the migration. Full content:
 
 ```sql
 -- Movie Night initial schema. Users/auth mirror twin-cities-tee-times;
@@ -549,9 +551,9 @@ CREATE TABLE tension_axes (
 );
 ```
 
-- [ ] **Step 2:** `src/types/db.ts` — row interfaces matching every table above exactly (TEXT→string, INTEGER→number, nullable columns → `| null`). Name them `UserRow`, `AuthSessionRow`, `ProfileRow`, `GroupRow`, `GroupMemberRow`, `MovieSessionRow`, `SessionMemberRow`, `RecommendationRow`, `TitleRow` (note: the cast column is `top_cast`), `RateLimitRow`.
-- [ ] **Step 3:** Apply locally: `npm run migrate:local` — verify with `npx wrangler d1 execute movie-night-db --local --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"` (expect the 13 schema tables; note `sqlite_sequence` also appears because of AUTOINCREMENT — 14 rows total).
-- [ ] **Step 4:** Commit: `feat: add D1 initial schema and row types`
+- [x] **Step 2:** `src/types/db.ts` — row interfaces matching every table above exactly (TEXT→string, INTEGER→number, nullable columns → `| null`). Name them `UserRow`, `AuthSessionRow`, `ProfileRow`, `GroupRow`, `GroupMemberRow`, `MovieSessionRow`, `SessionMemberRow`, `RecommendationRow`, `TitleRow` (note: the cast column is `top_cast`), `RateLimitRow`.
+- [x] **Step 3:** Apply locally: `npm run migrate:local` — verify with `npx wrangler d1 execute movie-night-db --local --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"` (expect the 13 schema tables; note `sqlite_sequence` also appears because of AUTOINCREMENT — 14 rows total).
+- [x] **Step 4:** Commit: `feat: add D1 initial schema and row types`
 
 ### Task 1.3: db utils
 
