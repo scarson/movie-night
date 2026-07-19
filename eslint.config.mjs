@@ -5,6 +5,9 @@ import nextConfig from "eslint-config-next";
 const eslintConfig = [
   { ignores: [".open-next/", ".next/", ".wrangler/", "mockup.jsx"] },
   ...nextConfig,
+  // AI-generated text must render as text: dangerouslySetInnerHTML is banned repo-wide.
+  // The only formatting honored is the **bold** marker, parsed by src/components/bold-text.tsx.
+  { rules: { "react/no-danger": "error" } },
 ];
 
 export default eslintConfig;
