@@ -163,6 +163,16 @@ describe("/api/user/profile", () => {
     expect(response.status).toBe(400);
   });
 
+  it("PUT returns 400 (not 500) for a literal null JSON body", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    const { PUT } = await import("./route");
+    const response = await PUT(await authedPut("u1", "null"));
+    expect(response.status).toBe(400);
+  });
+
   it("PUT rejects non-array fields and non-integer tmdb ids", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

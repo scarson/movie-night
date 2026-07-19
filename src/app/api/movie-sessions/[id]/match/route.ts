@@ -67,7 +67,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    const parsed = await request.json();
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("body must be a JSON object");
+    }
+    body = parsed as Record<string, unknown>;
   } catch {
     return withAuthHeaders(NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }), headers);
   }

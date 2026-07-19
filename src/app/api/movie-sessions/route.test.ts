@@ -97,6 +97,14 @@ describe("POST /api/movie-sessions", () => {
     expect((await post("u1", "broken{{{")).status).toBe(400);
   });
 
+  it("returns 400 (not 500) for a literal null JSON body", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    expect((await post("u1", "null")).status).toBe(400);
+  });
+
   it("creates a session and session_members for all group members, returning { sessionId }", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

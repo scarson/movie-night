@@ -190,6 +190,7 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
 
     expect((await postMatch(sessionId, "u1", "broken{{{")).status).toBe(400);
+    expect((await postMatch(sessionId, "u1", "null")).status).toBe(400);
     expect((await postMatch(sessionId, "u1", { keptTmdbIds: ["27205"] })).status).toBe(400);
     expect((await postMatch(sessionId, "u1", { removedTmdbIds: [1.5] })).status).toBe(400);
     expect(
