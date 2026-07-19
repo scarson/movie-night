@@ -73,6 +73,10 @@ describe("RankedList", () => {
     expect(first.getByText(/2010/)).toBeTruthy();
     expect(first.getByText(RECS[0].explanation)).toBeTruthy();
 
+    // The ranking is real information, so it is carried by an ordered list —
+    // the visible numeral is decoration on top of that, not the only signal.
+    expect(items[0].closest("ol")).not.toBeNull();
+
     // Rank numerals are Fraunces per DESIGN.md, and count from 1 in list order.
     const ranks = screen.getAllByTestId("rank-numeral");
     expect(ranks.map((el) => el.textContent)).toEqual(["1", "2"]);

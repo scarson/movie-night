@@ -124,7 +124,7 @@ export function RankedList({
   };
 
   return (
-    <ul className="flex flex-col">
+    <ol className="flex flex-col">
       {recommendations.map((rec, index) => {
         const title = titles[rec.tmdbId];
         // The catalog is the source of names; a pick that never hydrated still
@@ -143,84 +143,85 @@ export function RankedList({
           <li
             key={rec.tmdbId}
             style={{ animationDelay: `${index * STAGGER_MS}ms` }}
-            className={`animate-rise-fade border-t border-slate py-lg first:border-t-0 first:pt-0 ${
+            className={`animate-rise-fade grid grid-cols-[minmax(0,14rem)_1fr] gap-x-md gap-y-md border-t border-slate py-2xl first:border-t-0 first:pt-0 sm:grid-cols-[13rem_1fr] sm:gap-x-lg ${
               removed ? "opacity-50" : ""
             }`}
           >
-            <div className="grid grid-cols-[132px_1fr] gap-md sm:grid-cols-[176px_1fr] sm:gap-lg">
+            {/* The poster leads and the type sets around it, magazine-style —
+                on a phone it takes most of the measure, with the rank and score
+                sitting in the air beside it. */}
+            <div className="sm:row-span-2">
               <Poster title={name} posterPath={title?.posterPath ?? null} size="w342" />
-
-              <div className="min-w-0">
-                <div className="flex items-start justify-between gap-sm">
-                  <span
-                    data-testid="rank-numeral"
-                    aria-hidden="true"
-                    className="font-display text-[1.75rem]/[1] font-extrabold text-slate sm:text-[2.5rem]/[1]"
-                  >
-                    {index + 1}
-                  </span>
-                  <span
-                    data-testid="score-badge"
-                    aria-hidden="true"
-                    className="shrink-0 rounded-pill bg-charcoal px-md py-2xs text-sm tabular-nums text-cream"
-                  >
-                    {rec.matchScore}
-                    <span className="ml-xs text-xs text-ash">match</span>
-                  </span>
-                </div>
-
-                <h3
-                  className={`mt-sm font-display text-xl/[1.2] font-bold text-warm-white sm:text-[1.75rem]/[1.15] ${
-                    removed ? "line-through" : ""
-                  }`}
-                >
-                  {name}
-                </h3>
-                <span className="sr-only">{`${name}, ${rec.matchScore}% match`}</span>
-                {meta !== "" && <p className="mt-2xs text-sm text-ash">{meta}</p>}
-
-                {kept && (
-                  <p className="mt-sm text-sm text-sage">Kept for the next round</p>
-                )}
-                {removed && (
-                  <p className="mt-sm text-sm text-ember">Won&apos;t come back next round</p>
-                )}
-              </div>
             </div>
 
-            <p className="mt-md max-w-[62ch] text-base/[1.6] text-cream">{rec.explanation}</p>
-
-            <div className="mt-md flex flex-wrap items-center gap-x-md gap-y-sm">
-              {labels.map((label) => (
-                <span
-                  key={label}
-                  className="rounded-tag border border-slate px-sm py-2xs text-xs text-ash"
-                >
-                  {label}
-                </span>
-              ))}
-              {asOf !== null && <span className="text-xs text-slate">{asOf}</span>}
-
-              <span className="ml-auto flex items-center gap-sm">
-                <RatingButton
-                  label={`Keep ${name}`}
-                  pressed={kept}
-                  onClick={() => rate(rec.tmdbId, "kept")}
-                >
-                  <Heart filled={kept} />
-                </RatingButton>
-                <RatingButton
-                  label={`Remove ${name}`}
-                  pressed={removed}
-                  onClick={() => rate(rec.tmdbId, "removed")}
-                >
-                  <Cross filled={removed} />
-                </RatingButton>
+            <div className="flex flex-col items-start gap-sm">
+              <span
+                data-testid="rank-numeral"
+                aria-hidden="true"
+                className="font-display text-[2.5rem]/[1] font-extrabold text-ash/60"
+              >
+                {index + 1}
               </span>
+              <span
+                data-testid="score-badge"
+                aria-hidden="true"
+                className="rounded-pill bg-charcoal px-md py-2xs text-sm tabular-nums text-cream"
+              >
+                {rec.matchScore}
+                <span className="ml-xs text-xs text-ash">match</span>
+              </span>
+            </div>
+
+            <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2">
+              <h3
+                className={`font-display text-[1.75rem]/[1.15] font-bold text-warm-white ${
+                  removed ? "line-through" : ""
+                }`}
+              >
+                {name}
+              </h3>
+              <span className="sr-only">{`${name}, ${rec.matchScore}% match`}</span>
+              {meta !== "" && <p className="mt-2xs text-sm text-ash">{meta}</p>}
+
+              {kept && <p className="mt-sm text-sm text-sage">Kept for the next round</p>}
+              {removed && (
+                <p className="mt-sm text-sm text-ember">Won&apos;t come back next round</p>
+              )}
+
+              <p className="mt-md max-w-[62ch] text-base/[1.6] text-cream">{rec.explanation}</p>
+
+              <div className="mt-lg flex flex-wrap items-center gap-x-md gap-y-sm">
+                {labels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-tag border border-slate px-sm py-2xs text-xs text-ash"
+                  >
+                    {label}
+                  </span>
+                ))}
+                {asOf !== null && <span className="text-xs text-ash">{asOf}</span>}
+
+                <span className="ml-auto flex items-center gap-sm">
+                  <RatingButton
+                    label={`Keep ${name}`}
+                    pressed={kept}
+                    onClick={() => rate(rec.tmdbId, "kept")}
+                  >
+                    <Heart filled={kept} />
+                  </RatingButton>
+                  <RatingButton
+                    label={`Remove ${name}`}
+                    pressed={removed}
+                    onClick={() => rate(rec.tmdbId, "removed")}
+                  >
+                    <Cross filled={removed} />
+                  </RatingButton>
+                </span>
+              </div>
             </div>
           </li>
         );
       })}
-    </ul>
+    </ol>
   );
 }

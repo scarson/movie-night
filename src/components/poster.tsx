@@ -20,7 +20,7 @@ export function Poster({
   if (!posterPath) {
     return (
       <div role="img" aria-label={`${title} poster`} className={frame}>
-        <div className="flex h-full items-center justify-center font-display text-xl italic text-slate">
+        <div className="flex h-full items-center justify-center font-display text-xl italic text-ash">
           {title.charAt(0)}
         </div>
       </div>
