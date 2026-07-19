@@ -384,3 +384,27 @@ No implementation defects were found requiring a code fix — Round 2's rate-lim
 - `getGroupsForUser` fetches each group's members with a separate query per group (N+1 pattern), not a single joined query — acceptable at Phase 1 scale (a handful of groups per user at most) and not flagged as a defect; worth a second look only if a future phase needs this endpoint to scale to many groups per user.
 
 
+## Task 5.2: Matching engine core
+
+**Built:** `src/lib/matching.ts`, `src/lib/matching.test.ts`, `src/config/tags.test.ts`. Modified: `src/config/tags.ts` (added `GENRE_TAG_TO_TMDB`).
+
+**Decisions:**
+- Tests written first per TDD: ran red (`Cannot find module './matching'` for the engine suite; `GENRE_TAG_TO_TMDB` undefined for the tags suite — 4 collected failures), then implemented to green (49/49 across both files).
+- **SDK check (per the dispatching instruction):** the installed `@anthropic-ai/sdk@0.112.3` already types everything the plan's call block needs — `OutputConfig` (`effort: 'low'|'medium'|...`, `format?: JSONOutputFormat` with `{ type: 'json_schema', schema }`), `ThinkingConfigAdaptive` (`{ type: 'adaptive' }`), and `StopReason` including `'refusal'`. No SDK upgrade was needed; no Deviation.
+- `callClaude` returns `{ text: string | null, stopReason, inputTokens, outputTokens }` rather than throwing on bad stop_reasons — `text: null` signals max_tokens/refusal/missing-text-block, and `runMatching` converts that to `MatchingError("malformed")`. This split exists so the structured `matching_call` log line can still report real token usage for refused/truncated turns (the plan requires a log line "after every call"); transport-level failures (`APIConnectionError` → `timeout`, 429 → `rate_limited`, 529/5xx → `overloaded`) throw from `callClaude` directly and produce no log line since there is no usage to report. Error-instance check order matters and is commented: `APIConnectionError extends APIError` with `status: undefined`, so it must be tested first.
+- `runMatching` retries exactly once, only on `kind === "malformed"` (covers bad stop_reason, missing text block, JSON parse failure, shape-guard failure). `thin_results` and all transport kinds do not retry — verified by call-count assertions on the injected fake client.
+- The injected fake client returns a **leading thinking block** before the text block in every fixture (plan requirement), so the `content.find(b => b.type === "text")` extraction path is genuinely exercised — a `content[0].text` implementation fails these tests.
+- **Plan-gap resolution in `selectCandidates` (Deviation recorded in the plan):** the plan's step 5 ("Cap at 200, ordered by popularity") taken literally would evict low-popularity member-referenced titles whenever the pool exceeds 200, defeating step 2's entire purpose (and the plan's own required "comfort-title inclusion" test, which seeds 250 popular titles + an obscure comfort title). Resolved minimally: member-referenced titles always survive the cap; the cap evicts only popularity-pool titles; the final list is still popularity-ordered and ≤ 200.
+- `selectCandidates` filters `content_type = 'movie'` in both queries — only movie rows exist in Phase 1, but the composite PK `(tmdb_id, content_type)` means a future TV row sharing a tmdb_id would otherwise corrupt the pool (same reasoning as the Task 3.3 cron UPDATE).
+- Rough-day weight note contract (tested): exactly-one-favored names ONLY the favored member with the 65/35 split and an explicit "never mention or speculate about the reason" instruction; all-toggled/none-toggled → the equal-weight note; multi-favored (3+ members) → a generic note naming nobody. The strings "rough day" never appear anywhere in either prompt.
+- Prompt-layer clamps (name 50, tag 30 chars + 30 entries, moodText 200, steering 300, title lists 50 entries) all tested with 10k-char strings and 200-entry arrays; the clamped prefix must appear and the unclamped string must not.
+- `parseMatchingResponse` returns `{ response, droppedIds }` so `runMatching` can put the dropped-id list in the log line ("silent filter, count logged" per the plan) without a second validation pass.
+
+**Check results:**
+- `npx vitest run src/lib/matching.test.ts src/config/tags.test.ts`: red first (module/export missing), green after implementation (49/49) — one intermediate failure drove the cap/comfort-inclusion design fix above.
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm test`: clean, 15 files / 179 tests passed.
+
+**Commit:** `dabe57e` — `feat: add matching engine (candidates, prompt builder, parser, error taxonomy)`
+
