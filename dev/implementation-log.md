@@ -757,3 +757,22 @@ Client (delegated, all TDD, verified real first):
 **Docs (8.5/8.6):** implementation-pitfalls PLAT-1 (D1 param limit + chunk pattern, new "Cloudflare Workers & D1" section) and testing-pitfalls §7 (fake must enforce real limits; fixtures must reproduce states a real client emits) — `7391ab1`. `docs/deploy.md` deploy runbook — `f12e9a4`. CLAUDE.md/AGENTS.md project-layout corrected to the shipped routes.
 
 **Still blocked on credentials (for whoever deploys):** 8.3 live evals (`ANTHROPIC_API_KEY`), 8.4 adversarial injection launch gate (real matching endpoint), 8.2 full OAuth+seed preview. All in `docs/deploy.md`. The `STALE_TITLES_LIMIT=200` Free-vs-Paid decision and the accepted rate-limit TOCTOU races carry forward unchanged.
+
+---
+
+## Session close — handoff + WCAG 2.2 AA target (2026-07-19)
+
+**Handoff doc:** `dev/handoff-2026-07-19.md` — headline state, glossary, priority queue, operational guardrails, and a paste-ready continuation prompt for a fresh session.
+
+**Sam set WCAG 2.2 Level AA as the conformance target.** This resolved the Phase 7 close-out's open question ("promote `slate` borders to `ash`, or accept explicitly") in favor of *must fix* — 1.4.11 is a AA criterion, so "accept" was no longer available. New authoritative doc: **`docs/accessibility.md`** (per-criterion audit + remediation queue). The plan's discovery entry was struck through and redirected there; the target itself was routed into `CLAUDE.md`/`AGENTS.md` so it loads every session.
+
+Measured rather than inherited (WCAG relative-luminance formula, validated against reference pairs — `#fff`/`#000` → 21.00:1, `#777`/`#fff` → 4.48:1):
+
+- **`slate` borders fail 1.4.11** — 1.53:1 on midnight, 1.34:1 on charcoal, vs 3:1. Worse than the ~1.5 estimate carried in the plan. 45 occurrences, 21 files.
+- **`ember` on `charcoal` is 4.12:1** — under the 4.5:1 text floor. Only ever used on midnight (4.70:1) today; that was an unwritten invariant living in one reviewer's head, now recorded in DESIGN.md and CLAUDE.md.
+- **DESIGN.md's own contrast figures were wrong** — cream stated 13.2:1 (actually 16.52:1), amber stated 7.1:1 (actually 9.04:1). Understated, so nothing shipped badly, but a design system with wrong numbers eventually justifies a bad decision. Corrected, with the method and a recompute-don't-remember note.
+- Two further AA gaps found while auditing: **2.4.2** (six client-component pages all inherit the generic `<title>Movie Night</title>`; the fix needs a server `layout.tsx` per segment since a client component can't export `metadata`) and **2.4.1** (no skip link; note `<main>` lives per-page, not in the root layout).
+- Verified *passing* so they aren't re-litigated: 2.4.11 Focus Not Obscured (no `sticky`/`fixed` anywhere), 2.5.8 Target Size (44px mandated vs 24px required), 3.3.8 Accessible Authentication (OAuth, no cognitive-function test). 2.5.7 and 3.2.6 are N/A.
+- Recorded as **not** verified rather than assumed passing: no screen-reader pass has ever been run, 400% zoom (1.4.10) untested, 3.3.7 unaudited.
+
+**Also corrected a live contradiction:** DESIGN.md's rough-day section still gave `"tonight's picks lean toward [name]'s preferences"` as a safe, anonymous phrasing — the exact leak fixed in code this session (bug #4, commit `18c5908`). In a group of two the favored member is by definition the non-toggler, so naming them tells the recipient. The doc was actively contradicting shipped behavior and would eventually have re-introduced the bug; replaced with the invariant the prompt now enforces.

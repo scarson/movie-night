@@ -235,6 +235,8 @@ All font choices, colors, spacing, and aesthetic direction are defined there.
 Do not deviate without explicit user approval.
 In QA mode, flag any code that doesn't match DESIGN.md.
 
+**Accessibility target: WCAG 2.2 Level AA.** Non-negotiable — a surface that doesn't meet it isn't done. See `docs/accessibility.md` for the per-criterion audit, the open gaps, and the measured contrast values. Two standing token rules: `ember` must never carry normal-size text on `charcoal` (4.12:1), and control boundaries need ≥3:1 (`slate` at 1.53:1 does not qualify — open remediation). Recompute contrast with the WCAG formula rather than trusting a remembered figure.
+
 ## Tech Stack
 
 | Layer | Choice |

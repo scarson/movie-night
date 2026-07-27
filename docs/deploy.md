@@ -137,3 +137,9 @@ Run these against the live site in order; each depends on the previous:
 - **The adversarial prompt-injection pass** (design doc §AI Security, a stated
   launch gate) is unexecuted for the same reason. Run it against the deployed
   matching endpoint before sharing the URL publicly.
+- **A screen-reader pass has never been run.** The project targets WCAG 2.2 AA
+  (`docs/accessibility.md`); all ARIA work so far was verified structurally in
+  the DOM, never by listening to VoiceOver/NVDA announce a flow. The deployed
+  app is the right place to do it — especially the results page, whose meaning
+  depends on reading order. That doc also lists three open AA gaps that are
+  fixable without any credentials.
