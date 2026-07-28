@@ -3,7 +3,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy — Movie Night",
+  title: "Privacy",
   description: "What Movie Night collects, why, and where it goes.",
 };
 

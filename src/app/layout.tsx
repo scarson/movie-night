@@ -9,7 +9,12 @@ import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Movie Night",
+  // 2.4.2: each route segment names its own surface and the template adds the
+  // app name, so no two pages share a title. `default` covers the landing page.
+  title: {
+    default: "Movie Night",
+    template: "%s — Movie Night",
+  },
   description: "Find a movie you'll both love tonight.",
 };
 
