@@ -121,7 +121,7 @@ export function TitleSearch({
         onChange={(e) => handleQueryChange(e.target.value)}
         placeholder={placeholder}
         aria-label="Search for a title"
-        className="min-h-11 w-full rounded-control border border-slate bg-charcoal px-md text-base text-cream placeholder:text-ash"
+        className="min-h-11 w-full rounded-control border border-ash bg-charcoal px-md text-base text-cream placeholder:text-ash"
       />
 
       {failed && (

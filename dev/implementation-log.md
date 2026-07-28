@@ -776,3 +776,76 @@ Measured rather than inherited (WCAG relative-luminance formula, validated again
 - Recorded as **not** verified rather than assumed passing: no screen-reader pass has ever been run, 400% zoom (1.4.10) untested, 3.3.7 unaudited.
 
 **Also corrected a live contradiction:** DESIGN.md's rough-day section still gave `"tonight's picks lean toward [name]'s preferences"` as a safe, anonymous phrasing — the exact leak fixed in code this session (bug #4, commit `18c5908`). In a group of two the favored member is by definition the non-toggler, so naming them tells the recipient. The doc was actively contradicting shipped behavior and would eventually have re-introduced the bug; replaced with the invariant the prompt now enforces.
+
+---
+
+## WCAG 2.2 AA remediation — the three open gaps closed (2026-07-27)
+
+Branch `claude/movie-night-a11y-fixes-fb9122`, off `283b025` (the PR #4 merge). All three items
+in `docs/accessibility.md`'s queue are fixed, each TDD, each its own commit, gates green and
+pristine at every commit. **563 tests passing, up from 519.**
+
+**1.4.11 control boundaries** (`2f67522`). Resting borders on interactive controls moved
+`slate` → `ash`; `slate` kept for dividers, panel edges, hover washes, and disabled controls
+(1.4.11 explicitly exempts inactive components). `hover:border-ash` was a no-op once resting
+was ash, so those moved to `cream`.
+
+Two things the audit's `border-slate` grep could not have found:
+- **`ToggleRow`'s switch track**, a `bg-` utility, not a border. Knob position is the only
+  visual carrier of on/off and the off state was slate-on-charcoal (1.34:1) with a midnight
+  knob on that track (1.53:1). Now an inset ash ring (5.44:1) + ash knob (4.06:1).
+- **`privacy/page.tsx`'s `marker:text-slate`** bullets — surfaced by the allowlist test, judged
+  non-governed (list semantics carry the meaning) and allowlisted with that reason.
+
+**2.4.2 page titles** (`5b69073`, `0dd9b5f`). Server `layout.tsx` per client-component segment.
+The audit listed six; `groups/join/[code]` was a **seventh** and would have inherited "Groups".
+Then a Next.js subtlety worth remembering: **a title template applies only to a segment's
+children, and a plain-string title passes none further down** — `groups` setting
+`title: "Groups"` left its grandchild with no template, so `/groups/join/[code]` served
+"Join a group" with no suffix. Verified against served HTML, not just the metadata objects.
+
+**2.4.1 skip link** (`e79d52d`, `602cede`). `SkipLink` first in `<body>`, `id="main"` on all
+**20** `<main>` branches (not 9 — pages return separate branches for loading/error/empty/content).
+
+### The browser pass earned its keep
+
+Three defects survived a green 561-test suite and were caught only in a real browser:
+
+1. **The skip link moved nothing.** A bare `<main id="main">` is not focusable, so activating
+   it scrolled while `activeElement` stayed `<body>` — the next Tab went back to the banner the
+   user had just asked to skip. Needed `tabIndex={-1}` on all 20.
+2. **The focused skip link had no padding.** `not-sr-only` resets `padding` to 0, so the
+   unprefixed `px-md` lost the cascade; measured 0 on all sides. All its layout utilities are
+   now focus-prefixed.
+3. The switch-track gap above, invisible to a border-oriented grep.
+
+### Measurement gotchas (routed into docs/accessibility.md)
+
+- **Composite alpha before comparing.** `--amber-glow` is `#e8a84920`; an amber track against a
+  raw translucent panel measured "1.00:1". Walk the tree and composite to a solid first.
+- **`:focus` does not match when the browser window lacks OS focus**, even though
+  `activeElement` is set — a programmatic `.focus()` in a background pane looks exactly like
+  broken CSS. Check `document.hasFocus()` or drive it with a real Tab.
+- **jsdom has no layout, no cascade, and no fragment-navigation focus.** This is the third
+  session in a row where that produced a false green; it is now stated plainly in the doc.
+
+### Guards left behind
+
+`src/test/contrast.ts` computes WCAG relative luminance with the palette **read live from
+`globals.css`**, so assertions track the real tokens instead of a copy — validated against
+`#fff`/`#000` → 21.00:1 and `#777`/`#fff` → 4.48:1, and it reproduces every figure in
+`docs/accessibility.md`. `control-contrast.test.tsx` renders each primitive and then pins every
+remaining `-slate` use to a documented allowlist, so a new slate boundary fails loudly rather
+than passing silently.
+
+### Verification performed
+
+`next dev` at 375px and 1280px. These changes are presentation and metadata only, so CF bindings
+were not needed; the credential-blocked work (real seed, live evals, injection gate, deploy) is
+unchanged and still listed in `docs/deploy.md`. **Not done: still no screen-reader pass, and
+400% zoom (1.4.10) remains untested** — both were already recorded as unverified and still are.
+
+### Follow-up worth doing separately
+
+The secondary-button class string is duplicated verbatim in five files. Left alone deliberately
+to keep this change to one concern, but it wants extracting.

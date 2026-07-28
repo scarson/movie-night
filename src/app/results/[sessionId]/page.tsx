@@ -146,7 +146,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   if (loadError === "missing") {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
           We can&apos;t find tonight&apos;s picks
         </h1>
@@ -163,7 +163,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   if (loadError === "error") {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
           We couldn&apos;t reach tonight&apos;s picks
         </h1>
@@ -195,7 +195,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   if (results === null) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl" aria-busy="true">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl" aria-busy="true">
         <div className="h-8 w-48 rounded-tag bg-charcoal" />
         <div className="mt-lg h-4 w-64 rounded-tag bg-charcoal" />
         <span className="sr-only">Loading tonight&apos;s picks</span>
@@ -227,7 +227,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
 
   if (busy) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <PhasedLoading done={roundDone} onComplete={() => setBusy(false)} />
       </main>
     );
@@ -237,7 +237,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   // match step. Matching is an explicit choice here, never an on-mount side effect.
   if (response === null || round === 0) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white">
           Nothing picked yet
         </h1>
@@ -296,7 +296,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
       : "Read from your saved profiles.";
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         Tonight, then.
       </h1>

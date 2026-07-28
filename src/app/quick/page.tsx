@@ -139,7 +139,7 @@ function Quick() {
 
   if (matching && matchError === null) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <PhasedLoading
           done={matchDone}
           onComplete={() => {
@@ -152,7 +152,7 @@ function Quick() {
 
   if (matchError !== null) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1
           ref={errorHeadingRef}
           tabIndex={-1}
@@ -183,7 +183,7 @@ function Quick() {
               setMatching(false);
               setMatchError(null);
             }}
-            className="flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash"
+            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
           >
             Change the vibe
           </button>
@@ -196,7 +196,7 @@ function Quick() {
     others.length > 0 ? [user.name.trim() || "You", ...others.map((m) => m.name)] : null;
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         What are we feeling?
       </h1>

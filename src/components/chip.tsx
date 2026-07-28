@@ -5,11 +5,11 @@
 const TONE_CLASSES = {
   amber: {
     selected: "border-amber bg-amber-glow text-amber font-medium",
-    idle: "border-slate bg-charcoal text-cream hover:border-ash",
+    idle: "border-ash bg-charcoal text-cream hover:border-cream",
   },
   rose: {
     selected: "border-person-b bg-[#ce7b8c20] text-person-b font-medium",
-    idle: "border-slate bg-charcoal text-cream hover:border-ash",
+    idle: "border-ash bg-charcoal text-cream hover:border-cream",
   },
 } as const;
 

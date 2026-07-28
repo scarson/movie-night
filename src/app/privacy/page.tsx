@@ -3,13 +3,13 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy — Movie Night",
+  title: "Privacy",
   description: "What Movie Night collects, why, and where it goes.",
 };
 
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-3xl pt-2xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-3xl pt-2xl">
       <h1 className="font-display text-[2.5rem]/[1.15] font-extrabold text-warm-white">
         Privacy
       </h1>

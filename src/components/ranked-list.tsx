@@ -87,7 +87,7 @@ function RatingButton({
       aria-pressed={pressed}
       onClick={onClick}
       className={`flex size-11 shrink-0 items-center justify-center rounded-pill border text-ash transition-colors duration-100 hover:text-cream ${
-        pressed ? "border-cream" : "border-slate"
+        pressed ? "border-cream" : "border-ash"
       }`}
     >
       {children}

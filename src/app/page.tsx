@@ -32,7 +32,7 @@ export default function Home() {
   return (
     <div className="relative overflow-hidden">
       <div aria-hidden="true" className="absolute inset-0" style={STARFIELD} />
-      <main className="relative mx-auto w-full max-w-[680px] px-md pb-4xl pt-3xl">
+      <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[680px] px-md pb-4xl pt-3xl">
         <h1 className="animate-rise-fade max-w-[14ch] font-display text-[2.5rem]/[1.15] font-extrabold italic text-warm-white sm:text-[3.5rem]/[1.1]">
           What should we watch tonight?
         </h1>

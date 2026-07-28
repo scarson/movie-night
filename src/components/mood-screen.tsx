@@ -85,7 +85,7 @@ export function MoodScreen({
           rows={3}
           onChange={(e) => onMoodTextChange(e.target.value)}
           placeholder="Long week — something light, nothing sad."
-          className="w-full resize-none rounded-control border border-slate bg-charcoal p-md text-base/relaxed text-cream placeholder:text-ash"
+          className="w-full resize-none rounded-control border border-ash bg-charcoal p-md text-base/relaxed text-cream placeholder:text-ash"
         />
         <p className="mt-2xs text-sm tabular-nums text-ash">
           {moodText.length}/{MAX_MOOD_TEXT}

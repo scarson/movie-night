@@ -91,12 +91,12 @@ export function TagPicker({
             }}
             placeholder={customPlaceholder}
             aria-label="Add a custom tag"
-            className="min-h-11 flex-1 rounded-control border border-slate bg-charcoal px-md text-base text-cream placeholder:text-ash"
+            className="min-h-11 flex-1 rounded-control border border-ash bg-charcoal px-md text-base text-cream placeholder:text-ash"
           />
           <button
             type="button"
             onClick={addCustomTag}
-            className="min-h-11 rounded-control border border-slate px-md text-sm font-medium text-cream hover:border-ash"
+            className="min-h-11 rounded-control border border-ash px-md text-sm font-medium text-cream hover:border-cream"
           >
             Add
           </button>

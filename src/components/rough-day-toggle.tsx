@@ -38,7 +38,7 @@ export function RoughDayToggle({ name, checked, onChange }: RoughDayToggleProps)
         aria-label={`${name} had a rough day`}
         onClick={() => onChange(!checked)}
         className={`flex w-full items-center gap-md rounded-panel border p-md text-left ${
-          checked ? "border-amber bg-amber-glow" : "border-slate bg-charcoal"
+          checked ? "border-amber bg-amber-glow" : "border-ash bg-charcoal"
         }`}
       >
         <Heart filled={checked} />

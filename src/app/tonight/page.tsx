@@ -54,7 +54,7 @@ export default function Tonight() {
   const target = selected === null ? "" : `?group=${encodeURIComponent(selected)}`;
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         {firstName ? `${firstName}, who's watching tonight?` : "Who's watching tonight?"}
       </h1>
@@ -87,7 +87,7 @@ export default function Tonight() {
         </Link>
         <Link
           href={`/ritual${target}`}
-          className="flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash"
+          className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
         >
           The full ritual
         </Link>
