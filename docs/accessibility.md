@@ -8,47 +8,83 @@ This doc is the audit state and the remediation queue. `DESIGN.md` holds the des
 
 | | Count | |
 |---|---|---|
-| ❌ Open — must fix for AA | 3 | 1.4.11 control borders, 2.4.2 page titles, 2.4.1 skip link |
+| ❌ Open — must fix for AA | 0 | the 1.4.11 / 2.4.2 / 2.4.1 queue was closed on 2026-07-27 |
 | ✅ Verified passing | see below | measured or exercised, not assumed |
 | ➖ Not applicable | 3 | no drag, no help mechanism, no cognitive-function auth test |
 | ❓ Not yet audited | — | full AT/screen-reader pass; see Not yet verified |
 
 ---
 
-## ❌ Open items (must fix)
+## Remediation closed on 2026-07-27
 
-### 1.4.11 Non-text Contrast — `slate` control borders (systemic)
+All three open items were fixed, each test-first, and then verified in a real browser
+at 375px and 1280px. The browser pass is what makes them credible — it caught three
+defects that the unit tests could not, described below.
 
-`--slate #2d3548` is the border on every input, textarea, and outlined control. Measured against its backgrounds:
+### 1.4.11 Non-text Contrast — control borders ✅
 
-- on `--midnight #0f1219` → **1.53:1**
-- on `--charcoal #1a1f2e` → **1.34:1**
+`--slate #2d3548` was the border on every input, textarea, and outlined control:
+**1.53:1** on midnight, **1.34:1** on charcoal, against a 3:1 requirement.
 
-The requirement is **3:1** for the visual boundary of a user-interface component. Both fail, and not marginally.
+The resting border on *interactive* controls is now `--ash #8b95a8` — measured in-browser
+at **6.21:1** on midnight and **5.44:1** on charcoal. `slate` is kept for what 1.4.11
+does not govern: dividers, panel edges, hover washes, and disabled controls (explicitly
+exempt as inactive components). `hover:border-ash` became a no-op once resting was ash,
+so those hovers moved up to `cream`.
 
-**Why it passes casual inspection:** every control is still *identifiable* by its label, placeholder, or glyph, all of which clear 4.5:1. Only the boundary itself is decorative-strength. This was noticed during the Phase 7 close-out review and deliberately left open then, because the fix touches every form in the app and the conformance target hadn't been set. It is now set, so this must be fixed.
+**A fourth gap, not in the original audit:** `ToggleRow`'s switch track. Knob position is
+the only visual carrier of on/off, and the off state drew a slate track on a charcoal
+panel (**1.34:1**) with a midnight knob on that track (**1.53:1**) — two failures the
+`border-slate` grep never surfaced, because they are `bg-` utilities. Off now has an inset
+ash ring (**5.44:1**) and an ash knob (**4.06:1**). The on state already cleared via amber
+(**7.34:1** track over the composited amber-glow panel, **9.04:1** knob).
 
-**Scope:** 45 occurrences of `border-slate` across 21 files under `src/`.
+**On the aesthetic risk:** the densest surface is the genre chip grid, ~18 outlined pills
+at once. Checked at both widths — it reads as a calm outlined set, not a shout, and the
+hierarchy still holds (amber owns selected and primary; kept-slate dividers stay visibly
+fainter than control boundaries, which is the intended distinction). If it ever does read
+too hot, the documented fallback is a dedicated mid-tone token between slate and ash.
 
-**Recommended fix:** promote the *resting* border on interactive controls to `--ash #8b95a8` (6.21:1 on midnight, 5.44:1 on charcoal — clears 3:1 with headroom). Keep `slate` for non-interactive dividers and panel edges, which 1.4.11 does not govern. Do not reach for a new token; `ash` already exists and is already used for secondary text, so promoting it costs no palette surface.
+### 2.4.2 Page Titled ✅
 
-**Watch out:** this is a visual change to the app's calmest surfaces, and DESIGN.md's aesthetic is deliberately quiet. Verify in a real browser at both 375px and 1280px that the forms don't start shouting. If `ash` reads too hot on large form surfaces, the alternative is a dedicated mid-tone token between slate and ash that still clears 3:1 — but try `ash` first.
+Each client-component route now has a small server `layout.tsx` supplying its title, and
+the root layout carries a `%s — Movie Night` template so segments name only their surface.
 
-### 2.4.2 Page Titled — six pages share one generic title
+The audit listed six pages; **`groups/join/[code]` was a seventh**, and it would have
+inherited "Groups" from its parent segment. Verified against the served HTML: all nine
+routes return distinct titles.
 
-`tonight`, `quick`, `ritual`, `groups`, `profile`, and `results/[sessionId]` are all client components (`"use client"`) with no `export const metadata` and no route-segment `layout.tsx`. Every one of them inherits the root layout's `<title>Movie Night</title>`.
+Non-obvious Next.js behavior worth keeping: **a title template applies only to a segment's
+children, and a plain-string title passes none further down.** `groups` setting
+`title: "Groups"` left its *grandchild* with no template, so `/groups/join/[code]` rendered
+without the app name. Any segment with route segments beneath it must restate the template;
+both spellings come from `src/app/title-template.ts` so they cannot drift.
 
-A screen-reader user tabbing between browser tabs, or anyone scanning history/bookmarks, gets six identical entries. `privacy` is the only non-root page with a real title (`Privacy — Movie Night`).
+### 2.4.1 Bypass Blocks ✅
 
-**Fix:** a client component cannot export `metadata`. Add a small server `layout.tsx` per route segment exporting `metadata: { title: "..." }` — the page stays a client component underneath. Titles should name the surface: "Tonight", "Quick match", "The full ritual", "Groups", "Profile", "Tonight's picks".
+A `SkipLink` is the first focusable element in `<body>` — `sr-only` until focused, then a
+44px amber-outlined control at the top-left. Two defects found only in the browser:
 
-### 2.4.1 Bypass Blocks — no skip link
+- **The link moved nothing.** A bare `<main id="main">` is not focusable, so activating it
+  scrolled while `activeElement` stayed on `<body>` — the next Tab returned to the banner
+  the user had just asked to skip. All 20 `<main>` branches now carry `tabIndex={-1}`.
+  (20, not 9: pages return separate `<main>` branches for loading/error/empty/content, and
+  a partial pass would leave the link dead on exactly the states a struggling user hits.)
+- **The focused link had no padding.** Tailwind's `not-sr-only` resets `padding` to 0, so
+  the unprefixed `px-md` lost the cascade and the text sat against the border. Every layout
+  utility on the link is now focus-prefixed.
 
-There is no skip-to-content mechanism. Every page repeats the `Nav` before `<main>`.
+### Guards left behind
 
-The repeated block is genuinely small (a wordmark plus one auth control), which is why this is listed third rather than first — some auditors would pass it on the "not a block" reading. Don't rely on that. A skip link is a handful of lines and removes the argument entirely.
-
-**Fix:** a visually-hidden-until-focused anchor to `#main` as the first focusable element in `<body>`, plus `id="main"` on each page's existing `<main>`. Note the `<main>` elements live in the individual pages, not the root layout — so either add the id per page or lift `<main>` into the layout (the latter is cleaner but touches every page's wrapper).
+- `src/test/contrast.ts` — WCAG relative luminance, with the palette read live from
+  `globals.css` so assertions track the real tokens rather than a copy. Validated against
+  `#fff`/`#000` → 21.00:1 and `#777`/`#fff` → 4.48:1, and it reproduces every figure in
+  this document.
+- `control-contrast.test.tsx` — renders each primitive and asserts its boundary, then pins
+  every remaining `-slate` use to a documented allowlist, so a new slate boundary fails
+  loudly and forces the interactive-or-not call to be made deliberately.
+- `page-titles.test.tsx` / `skip-link.test.tsx` — per-segment titles, template forwarding,
+  and a source scan requiring `id="main" tabIndex={-1}` on every `<main>`.
 
 ---
 
@@ -58,6 +94,7 @@ Measured or exercised during Phases 6–8, not assumed:
 
 - **1.4.3 Contrast (Minimum)** — all text tokens clear 4.5:1 on their actual backgrounds. Measured values are in DESIGN.md §Accessibility. **One constraint to preserve: `ember` on `charcoal` is 4.12:1 and would fail.** It is currently only ever used on `midnight` (4.70:1). Keep it that way for normal-size text.
 - **1.4.11 Non-text Contrast — focus indicator** — the global focus ring is amber (9.04:1 on midnight, 7.92:1 on charcoal), far above 3:1. Verified in-browser with real Tab traversal, measured as `rgb(232,168,73)`.
+- **1.4.11 Non-text Contrast — control boundaries** — remediated 2026-07-27, see above. Every interactive resting boundary measured ≥3:1 in-browser against its actual painted backdrop.
 - **2.4.11 Focus Not Obscured (Minimum)** *(new in 2.2)* — passes trivially: the app has **no** `position: sticky` or `position: fixed` elements, so nothing can overlay a focused control.
 - **2.5.8 Target Size (Minimum)** *(new in 2.2)* — the requirement is 24×24px; the design system mandates 44×44px and this was measured in-browser across the flows (86 interactive elements checked in one pass during slice 7b).
 - **2.1.1 Keyboard / 2.1.2 No Keyboard Trap** — flows were traversed with real Tab and Arrow keys in the browser; the results tabs are arrow-navigable; Escape closes the nav menu and restores focus to its trigger.
@@ -85,4 +122,10 @@ Be honest about the boundary of what's been checked:
 
 ## Method note
 
-Contrast figures here were computed with the WCAG relative-luminance formula, validated against reference pairs (`#ffffff`/`#000000` → 21.00:1, `#777777`/`#ffffff` → 4.48:1). Earlier figures in DESIGN.md (cream 13.2:1, amber 7.1:1) did not match the formula and were corrected on 2026-07-19. **Recompute rather than copying a remembered number** — the wrong values sat in the design system for months and would have justified a bad decision eventually.
+Contrast figures here were computed with the WCAG relative-luminance formula, validated against reference pairs (`#ffffff`/`#000000` → 21.00:1, `#777777`/`#ffffff` → 4.48:1). Earlier figures in DESIGN.md (cream 13.2:1, amber 7.1:1) did not match the formula and were corrected on 2026-07-19. **Recompute rather than copying a remembered number** — the wrong values sat in the design system for months and would have justified a bad decision eventually. The maths now lives in `src/test/contrast.ts` rather than in anyone's head.
+
+Three traps met while measuring in-browser on 2026-07-27:
+
+- **Composite alpha before comparing.** `--amber-glow` is `#e8a84920`. Comparing a border against the raw `getComputedStyle` value of a translucent background yields a meaningless number (an amber track against an amber-glow panel measured "1.00:1"). Walk up the tree, composite each layer over the next, and compare against the resulting solid color.
+- **`:focus` does not match when the browser window lacks OS focus,** even though `document.activeElement` is set. A programmatic `.focus()` in a background pane reports the element as focused while none of its `focus:` styles apply, which reads exactly like a broken style. Check `document.hasFocus()`, or drive it with a real Tab keypress.
+- **jsdom cannot verify any of this.** It has no layout, no fragment-navigation focus, and no CSS cascade. Both skip-link defects and the switch-track gap passed a green suite. Anything about focus movement, painted color, or size needs a real browser.
