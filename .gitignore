@@ -3,6 +3,9 @@
 .claude/settings.local.json
 .private-journal/
 
+# Git worktrees — see docs/git-strategy.md
+.claude/worktrees/
+
 # Dev artifacts (local symlinks, not tracked)
 dev/mockups/
 dev/gstack/
@@ -87,6 +90,12 @@ web_modules/
 .env.*
 !.env.example
 
+# Cloudflare Workers local dev secrets
+.dev.vars
+
+# Generated seed SQL (scripts/seed.ts output — regenerate with npm run seed:local)
+scripts/seed.sql
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -94,6 +103,14 @@ web_modules/
 # Next.js build output
 .next
 out
+next-env.d.ts
+
+# Cloudflare / OpenNext build output
+.open-next/
+.wrangler/
+
+# macOS
+.DS_Store
 
 # Nuxt.js build / generate output
 .nuxt

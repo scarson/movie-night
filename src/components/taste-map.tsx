@@ -1,0 +1,204 @@
+// ABOUTME: The taste map — editorial per-member analysis in person colors, the overlap
+// ABOUTME: zone, tension points, and a weighting line that never says who or why.
+
+import { useId } from "react";
+
+import type { TasteMap as TasteMapData, MemberTaste } from "@/types/matching";
+
+/**
+ * DESIGN.md's two named person colors plus two more from the same curated set,
+ * all verified ≥4.5:1 on both midnight and charcoal. Groups larger than the set
+ * wrap around; the legend names every person, so color is never the only cue.
+ */
+export const PERSON_COLORS = [
+  "var(--person-a)",
+  "var(--person-b)",
+  "var(--person-c)",
+  "var(--person-d)",
+] as const;
+
+const OVERLAP_COLOR = "var(--overlap)";
+
+export function personColor(index: number): string {
+  return PERSON_COLORS[index % PERSON_COLORS.length];
+}
+
+/** One entrance step. DESIGN.md: 80ms stagger, fade + slight drift, no bounce. */
+const STAGGER_MS = 80;
+
+function Tag({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{ color, borderColor: color }}
+      className="inline-flex max-w-full items-center break-words rounded-pill border px-md py-2xs text-xs"
+    >
+      {label}
+    </span>
+  );
+}
+
+function MemberSection({
+  member,
+  color,
+  delayMs,
+  headingId,
+}: {
+  member: MemberTaste;
+  color: string;
+  delayMs: number;
+  headingId: string;
+}) {
+  return (
+    <section
+      role="group"
+      aria-labelledby={headingId}
+      style={{ borderColor: color, animationDelay: `${delayMs}ms` }}
+      className="animate-rise-fade border-t pt-md"
+    >
+      <h2
+        id={headingId}
+        style={{ color }}
+        className="break-words font-display text-xl font-semibold"
+      >
+        {member.name}
+      </h2>
+      <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{member.summary}</p>
+      {(member.primaryVibes.length > 0 || member.genreAffinities.length > 0) && (
+        <div className="mt-md flex flex-wrap gap-sm">
+          {/* Keyed by position: the model can and does repeat a word across a
+              member's two lists ("Thriller" as both a vibe and a genre). */}
+          {[...member.primaryVibes, ...member.genreAffinities].map((tag, i) => (
+            <Tag key={i} label={tag} color={color} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export interface TasteMapProps {
+  tasteMap: TasteMapData;
+  /**
+   * True only when the VIEWER set their own rough-day flag. Never derived from
+   * anyone else's — the toggle is private and the reason is never named.
+   */
+  showWeightingNote: boolean;
+}
+
+export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
+  const { members, overlap } = tasteMap;
+  const solo = members.length < 2;
+  // Ids are generated, never derived from the model's userId: two maps in one
+  // document would collide, and a userId containing a space silently breaks
+  // aria-labelledby, which is a space-separated id list.
+  const idBase = useId();
+  const memberHeadingId = (index: number) => `${idBase}-member-${index}`;
+  const overlapHeadingId = `${idBase}-overlap`;
+
+  // The two tastes meeting, drawn literally: each person's color running into
+  // the overlap hue. Semantic, not decoration — and never a purple wash.
+  const meetingRule = `linear-gradient(90deg, ${members
+    .map((_, i) => personColor(i))
+    .join(", ")}, ${OVERLAP_COLOR})`;
+
+  let step = 0;
+  const nextDelay = () => step++ * STAGGER_MS;
+
+  return (
+    <div className="flex flex-col gap-2xl">
+      {!solo && (
+        <div
+          style={{ animationDelay: `${nextDelay()}ms` }}
+          className="animate-rise-fade"
+        >
+          <ul
+            aria-label="Taste map key"
+            className="flex flex-wrap items-center gap-x-lg gap-y-sm text-xs text-ash"
+          >
+            {members.map((member, i) => (
+              <li key={i} className="flex items-center gap-sm">
+                <span
+                  aria-hidden="true"
+                  style={{ background: personColor(i) }}
+                  className="size-2 shrink-0 rounded-pill"
+                />
+                {member.name}
+              </li>
+            ))}
+            <li className="flex items-center gap-sm">
+              <span
+                aria-hidden="true"
+                style={{ background: OVERLAP_COLOR }}
+                className="size-2 shrink-0 rounded-pill"
+              />
+              Where you meet
+            </li>
+          </ul>
+        </div>
+      )}
+
+      {members.map((member, i) => (
+        <MemberSection
+          key={i}
+          member={member}
+          color={personColor(i)}
+          delayMs={nextDelay()}
+          headingId={memberHeadingId(i)}
+        />
+      ))}
+
+      <section
+        role="group"
+        aria-labelledby={overlapHeadingId}
+        style={{ animationDelay: `${nextDelay()}ms` }}
+        className="animate-rise-fade"
+      >
+        <div aria-hidden="true" style={{ background: meetingRule }} className="h-0.5" />
+        <h2
+          id={overlapHeadingId}
+          style={{ color: OVERLAP_COLOR }}
+          className="mt-md break-words font-display text-xl font-semibold"
+        >
+          {solo ? "What ties it together" : "Where you meet"}
+        </h2>
+        <p className="mt-sm max-w-[62ch] break-words text-base/[1.7] text-cream">{overlap.summary}</p>
+
+        {overlap.sharedVibes.length > 0 && (
+          <div className="mt-md flex flex-wrap gap-sm">
+            {overlap.sharedVibes.map((vibe, i) => (
+              <Tag key={i} label={vibe} color={OVERLAP_COLOR} />
+            ))}
+          </div>
+        )}
+
+        {overlap.tensionPoints.length > 0 && (
+          <div className="mt-lg">
+            <h3 className="break-words text-xs uppercase tracking-wider text-ash">Where it pulls</h3>
+            <ul
+              aria-label="Where it pulls"
+              className="mt-sm flex max-w-[62ch] flex-col gap-sm"
+            >
+              {overlap.tensionPoints.map((point, i) => (
+                <li key={i} className="flex gap-sm break-words text-base/[1.6] text-cream">
+                  <span aria-hidden="true" className="mt-2 h-px w-4 shrink-0 bg-ember" />
+                  <span className="min-w-0 break-words">{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      {showWeightingNote && (
+        <p
+          data-testid="weighting-note"
+          style={{ animationDelay: `${nextDelay()}ms` }}
+          className="animate-rise-fade max-w-[62ch] border-t border-slate pt-md text-sm text-ash"
+        >
+          At your request, tonight&apos;s picks lean toward everyone else. Only
+          you can see this.
+        </p>
+      )}
+    </div>
+  );
+}

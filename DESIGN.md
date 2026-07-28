@@ -119,11 +119,18 @@ This IS the dark mode. No light mode planned. The app is designed for evening us
 - **Source:** Lucide or Phosphor icon set (both are open, consistent, and support rounded style).
 
 ## Rough-Day Toggle (special design note)
-The "[partner] had a rough day" toggle is private. It is only visible to the person setting it. The other group members never see it. The heart icon (empty → filled amber) is the visual indicator. When the taste map mentions preference weighting, it says something like "tonight's picks lean toward [name]'s preferences" without revealing who toggled it. The generosity stays invisible. This is a design principle, not just a data model decision.
+The "[partner] had a rough day" toggle is private. It is only visible to the person setting it. The other group members never see it. The heart icon (empty → filled amber) is the visual indicator. The generosity stays invisible. This is a design principle, not just a data model decision.
+
+**The weighting is never narrated in shared output.** An earlier draft of this doc suggested the taste map could say "tonight's picks lean toward [name]'s preferences" as a supposedly-anonymous hint. That is not anonymous in the common case: in a group of two, the favored member is by definition the one who did *not* toggle, so naming them tells the recipient their partner made the gesture. The matching prompt therefore marks the weighting PRIVATE and forbids surfacing it in any model output field. The only weighting line in the UI is shown exclusively to the person who set the toggle, describing their own choice back to them.
 
 ## Accessibility
-- **Contrast:** cream on midnight = 13.2:1 (AAA). amber on midnight = 7.1:1 (AAA). Verify ash on midnight ≥ 4.5:1 (AA).
-- **Touch targets:** 44x44px minimum on all interactive elements. Visual size can be smaller if tap area extends.
+
+**Conformance target: WCAG 2.2 Level AA.** This is a firm requirement, not an aspiration — see `docs/accessibility.md` for the per-criterion audit and the open remediation. Any new surface must meet it before it ships.
+
+- **Contrast (measured, not estimated):** on `midnight` — cream 16.52:1, amber 9.04:1, sage 6.26:1, ash 6.21:1, ember 4.70:1. On `charcoal` — cream 14.47:1, amber 7.92:1, sage 5.49:1, ash 5.44:1, ember 4.12:1. *(An earlier revision of this doc listed cream at 13.2:1 and amber at 7.1:1; those figures were wrong — understated — and were corrected against the WCAG relative-luminance formula.)*
+  - **`ember` must never carry normal-size text on `charcoal`** — 4.12:1 is below the 4.5:1 floor. It passes on `midnight` (4.70:1) only. Use it for text on midnight, or for large text / non-text elements elsewhere.
+  - **`slate` fails 1.4.11 as a control boundary** — 1.53:1 on midnight, 1.34:1 on charcoal, against a 3:1 requirement for non-text UI components. This is an open remediation, tracked in `docs/accessibility.md`.
+- **Touch targets:** 44x44px minimum on all interactive elements (comfortably above WCAG 2.2's 2.5.8 floor of 24x24). Visual size can be smaller if tap area extends.
 - **Keyboard nav:** Tab order follows visual hierarchy. Enter/Space activates. Escape closes overlays. Arrow keys navigate mood tags and recommendation lists.
 - **Screen readers:** ARIA landmarks on major sections. Alt text on all posters ("[Movie title] poster"). Match scores announced ("Arrival, 92% match"). Mood tags: role="checkbox" with aria-checked. Loading: aria-live="polite".
 - **Font sizes:** Minimum 14px for any text. Inputs ≥ 16px to prevent iOS auto-zoom.
@@ -159,3 +166,6 @@ The "[partner] had a rough day" toggle is private. It is only visible to the per
 | 2026-03-30 | Amber state hierarchy | Fill (CTAs), border (selected), text-only (tertiary). One hue, three levels. |
 | 2026-03-30 | Cards policy clarified | Ban is on core experience (recs, taste map), not universal. Utility surfaces use cards where appropriate. |
 | 2026-03-30 | In-app animation toggle | Profile setting to reduce animations. Mitigates fatigue, aids testing. |
+| 2026-07-19 | **WCAG 2.2 AA is the conformance target** | Set by Sam. Converts the previously-open "promote `slate` borders or accept them" question into a required fix — 1.4.11 is not optional. Per-criterion audit in `docs/accessibility.md`. |
+| 2026-07-19 | Corrected the stated contrast figures | The doc's cream (13.2:1) and amber (7.1:1) numbers did not match the WCAG formula; real values are 16.52:1 and 9.04:1. Wrong numbers in a design system propagate into wrong future decisions, so they were recomputed and the method recorded. |
+| 2026-07-19 | Weighting is never narrated in shared output | The doc's own "picks lean toward [name]" example was itself the privacy leak — in a couple it identifies the toggler. Removed and replaced with the invariant the shipped prompt enforces. |

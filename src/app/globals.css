@@ -1,0 +1,162 @@
+/* ABOUTME: Global styles — DESIGN.md tokens as CSS custom properties + Tailwind theme. */
+/* ABOUTME: Dark-only cinematic palette, spacing/radius/motion scales, reduced-motion rules. */
+@import "tailwindcss";
+
+:root {
+  /* Core palette */
+  --midnight: #0f1219;
+  --charcoal: #1a1f2e;
+  --slate: #2d3548;
+  --ash: #8b95a8;
+  --cream: #f5f0e8;
+  --warm-white: #faf7f2;
+
+  /* Accents */
+  --amber: #e8a849;
+  --amber-glow: #e8a84920;
+  --ember: #c4653a;
+  --sage: #7a9e7e;
+
+  /* Taste map person colors (contextual, not app-wide).
+     DESIGN.md names person-a/person-b and calls for "additional person colors
+     assigned from a curated set that maintains contrast on dark backgrounds"
+     for groups > 2. person-c/person-d are that set: both ≥6.3:1 on midnight
+     and ≥6.3:1 on charcoal, and distinct in hue from amber and ember. */
+  --person-a: #6b8cce;
+  --person-b: #ce7b8c;
+  --person-c: #6fae9f;
+  --person-d: #b3a06a;
+  --overlap: #9b7ec8;
+
+  /* Semantic */
+  --success: #7a9e7e;
+  --warning: #e8a849;
+  --error: #c4653a;
+  --info: #6b8cce;
+
+  /* Spacing scale (base unit 4px) */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-4xl: 96px;
+
+  /* Radii — deliberately non-uniform */
+  --radius-tag: 4px;
+  --radius-control: 8px;
+  --radius-panel: 16px;
+  --radius-pill: 9999px;
+
+  /* Motion */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-micro: 100ms;
+  --duration-short: 200ms;
+  --duration-medium: 400ms;
+  --duration-long: 800ms;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-midnight: var(--midnight);
+  --color-charcoal: var(--charcoal);
+  --color-slate: var(--slate);
+  --color-ash: var(--ash);
+  --color-cream: var(--cream);
+  --color-warm-white: var(--warm-white);
+  --color-amber: var(--amber);
+  --color-amber-glow: var(--amber-glow);
+  --color-ember: var(--ember);
+  --color-sage: var(--sage);
+  --color-person-a: var(--person-a);
+  --color-person-b: var(--person-b);
+  --color-person-c: var(--person-c);
+  --color-person-d: var(--person-d);
+  --color-overlap: var(--overlap);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-satoshi), system-ui, sans-serif;
+
+  --spacing-2xs: var(--space-2xs);
+  --spacing-xs: var(--space-xs);
+  --spacing-sm: var(--space-sm);
+  --spacing-md: var(--space-md);
+  --spacing-lg: var(--space-lg);
+  --spacing-xl: var(--space-xl);
+  --spacing-2xl: var(--space-2xl);
+  --spacing-3xl: var(--space-3xl);
+  --spacing-4xl: var(--space-4xl);
+
+  --radius-tag: var(--radius-tag);
+  --radius-control: var(--radius-control);
+  --radius-panel: var(--radius-panel);
+  --radius-pill: var(--radius-pill);
+
+  --ease-enter: var(--ease-enter);
+
+  --container-content: 680px;
+}
+
+@theme {
+  /* Entrance motion: fade + slight upward drift (DESIGN.md "discovery energy") */
+  --animate-rise-fade: rise-fade var(--duration-medium) var(--ease-enter) both;
+
+  @keyframes rise-fade {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* Consistent keyboard focus treatment on every interactive element */
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+body {
+  background-color: var(--midnight);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 16px;
+}
+
+/* Reduced motion: honor the OS setting and the in-app animation toggle
+   (data-reduced-motion set on <html> by the profile settings toggle).
+
+   Animations are switched OFF, not shortened. A near-zero animation-duration
+   does not fast-forward an animation to its end state — the engine pins it at
+   currentTime 0, so anything using `animation-fill-mode: both` (every
+   --animate-rise-fade entrance) stays stuck on its `from` keyframe at
+   opacity 0. `animation: none` drops the animation entirely and the element
+   renders at its natural, fully visible style. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

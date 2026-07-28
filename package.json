@@ -1,0 +1,47 @@
+{
+  "name": "movie-night",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run --pass-with-no-tests",
+    "test:watch": "vitest",
+    "preview": "opennextjs-cloudflare build && wrangler dev",
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "seed:local": "npx tsx scripts/seed.ts --local",
+    "migrate:local": "npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.3",
+    "arctic": "^3.7.0",
+    "jose": "^6.2.2",
+    "nanoid": "^5.1.0",
+    "next": "^16.2.10",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260701.1",
+    "@eslint/eslintrc": "^3.3.5",
+    "@opennextjs/cloudflare": "^1.18.0",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.4",
+    "jsdom": "^29.0.2",
+    "postcss": "^8.5.12",
+    "tailwindcss": "^4.3.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.5",
+    "wrangler": "4.105.0"
+  }
+}

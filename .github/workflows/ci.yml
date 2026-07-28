@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+    paths-ignore: &docs-paths
+      - '**/*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - '.serena/**'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, dev]
+    paths-ignore: *docs-paths
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**') }}
+          restore-keys: |
+            nextjs-${{ hashFiles('package-lock.json') }}-
+      - run: npx @opennextjs/cloudflare build
