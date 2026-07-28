@@ -849,3 +849,38 @@ unchanged and still listed in `docs/deploy.md`. **Not done: still no screen-read
 
 The secondary-button class string is duplicated verbatim in five files. Left alone deliberately
 to keep this change to one concern, but it wants extracting.
+
+---
+
+## Outlined control classes extracted to one definition (2026-07-27)
+
+Branch `claude/secondary-button-extract`, stacked on the a11y branch (the strings contain
+`border-ash`, which only exists after `2f67522`). Commit `a587a9d`. **569 tests passing.**
+
+Follow-up to the 1.4.11 work, where the same edit had to be applied at five copy-pasted
+call sites. Extracted to `src/components/control-classes.ts`.
+
+**The design call that mattered:** two levels, not one. The first cut bundled `rounded-control`
+into the shared constant — and the new anti-duplication guard immediately failed on `chip.tsx`
+and `group-picker.tsx`, which use `rounded-pill` and `rounded-panel` and had therefore
+re-spelled `border-ash … hover:border-cream` by hand. **Bundling shape (a per-control design
+choice) with the boundary (a conformance requirement) is what created the duplication in the
+first place.** Split into `outlinedBoundaryClasses` (border + hover, no radius) and
+`outlinedControlClasses` (adds radius/border/label color). Real count was eight sites, not five.
+
+**Class strings, not a `<Button>` component.** Call sites are a mix of `<button>` and `<Link>`
+(`tonight/page.tsx:90` is a Link), and several append their own modifiers. A component would
+need polymorphism plus a class-merge dependency to say the same thing — YAGNI.
+
+**Tailwind ordering trap, recorded in the module's doc comment:** conflicting utilities resolve
+by *stylesheet* order, not class-attribute order, so `${compactOutlinedButtonClasses} px-lg` is
+undefined behavior. The groups submit button composes from `outlinedControlClasses` and supplies
+its own padding instead. This was caught while writing it, not after.
+
+**Verified as a refactor, not a redesign.** Compared the resolved class *set* at every call site
+against `git HEAD`: identical everywhere, with one deliberate exception — tag-picker's Add button
+gains `transition-colors duration-100`, which the secondary button beside it in the same row
+already had. All nine routes still render 200 with no `undefined` in any class attribute.
+
+**Noted, not done:** the primary (amber fill) button is duplicated across **twelve** sites — more
+than the secondary was. Left alone to keep this commit to one concern; it wants the same treatment.

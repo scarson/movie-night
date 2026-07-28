@@ -21,6 +21,7 @@ import {
   startSession,
   type Member,
 } from "@/lib/session-flow";
+import { secondaryButtonClasses } from "@/components/control-classes";
 
 const EMPTY_MEMBERS: Member[] = [];
 
@@ -217,7 +218,7 @@ function Ritual() {
               setMatching(false);
               setMatchError(null);
             }}
-            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
+            className={secondaryButtonClasses}
           >
             Back to the mood
           </button>
@@ -342,7 +343,7 @@ function Ritual() {
           <button
             type="button"
             onClick={() => setStep(step - 1)}
-            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
+            className={secondaryButtonClasses}
           >
             Back
           </button>

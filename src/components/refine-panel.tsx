@@ -3,6 +3,7 @@
 "use client";
 
 import { useId } from "react";
+import { secondaryButtonClasses } from "@/components/control-classes";
 
 const MAX_STEERING = 300;
 
@@ -114,7 +115,7 @@ export function RefinePanel({
         <button
           type="button"
           onClick={onStartOver}
-          className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
+          className={secondaryButtonClasses}
         >
           Start over
         </button>

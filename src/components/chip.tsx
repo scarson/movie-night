@@ -2,14 +2,18 @@
 // ABOUTME: border treatment (fill stays reserved for CTAs); rose tone for dealbreakers.
 "use client";
 
+import { outlinedBoundaryClasses } from "@/components/control-classes";
+
+const IDLE = `${outlinedBoundaryClasses} bg-charcoal text-cream`;
+
 const TONE_CLASSES = {
   amber: {
     selected: "border-amber bg-amber-glow text-amber font-medium",
-    idle: "border-ash bg-charcoal text-cream hover:border-cream",
+    idle: IDLE,
   },
   rose: {
     selected: "border-person-b bg-[#ce7b8c20] text-person-b font-medium",
-    idle: "border-ash bg-charcoal text-cream hover:border-cream",
+    idle: IDLE,
   },
 } as const;
 

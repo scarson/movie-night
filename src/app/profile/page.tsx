@@ -20,13 +20,12 @@ import {
   subscribeReducedMotion,
   syncReducedMotion,
 } from "@/lib/reduced-motion";
+import { secondaryButtonClasses } from "@/components/control-classes";
 
 const CONFIRM_WORD = "delete";
 
 const PRIMARY_BUTTON =
   "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:bg-slate disabled:text-ash";
-const SECONDARY_BUTTON =
-  "flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream";
 
 function Section({
   title,
@@ -210,7 +209,7 @@ export default function ProfilePage() {
       <Section title="Account">
         <p className="mt-sm text-base text-cream">{user.email}</p>
         <div className="mt-lg flex flex-wrap gap-md">
-          <button type="button" onClick={() => void signOut()} className={SECONDARY_BUTTON}>
+          <button type="button" onClick={() => void signOut()} className={secondaryButtonClasses}>
             Sign out
           </button>
           {!confirming && (
@@ -267,7 +266,7 @@ export default function ProfilePage() {
               >
                 {deleting ? "Deleting…" : "Delete my account for good"}
               </button>
-              <button type="button" onClick={closeConfirm} className={SECONDARY_BUTTON}>
+              <button type="button" onClick={closeConfirm} className={secondaryButtonClasses}>
                 Keep my account
               </button>
             </div>
