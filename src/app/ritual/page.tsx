@@ -100,7 +100,7 @@ function Ritual() {
 
   if (loadError !== null) {
     return (
-      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <p role="alert" className="text-base text-ember">
           {loadError}
         </p>
@@ -110,7 +110,7 @@ function Ritual() {
 
   if (draft === null || members === null) {
     return (
-      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <p className="sr-only">Loading your ritual…</p>
         <div aria-hidden="true" className="h-8 w-48 rounded-control bg-charcoal" />
         <div aria-hidden="true" className="mt-2xl h-64 rounded-panel bg-charcoal" />
@@ -173,7 +173,7 @@ function Ritual() {
 
   if (matching && matchError === null) {
     return (
-      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <PhasedLoading
           done={matchDone}
           onComplete={() => {
@@ -186,7 +186,7 @@ function Ritual() {
 
   if (matchError !== null) {
     return (
-      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1
           ref={errorHeadingRef}
           tabIndex={-1}
@@ -229,7 +229,7 @@ function Ritual() {
   const currentMember = step < moodStep ? orderedMembers[step] : null;
 
   return (
-    <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <ProgressSteps steps={steps} current={step} onStepSelect={setStep} />
 
       <div className="mt-2xl">

@@ -33,6 +33,21 @@ describe("SkipLink", () => {
     expect(link.className).toContain("sr-only");
     expect(link.className).toContain("focus:not-sr-only");
   });
+
+  it("carries its padding in the focus variant", () => {
+    // `not-sr-only` resets padding to 0, so an unprefixed `px-*` loses the cascade
+    // and the focused link renders with its text jammed against the border.
+    // Measured in a real browser before this was prefixed: padding 0 on all sides.
+    render(<SkipLink />);
+    const link = screen.getByRole("link", { name: /skip to content/i });
+    const padding = link.className
+      .split(/\s+/)
+      .filter((c) => /(^|:)p[xy]?-/.test(c));
+    expect(padding.length, "no padding utilities at all").toBeGreaterThan(0);
+    for (const cls of padding) {
+      expect(cls, `${cls} is reset by not-sr-only`).toMatch(/^focus:/);
+    }
+  });
 });
 
 describe("2.4.1 Bypass Blocks", () => {
@@ -52,9 +67,15 @@ describe("2.4.1 Bypass Blocks", () => {
     expect(skip).toBeLessThan(banner);
   });
 
-  it("every main landmark carries the skip target id", () => {
+  it("every main landmark is a focusable skip target", () => {
     // Pages return different <main> branches for loading / error / content, and
-    // any of them can be the one on screen, so the id has to be on all of them.
+    // any of them can be the one on screen, so both attributes go on all of them.
+    //
+    // tabIndex={-1} is load-bearing, not belt-and-braces: a bare `<main id="main">`
+    // is not focusable, so activating the link scrolls but leaves activeElement on
+    // <body> — the next Tab returns to the banner the user just asked to skip.
+    // Verified in a real browser; jsdom cannot exercise fragment-navigation focus,
+    // so this scan is what holds the line.
     const appDir = path.resolve(__dirname, "..", "app");
     const offenders: string[] = [];
     let total = 0;
@@ -68,8 +89,14 @@ describe("2.4.1 Bypass Blocks", () => {
           const src = readFileSync(full, "utf8");
           for (const [tag] of src.matchAll(/<main[^>]*>/g)) {
             total++;
-            if (!tag.includes('id="main"')) {
-              offenders.push(`${path.relative(appDir, full)}: ${tag}`);
+            const missing = [
+              tag.includes('id="main"') ? null : 'id="main"',
+              tag.includes("tabIndex={-1}") ? null : "tabIndex={-1}",
+            ].filter(Boolean);
+            if (missing.length) {
+              offenders.push(
+                `${path.relative(appDir, full)} missing ${missing.join(" + ")}: ${tag}`
+              );
             }
           }
         }

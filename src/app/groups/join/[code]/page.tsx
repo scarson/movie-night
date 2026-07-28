@@ -56,7 +56,7 @@ export default function JoinPage({
   }
 
   return (
-    <main id="main" className="mx-auto w-full max-w-[520px] px-md pb-4xl pt-3xl">
+    <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[520px] px-md pb-4xl pt-3xl">
       {joined ? (
         <div className="animate-rise-fade">
           <h1 ref={successRef} tabIndex={-1} className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
