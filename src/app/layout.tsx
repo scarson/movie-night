@@ -6,6 +6,7 @@ import { AuthProvider } from "@/components/auth-provider";
 import { Nav } from "@/components/nav";
 import { ReducedMotionBoot } from "@/components/reduced-motion-boot";
 import { SiteFooter } from "@/components/site-footer";
+import { SkipLink } from "@/components/skip-link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default function RootLayout({
     <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
       <body className="flex min-h-dvh flex-col font-body antialiased">
         <ReducedMotionBoot />
+        <SkipLink />
         <AuthProvider>
           <Nav />
           <div className="flex-1">{children}</div>

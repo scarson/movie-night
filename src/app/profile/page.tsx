@@ -146,7 +146,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         Your taste, on file
       </h1>

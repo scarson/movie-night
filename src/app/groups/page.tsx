@@ -225,7 +225,7 @@ export default function Groups() {
     "min-h-11 shrink-0 rounded-control bg-amber px-lg text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50";
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 ref={titleRef} tabIndex={-1} className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         Groups
       </h1>

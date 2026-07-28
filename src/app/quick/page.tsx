@@ -139,7 +139,7 @@ function Quick() {
 
   if (matching && matchError === null) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <PhasedLoading
           done={matchDone}
           onComplete={() => {
@@ -152,7 +152,7 @@ function Quick() {
 
   if (matchError !== null) {
     return (
-      <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+      <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1
           ref={errorHeadingRef}
           tabIndex={-1}
@@ -196,7 +196,7 @@ function Quick() {
     others.length > 0 ? [user.name.trim() || "You", ...others.map((m) => m.name)] : null;
 
   return (
-    <main className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
+    <main id="main" className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
         What are we feeling?
       </h1>
