@@ -7,14 +7,15 @@ import { Nav } from "@/components/nav";
 import { ReducedMotionBoot } from "@/components/reduced-motion-boot";
 import { SiteFooter } from "@/components/site-footer";
 import { SkipLink } from "@/components/skip-link";
+import { SITE_NAME, TITLE_TEMPLATE } from "@/app/title-template";
 import "./globals.css";
 
 export const metadata: Metadata = {
   // 2.4.2: each route segment names its own surface and the template adds the
   // app name, so no two pages share a title. `default` covers the landing page.
   title: {
-    default: "Movie Night",
-    template: "%s — Movie Night",
+    default: SITE_NAME,
+    template: TITLE_TEMPLATE,
   },
   description: "Find a movie you'll both love tonight.",
 };
