@@ -91,7 +91,7 @@ export function RefinePanel({
         rows={2}
         onChange={(e) => onSteeringChange(e.target.value)}
         placeholder="Something lighter. Nothing over two hours."
-        className="mt-xs w-full resize-none rounded-control border border-slate bg-midnight p-md text-base/relaxed text-cream placeholder:text-ash"
+        className="mt-xs w-full resize-none rounded-control border border-ash bg-midnight p-md text-base/relaxed text-cream placeholder:text-ash"
       />
       <p className="mt-2xs text-sm tabular-nums text-ash">{`${steering.length}/${MAX_STEERING}`}</p>
 
@@ -114,7 +114,7 @@ export function RefinePanel({
         <button
           type="button"
           onClick={onStartOver}
-          className="flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash"
+          className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
         >
           Start over
         </button>

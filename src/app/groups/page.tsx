@@ -216,11 +216,11 @@ export default function Groups() {
   if (!user) return null;
 
   const fieldClasses =
-    "min-h-11 w-full rounded-control border border-slate bg-charcoal px-md text-base text-cream placeholder:text-ash";
+    "min-h-11 w-full rounded-control border border-ash bg-charcoal px-md text-base text-cream placeholder:text-ash";
   // Outline is the default control here; amber fill marks the one primary action
   // on the page, matching the hub's primary/secondary pairing.
   const submitClasses =
-    "min-h-11 shrink-0 rounded-control border border-slate px-lg text-base font-medium text-cream transition-colors duration-100 hover:border-ash disabled:opacity-50";
+    "min-h-11 shrink-0 rounded-control border border-ash px-lg text-base font-medium text-cream transition-colors duration-100 hover:border-cream disabled:opacity-50";
   const primaryClasses =
     "min-h-11 shrink-0 rounded-control bg-amber px-lg text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50";
 

@@ -217,7 +217,7 @@ function Ritual() {
               setMatching(false);
               setMatchError(null);
             }}
-            className="flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash"
+            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
           >
             Back to the mood
           </button>
@@ -342,7 +342,7 @@ function Ritual() {
           <button
             type="button"
             onClick={() => setStep(step - 1)}
-            className="flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash"
+            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
           >
             Back
           </button>

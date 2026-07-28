@@ -26,7 +26,7 @@ const CONFIRM_WORD = "delete";
 const PRIMARY_BUTTON =
   "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:bg-slate disabled:text-ash";
 const SECONDARY_BUTTON =
-  "flex min-h-12 items-center justify-center rounded-control border border-slate px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-ash";
+  "flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream";
 
 function Section({
   title,
@@ -248,7 +248,7 @@ export default function ProfilePage() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="mt-xs w-full max-w-64 rounded-control border border-slate bg-midnight px-md py-sm text-base text-cream"
+              className="mt-xs w-full max-w-64 rounded-control border border-ash bg-midnight px-md py-sm text-base text-cream"
             />
 
             {deleteError !== null && (
