@@ -15,6 +15,7 @@ import {
   startSession,
   type GroupSummary,
 } from "@/lib/session-flow";
+import { secondaryButtonClasses } from "@/components/control-classes";
 
 /** The tag subset worth a single tap. The full vocabulary lives in the ritual. */
 const QUICK_TAGS = [
@@ -183,7 +184,7 @@ function Quick() {
               setMatching(false);
               setMatchError(null);
             }}
-            className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
+            className={secondaryButtonClasses}
           >
             Change the vibe
           </button>

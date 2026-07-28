@@ -5,6 +5,7 @@
 import { useId, useState } from "react";
 import { Chip } from "@/components/chip";
 import { MOOD_TAGS, GENRE_TAGS } from "@/config/tags";
+import { compactOutlinedButtonClasses } from "@/components/control-classes";
 
 const MAX_TAG_LENGTH = 30;
 const PRESETS: readonly string[] = [...MOOD_TAGS, ...GENRE_TAGS];
@@ -96,7 +97,7 @@ export function TagPicker({
           <button
             type="button"
             onClick={addCustomTag}
-            className="min-h-11 rounded-control border border-ash px-md text-sm font-medium text-cream hover:border-cream"
+            className={compactOutlinedButtonClasses}
           >
             Add
           </button>

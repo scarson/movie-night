@@ -11,6 +11,7 @@ import {
   defaultGroupSelection,
   type GroupOption,
 } from "@/components/group-picker";
+import { secondaryButtonClasses } from "@/components/control-classes";
 
 export default function Tonight() {
   const { user, loading } = useAuth();
@@ -87,7 +88,7 @@ export default function Tonight() {
         </Link>
         <Link
           href={`/ritual${target}`}
-          className="flex min-h-12 items-center justify-center rounded-control border border-ash px-xl text-base font-medium text-cream transition-colors duration-100 hover:border-cream"
+          className={secondaryButtonClasses}
         >
           The full ritual
         </Link>

@@ -3,6 +3,7 @@
 "use client";
 
 import { useId } from "react";
+import { outlinedBoundaryClasses } from "@/components/control-classes";
 
 export interface GroupOption {
   id: string;
@@ -59,7 +60,7 @@ export function GroupPicker({ groups, value, onChange }: GroupPickerProps) {
     `flex min-h-11 cursor-pointer items-center justify-between gap-md rounded-panel border p-md ${
       selected
         ? "border-amber bg-amber-glow"
-        : "border-ash bg-charcoal hover:border-cream"
+        : `${outlinedBoundaryClasses} bg-charcoal`
     } has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-amber`;
 
   return (

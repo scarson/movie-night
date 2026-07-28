@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
+import { outlinedControlClasses } from "@/components/control-classes";
 
 interface GroupSummary {
   id: string;
@@ -220,7 +221,7 @@ export default function Groups() {
   // Outline is the default control here; amber fill marks the one primary action
   // on the page, matching the hub's primary/secondary pairing.
   const submitClasses =
-    "min-h-11 shrink-0 rounded-control border border-ash px-lg text-base font-medium text-cream transition-colors duration-100 hover:border-cream disabled:opacity-50";
+    `min-h-11 shrink-0 px-lg text-base font-medium ${outlinedControlClasses} disabled:opacity-50`;
   const primaryClasses =
     "min-h-11 shrink-0 rounded-control bg-amber px-lg text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50";
 
