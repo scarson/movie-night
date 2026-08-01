@@ -21,7 +21,7 @@ import {
   startSession,
   type Member,
 } from "@/lib/session-flow";
-import { secondaryButtonClasses } from "@/components/control-classes";
+import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
 
 const EMPTY_MEMBERS: Member[] = [];
 
@@ -208,7 +208,7 @@ function Ritual() {
                 void submit();
               }
             }}
-            className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
+            className={primaryButtonClasses}
           >
             Try again
           </button>
@@ -325,7 +325,7 @@ function Ritual() {
           <button
             type="button"
             onClick={() => void submit()}
-            className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
+            className={primaryButtonClasses}
           >
             Find our match →
           </button>
@@ -334,7 +334,7 @@ function Ritual() {
             type="button"
             onClick={() => void advance()}
             disabled={saving}
-            className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-60"
+            className={`${primaryButtonClasses} disabled:opacity-60`}
           >
             {saving ? "Saving…" : "Continue →"}
           </button>

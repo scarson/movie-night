@@ -5,6 +5,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { primaryControlClasses } from "@/components/control-classes";
 
 const STARFIELD = {
   backgroundImage: [
@@ -76,7 +77,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => signIn("/tonight")}
-            className="inline-flex min-h-12 items-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
+            className={`inline-flex min-h-12 items-center px-xl text-base font-semibold ${primaryControlClasses}`}
           >
             Sign in with Google
           </button>

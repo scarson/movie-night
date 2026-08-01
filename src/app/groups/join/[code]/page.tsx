@@ -6,9 +6,9 @@ import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { googleSignInUrl } from "@/components/auth-provider";
+import { primaryButtonClasses } from "@/components/control-classes";
 
-const PRIMARY_BUTTON =
-  "flex min-h-12 w-full items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50 sm:w-auto";
+const PRIMARY_BUTTON = `${primaryButtonClasses} w-full disabled:opacity-50 sm:w-auto`;
 
 export default function JoinPage({
   params,

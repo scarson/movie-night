@@ -8,9 +8,20 @@ import {
   outlinedControlClasses,
   secondaryButtonClasses,
   compactOutlinedButtonClasses,
+  primaryFillClasses,
+  primaryControlClasses,
+  primaryButtonClasses,
 } from "@/components/control-classes";
 
 const SRC = path.resolve(__dirname, "..");
+
+/** Source files outside the module whose class strings match `pattern`. */
+function callSitesSpelling(pattern: RegExp): string[] {
+  return sourceFiles()
+    .filter(([file]) => file !== "components/control-classes.ts")
+    .filter(([, src]) => pattern.test(src))
+    .map(([file]) => file);
+}
 
 /** Every non-test source file, as [repo-relative path, contents]. */
 function sourceFiles(): [string, string][] {
@@ -66,21 +77,51 @@ describe("outlined control classes", () => {
   });
 });
 
+describe("primary fill classes", () => {
+  it("carry the fill, the label colour it is measured against, and the hover", () => {
+    // midnight on amber is 9.04:1 (docs/accessibility.md). Swapping the fill without
+    // the label — or the reverse — is what would break it, so they travel together.
+    expect(primaryFillClasses).toContain("bg-amber");
+    expect(primaryFillClasses).toContain("text-midnight");
+    expect(primaryFillClasses).toContain("hover:bg-warm-white");
+  });
+
+  it("keep shape and size out of the fill, so call sites can vary them", () => {
+    // The landing CTA is inline-flex and the groups form button is 44px; bundling
+    // either choice into the fill is what forced twelve sites to re-spell it.
+    expect(primaryFillClasses).not.toMatch(/rounded-/);
+    expect(primaryFillClasses).not.toMatch(/min-h-/);
+  });
+
+  it("build every variant from the same fill definition", () => {
+    expect(primaryControlClasses).toContain(primaryFillClasses);
+    expect(primaryButtonClasses).toContain(primaryControlClasses);
+  });
+
+  it("stand at the same height as the secondary button they pair with", () => {
+    expect(primaryButtonClasses).toContain("min-h-12");
+    expect(secondaryButtonClasses).toContain("min-h-12");
+  });
+});
+
 describe("no call site re-spells the outlined treatment", () => {
   it("nothing inlines the secondary button string", () => {
-    const offenders = sourceFiles()
-      .filter(([file]) => file !== "components/control-classes.ts")
-      .filter(([, src]) => src.includes("border border-ash px-xl"))
-      .map(([file]) => file);
-    expect(offenders).toEqual([]);
+    expect(callSitesSpelling(/border border-ash px-xl/)).toEqual([]);
   });
 
   it("nothing spells out the boundary-plus-hover pair outside the module", () => {
     // Catches a near-copy that varies the size but re-states the a11y-critical part.
-    const offenders = sourceFiles()
-      .filter(([file]) => file !== "components/control-classes.ts")
-      .filter(([, src]) => /border-ash[^"`]*hover:border-cream/.test(src))
-      .map(([file]) => file);
-    expect(offenders).toEqual([]);
+    expect(callSitesSpelling(/border-ash[^"`]*hover:border-cream/)).toEqual([]);
+  });
+});
+
+describe("no call site re-spells the primary treatment", () => {
+  it("nothing inlines the primary button string", () => {
+    expect(callSitesSpelling(/bg-amber px-xl/)).toEqual([]);
+  });
+
+  it("nothing spells out the fill-plus-label pair outside the module", () => {
+    // Catches a near-copy that varies the size but re-states the contrast-critical part.
+    expect(callSitesSpelling(/bg-amber[^"`]*hover:bg-warm-white/)).toEqual([]);
   });
 });

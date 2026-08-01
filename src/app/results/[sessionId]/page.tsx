@@ -11,6 +11,7 @@ import { TasteMap } from "@/components/taste-map";
 import { RankedList, type Rating } from "@/components/ranked-list";
 import { ConversationalView } from "@/components/conversational-view";
 import { RefinePanel } from "@/components/refine-panel";
+import { primaryButtonClasses } from "@/components/control-classes";
 import {
   fetchSessionResults,
   runMatchRound,
@@ -66,8 +67,6 @@ function framingFor(kind: string | null): ErrorFraming {
   return ERROR_FRAMING.get(kind ?? "") ?? DEFAULT_FRAMING;
 }
 
-const PRIMARY_BUTTON =
-  "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white";
 function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
   const { user, loading } = useAuth();
@@ -154,7 +153,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           This session either doesn&apos;t exist or isn&apos;t yours to see. Starting a
           fresh one takes a few seconds.
         </p>
-        <Link href="/tonight" className={`${PRIMARY_BUTTON} mt-xl w-fit`}>
+        <Link href="/tonight" className={`${primaryButtonClasses} mt-xl w-fit`}>
           Back to tonight
         </Link>
       </main>
@@ -178,7 +177,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
               setLoadError(null);
               setReloadNonce((n) => n + 1);
             }}
-            className={PRIMARY_BUTTON}
+            className={primaryButtonClasses}
           >
             Try again
           </button>
@@ -261,7 +260,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         <button
           type="button"
           onClick={() => void runRound({ keptTmdbIds: [], removedTmdbIds: [], steeringFeedback: "" })}
-          className={`${PRIMARY_BUTTON} mt-xl w-full sm:w-auto`}
+          className={`${primaryButtonClasses} mt-xl w-full sm:w-auto`}
         >
           Find our match →
         </button>
@@ -377,12 +376,12 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           <div className="mt-md flex flex-wrap gap-sm">
             {framing.retry && (
-              <button type="button" onClick={regenerate} className={PRIMARY_BUTTON}>
+              <button type="button" onClick={regenerate} className={primaryButtonClasses}>
                 Try again
               </button>
             )}
             {framing.loosen === true && (
-              <Link href="/profile" className={PRIMARY_BUTTON}>
+              <Link href="/profile" className={primaryButtonClasses}>
                 Edit your dealbreakers
               </Link>
             )}

@@ -1,4 +1,4 @@
-// ABOUTME: Shared class strings for DESIGN.md's outlined ("border") level of the amber
+// ABOUTME: Shared class strings for DESIGN.md's filled and outlined levels of the amber
 // ABOUTME: hierarchy, so the 1.4.11 control boundary is defined in exactly one place.
 
 /**
@@ -37,3 +37,30 @@ export const secondaryButtonClasses = `flex min-h-12 items-center justify-center
  * not class-attribute order, so `${compactOutlinedButtonClasses} px-lg` is undefined.
  */
 export const compactOutlinedButtonClasses = `min-h-11 px-md text-sm font-medium ${outlinedControlClasses}`;
+
+/**
+ * The amber fill of DESIGN.md's top level, with the label colour its contrast is
+ * measured against: midnight on amber is 9.04:1 (`docs/accessibility.md`), and hover
+ * lifts the fill to warm-white, which only stays legible because the label is dark.
+ * Changing one of the three without the others is the failure mode, so they are one
+ * string.
+ *
+ * Deliberately carries no radius, size, or display: the landing CTA is `inline-flex`,
+ * the groups form button is 44px, and the rest are 48px flex rows. Bundling those
+ * per-control choices in is what left twelve call sites re-spelling the fill.
+ */
+export const primaryFillClasses = "bg-amber text-midnight hover:bg-warm-white";
+
+/** The filled treatment for a standalone control: fill, radius, transition. */
+export const primaryControlClasses = `rounded-control ${primaryFillClasses} transition-colors duration-100`;
+
+/**
+ * Standard primary button — the CTA `secondaryButtonClasses` counterweights, at the
+ * same 48px height. Call sites add their own layout and disabled state (`w-full`,
+ * `disabled:opacity-50`, …); none of those conflict with what is set here, and the
+ * `disabled:` variants outrank the resting fill on specificity rather than order.
+ *
+ * Compose from `primaryControlClasses` rather than appending to this when a call site
+ * needs a different size or padding, for the reason on `compactOutlinedButtonClasses`.
+ */
+export const primaryButtonClasses = `flex min-h-12 items-center justify-center px-xl text-base font-semibold ${primaryControlClasses}`;
