@@ -2162,11 +2162,29 @@ the winner prunes its own user's out-of-grace spent rows outside the batch.
   plaintext, the only copy, would never reach the client, signing them out 30 s later. `D1Meta.changes`
   is a required `number`; the type is the contract.
 
-**Reported, not fixed (outside G1's file ownership):**
-- **Logout does not revoke a spent row.** `src/app/api/auth/logout/route.ts:18` deletes only the
-  presented token's row, so the *previous* refresh token stays usable for the remainder of its 30 s
-  grace after a logout. Pre-change that row did not exist. Bounded at 30 s, no new cookies are
-  issued, and it requires already holding a token that was valid moments earlier.
+**Boundary extension — logout, fixed on coordinator decision.** `src/app/api/auth/logout/route.ts`
+sits outside G1's declared file list (§1.1). It was reported rather than edited, and the coordinator
+ruled: fix it in this PR, because it is a regression this change introduces rather than pre-existing
+residue. Before G1 the `DELETE … RETURNING` removed the predecessor row the instant it was spent, so
+logout had nothing to miss; the grace window deliberately keeps that row alive, which means a
+logged-out user's *previous* refresh token stayed valid for up to 30 s after they clicked the button.
+Two independent readers found it, which is a signal about how obvious it looks later. Every other
+group has merged and nothing else is in flight, so there is no conflict risk.
+
+The fix deletes that user's spent rows alongside the presented one, in one batch. **The predicate is
+`user_id = ? AND rotated_at IS NOT NULL`, not all-rows-for-this-user**: spent rows are unusable
+outside their grace window, so removing them cannot disturb a session another device is actively
+holding, which a blanket delete would. Batched with the existing delete so a partial failure cannot
+report a clean logout while leaving a graced token behind. **Accepted edge, recorded at the call
+site:** another device inside its own grace window gets a 401 and re-authenticates — an explicit
+logout should invalidate aggressively.
+
+`src/app/api/auth/logout/route.test.ts` is new (the route had no tests). Four of its six cases fail
+against the branch as it stood before the fix. Three mutants, all killed by exactly one test each:
+un-batching the pair fails the atomicity case, dropping the `user_id` scope fails the other-user
+case, dropping `rotated_at IS NOT NULL` fails the other-device case.
+
+**Reported, not fixed (going to Sam as-is):**
 - **`MAX_SESSIONS = 10`** (`src/app/api/auth/google/callback/route.ts:15`) counts spent rows toward
   the cap. Eviction is `ORDER BY created_at ASC`, so spent rows go first, and the prune is
   user-scoped — any rotation on any device clears that user's out-of-grace rows. Bounded, no change.
@@ -2182,8 +2200,8 @@ test quality by mutation) plus one independent fresh-agent round. The independen
 reproduced both mutation results and confirmed zero route diffs, no fake concurrency, no secret in
 any log or error, and no account-existence oracle.
 
-**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 60 files /
-826 passed / 2 skipped (baseline on `origin/dev`: 816), only the 3 pre-existing
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files /
+832 passed / 2 skipped (baseline on `origin/dev`: 816), only the 3 pre-existing
 `vite:dynamic-import-vars` warnings, `npx @opennextjs/cloudflare build` clean. **12 of the file's 36
 tests fail when `src/lib/auth.ts` alone is reverted to `origin/dev`** — measured by running the
 suite that way, not reasoned about. A 5-mutant study over the fix kills all 5: the pre-claim
