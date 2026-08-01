@@ -151,7 +151,20 @@ export function RankedList({
                 on a phone it takes most of the measure, with the rank and score
                 sitting in the air beside it. */}
             <div className="sm:row-span-2">
-              <Poster title={name} posterPath={title?.posterPath ?? null} size="w342" />
+              {/* Pick #1 tops the ranking and is the first poster read, so it is
+                  fetched eagerly rather than queued behind the rest. Only it: a
+                  second eager poster competes for the same bandwidth.
+
+                  Not an LCP fix. The results page opens on the taste-map tab and
+                  mounts this list only once the picks tab is chosen, by which
+                  point LCP has stopped accepting candidates. The gain is how
+                  quickly the picks paint after that click. */}
+              <Poster
+                title={name}
+                posterPath={title?.posterPath ?? null}
+                size="w342"
+                priority={index === 0}
+              />
             </div>
 
             <div className="flex flex-col items-start gap-sm">

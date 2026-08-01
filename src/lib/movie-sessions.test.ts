@@ -2,6 +2,8 @@
 // ABOUTME: member-flag authorization, round counting, removed-id accumulation, rough-day privacy.
 
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { SOLO_GROUP_NAME } from "@/lib/groups";
 import {
@@ -525,5 +527,106 @@ describe("insertRecommendation", () => {
       candidate_snapshot: "[1,2,3]",
     });
     expect(typeof row?.created_at).toBe("string");
+  });
+});
+
+describe("recommendation indexes", () => {
+  // loadMigration() reads the initial schema; the index migration is applied on
+  // top of it explicitly here. Every statement in that file is IF [NOT] EXISTS,
+  // so applying it a second time is a no-op and this stays correct whatever
+  // loadMigration() reads.
+  function indexMigration(): string {
+    return readFileSync(
+      join(process.cwd(), "migrations/0004_recommendation_indexes.sql"),
+      "utf-8"
+    );
+  }
+
+  function schemaWithIndexes(): string {
+    return `${loadMigration()}\n${indexMigration()}`;
+  }
+
+  async function indexNames(db: D1Database): Promise<string[]> {
+    const { results } = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
+      .all<{ name: string }>();
+    return results.map((row) => row.name);
+  }
+
+  it("adds the created_at and (session_id, round_number) indexes", async () => {
+    const names = await indexNames(createFakeD1(schemaWithIndexes()));
+    expect(names).toContain("idx_recommendations_created_at");
+    expect(names).toContain("idx_recommendations_session_round");
+  });
+
+  it("drops the superseded session index and the unused movie_sessions one", async () => {
+    const names = await indexNames(createFakeD1(schemaWithIndexes()));
+    expect(names).not.toContain("idx_recommendations_session");
+    expect(names).not.toContain("idx_movie_sessions_group");
+  });
+
+  it("re-applying the migration is a no-op rather than an error", async () => {
+    const names = await indexNames(createFakeD1(`${schemaWithIndexes()}\n${indexMigration()}`));
+    expect(names).toContain("idx_recommendations_created_at");
+    expect(names).toContain("idx_recommendations_session_round");
+    // The half a botched second run would break: the drops must stay dropped,
+    // not be resurrected by the initial schema being replayed alongside them.
+    expect(names).not.toContain("idx_recommendations_session");
+    expect(names).not.toContain("idx_movie_sessions_group");
+  });
+
+  // A DROP INDEX must not be able to change an answer. These two read through
+  // the replaced index, so if the composite is wrong they fail.
+  it("getRoundNumber still counts every round of the session", async () => {
+    const db = createFakeD1(schemaWithIndexes());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+    const otherSession = await newSession(db);
+
+    await seedRecommendation(db, sessionId, 1);
+    await seedRecommendation(db, sessionId, 2);
+    await seedRecommendation(db, sessionId, 3);
+    await seedRecommendation(db, otherSession, 1);
+
+    expect(await getRoundNumber(db, sessionId)).toBe(4);
+    expect(await getRoundNumber(db, otherSession)).toBe(2);
+  });
+
+  // This copies the results route's query rather than calling it (the route needs
+  // a full authenticated request, and src/app/api/movie-sessions/[id]/route.ts is
+  // another group's file). It therefore proves the *query shape* still resolves
+  // against the replaced index — not that the route does. If that route's query
+  // changes, this copy must change with it or it stops covering anything.
+  it("the latest-round query shape still selects the highest round of that session", async () => {
+    const db = createFakeD1(schemaWithIndexes());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+    const otherSession = await newSession(db);
+
+    // Inserted out of order so a lookup that returns insertion order fails.
+    await seedRecommendation(db, sessionId, 2);
+    await seedRecommendation(db, sessionId, 3);
+    await seedRecommendation(db, sessionId, 1);
+    await seedRecommendation(db, otherSession, 9);
+
+    const latest = await db
+      .prepare("SELECT * FROM recommendations WHERE session_id = ? ORDER BY round_number DESC LIMIT 1")
+      .bind(sessionId)
+      .first<{ round_number: number }>();
+    expect(latest?.round_number).toBe(3);
+  });
+
+  it("countMatchesThisMonth still counts only this month's rows", async () => {
+    const db = createFakeD1(schemaWithIndexes());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRecommendation(db, sessionId, 1, { createdAt: "2020-01-15T00:00:00.000Z" });
+    await seedRecommendation(db, sessionId, 2, { createdAt: new Date().toISOString() });
+
+    expect(await countMatchesThisMonth(db)).toBe(1);
   });
 });

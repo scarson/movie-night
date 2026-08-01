@@ -1206,3 +1206,134 @@ turn every token refresh into a 500.
 Artifacts: `dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md` (the what),
 `dev/research/2026-08-01-remediation-decisions.md` (the why, including where the two reviewers
 disagreed and how it was resolved), and the two sanity reviews they were reconciled from.
+
+## G7 — Pre-launch performance quick wins (2026-08-01)
+
+The performance audit's five Tier A/B quick wins, from
+`dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md` §8a. Immutable cache headers for
+content-hashed assets, the Satoshi italic preload, a preconnect to the poster origin, an eagerly
+fetched first poster, and `migrations/0004_recommendation_indexes.sql`. **Merge classification:
+Review — schema migration.**
+
+**Two of the plan's five premises did not survive verification.** Both tasks still ship — the code
+is right — but the reasons given for them were wrong, and the wrong reasons had been written into
+source comments where they would have outlived the PR. They are recorded below rather than quietly
+corrected.
+
+**The plan's preconnect spec was wrong, and the correction is the headline.** G7-3 mandated
+`<link rel="preconnect" href="https://image.tmdb.org" crossOrigin="" />`, justified by "the poster
+`<img>` requests are anonymous-CORS-mode by default". That premise is inverted, and the attribute
+would have defeated the hint it was added for. Measured in a browser against the real origin:
+a plain `<img src>` loads (`naturalWidth` 342), the identical URL with `crossorigin="anonymous"`
+fails (`naturalWidth` 0), `fetch(url, {mode:"cors"})` throws `Failed to fetch`, and `curl -I`
+returns no `Access-Control-Allow-Origin` — `image.tmdb.org` (BunnyCDN) does not support CORS at
+all. `Poster` renders a bare `<img src>` with no `crossorigin` attribute, so poster requests are
+necessarily no-CORS. Browsers pool CORS and no-CORS connections separately, so the specified hint
+would have warmed a socket the posters can never reuse: DNS shared, but the TCP + TLS handshake —
+the 2 RTTs the task exists to remove — paid again on the critical path. **Resolved: ship without
+`crossOrigin`.** An independent adversarial review reached the same conclusion from the spec side
+before seeing the measurements. The reason is now a comment on the `<link>` and an assertion in
+`layout.test.tsx`, because a bare `crossorigin`-less preconnect reads like an omission and is
+exactly the kind of thing a later reader "fixes" back.
+
+Its real beneficiary is also not the results page. The hint helps whichever surface requests a TMDB
+image first, which in practice is `TitleSearch`'s `w92` thumbnails on `/profile`
+(`profile-editor.tsx:76,88` → `title-search.tsx:147`). On the prerendered routes that never request
+one it warms a connection nothing uses, and Chrome drops an idle preconnected socket after ~10 s —
+a real but small cost, and the reason the hint is not worth widening to other origins.
+
+**The eager first poster is not an LCP fix, and the plan's claim that it is does not survive
+reading the results page.** `results/[sessionId]/page.tsx:78` defaults the tab to `"map"`, and
+`RankedList` mounts only under `tab === "picks"` (`:352-358`). No poster is in the DOM at first
+paint, and LCP stops accepting candidates at the first user interaction — so pick #1 cannot be the
+LCP element there under any network condition. The change still earns its place: the first poster
+is the one read first, and fetching it eagerly stops it queueing behind its four siblings, so the
+picks paint sooner **after** the tab click. Both source comments now say that, because "this is the
+LCP element" is the kind of assertion a later reader would trust rather than re-derive. Whether the
+picks tab should be the default is a design question and out of scope here.
+
+**G7-1 landed with better evidence than expected, and one honest gap remains.** Under
+`wrangler dev` against the built worker, `/_next/static/chunks/*.js` and
+`/_next/static/media/*.woff2` both return `public, max-age=31536000, immutable`, `/` keeps its
+`s-maxage=31536000`, and `/_headers` 404s (parsed as config, never served). So the file parses, the
+splat covers chunks and fonts, and nothing outside `/_next/static/*` moved. **Still unverified:
+production's default.** The `max-age=0, must-revalidate` this corrects was only ever observed under
+`wrangler dev`, so whether the fix was needed at all is what the `curl -I` step added to
+`docs/deploy.md` §Post-deploy verification settles. A miss there would be a platform difference,
+not a syntax error. There is no unit test — a `_headers` file has no in-process behaviour this
+stack can assert on; the guard is the build-output check plus that deploy step.
+
+**G7-2.** Dropping the italic `src` entry takes 43,844 bytes (18.6% of the font payload) off first
+load, for a face the whole app rendered in one place. Font preloads went 4 → 3 and `document.fonts`
+now registers `satoshi` normal only; next/font no longer emits a hashed copy under
+`_next/static/media/`. **It is not removed from the deploy:**
+`public/fonts/Satoshi-VariableItalic.woff2` is still copied to `.open-next/assets/fonts/` and
+uploaded — 43 KB now referenced by nothing. Deleting it is a separate decision. The preload premise
+also needs narrowing: next/font preloads declared faces on the **7 prerendered** routes, not
+literally every route — the 2 dynamic ones carry no font preloads at all (`/results/[sessionId]`
+serves zero, verified under `next start`). Confirmed independently that every other `italic` in
+`src/` carries `font-display` (Fraunces), whose two faces are both in use and untouched.
+
+This is a delivery change, not a type change: `mood-screen.tsx:141` keeps its `italic` class and
+still renders slanted, via a synthesised oblique. A/B'd at 375px against the unmodified file —
+identical 343x20 box, imperceptible at `text-sm text-ash` on one line. **Caveat: the mood
+confirmation screen is behind Google sign-in and unreachable locally**, so that comparison
+exercised the real font stack and utility classes on a reachable page, not that screen.
+
+**G7-5's numbers are the audit's; the plans were reproduced locally.** `countMatchesThisMonth` went
+`SCAN recommendations` → `SEARCH ... USING COVERING INDEX idx_recommendations_created_at`,
+`getRoundNumber` stayed covering through the widened composite, and the results page's
+`USE TEMP B-TREE FOR ORDER BY` disappeared. Not oversold: at Phase 1 volume this saves 4
+microseconds, and 50,000 recommendations means ~$2,000 of Anthropic spend. It is worth doing
+because it is a one-line schema change with no behavioural risk on the most expensive request in
+the app, and nothing prunes the table. Verified independently that nothing selects `movie_sessions`
+by `group_id` and that no code path anywhere deletes a `groups` row, so `idx_movie_sessions_group`
+backed neither a read nor a cascade. **The authority for that drop is the plan and the decision
+record, not the audit** — audit §3.1 explicitly says to *keep* the index ("it's cheap and B14 will
+use it"), and §3.4's proposals do not include the drop. That hedge assumed B14's fix would start
+deleting groups; the decision went the other way, because deleting a group cascades away an
+ex-member's history, so the fix became a copy change and the row is never deleted. The migration
+header now carries that provenance and tells a later author to restore the index if they ever add
+a `DELETE FROM groups`. No test asserts on `EXPLAIN QUERY PLAN`: the planner's output is
+version-dependent and pinning it fails on a Node upgrade for no defect.
+
+**Sequencing note.** PREP has not landed, so `loadMigration()` still hardcodes `0001`; the index
+tests apply `0004` on top of it explicitly. Every statement is `IF [NOT] EXISTS`, so that stays
+correct once PREP generalises the loader — and a test pins the re-apply case, including that the
+drops stay dropped. `docs/deploy.md` §2 had no `Pending migrations` subsection to append to (§1.4
+assigns creating it to G1, which had not merged), so G7 created it with `0004` alone; G1 and G4
+append `0002` and `0003` on rebase, resolved by keeping all three in numeric order.
+
+**Local schema drift, documented rather than coded around.** `migrate:local` and `loadMigration()`
+both read `0001` only, so between this merge and PREP's a local D1 — and anything built on it,
+including `npm run seed:local` — carries the initial schema and none of the later migrations.
+Generalising the loader here would collide with PREP-2, so `docs/deploy.md` §2 states the gap and
+gives the exact `wrangler d1 execute --local` command instead. Three statements in `CLAUDE.md`
+(`migrate:local`'s description, "13 tables … all from the single migration", and the `migrations/`
+line in the project layout) described a one-file migrations directory and no plan task owned them;
+they now describe a numbered, hand-applied sequence. `docs/deploy.md` §2's heading was likewise
+`Apply the schema — ✅ DONE` for a directory that is no longer one file; the ✅ now names `0001` and
+points at the pending list.
+
+**The explicit `<head>` in the root layout was removed on review.** Next 16's layout reference says
+not to hand-add one (the Metadata API owns that element and its streaming and de-duplication), and
+React 19 hoists `<link>` into head from anywhere in the tree. Verified rather than assumed: the
+emitted `<head>` of a prerendered route is byte-identical with and without the wrapper once
+build-specific chunk hashes are normalised — 20 tags either way, preconnect at index 15 in both —
+and under `next start` the streamed dynamic routes `/results/[sessionId]` and
+`/groups/join/[code]` both carry the preconnect in `<head>`. The hint lands after the stylesheet
+and the async scripts in every case, wrapper or not.
+
+**Two adversarial review passes** over the complete group diff, both by agents with no
+conversation history, and both worth their cost: between them they produced **two blockers, and
+both were defects in the plan rather than in the code** — the preconnect's inverted CORS premise
+and the claim that pick #1 is the results page's LCP element. Neither was catchable by reading the
+diff alone; the first needed the origin's real CORS behaviour and the second needed the results
+page's default tab. Also fixed from their findings: a `crossorigin` presence-not-value assertion, a
+test name claiming a networking property the harness cannot observe, a regex anchored on the wrong
+attribute, an under-asserted migration re-apply case, a `docs/deploy.md` claim about migrations
+this branch cannot see, an inverted citation crediting the audit for a drop it argued against, a
+measurement presented as this change's rather than the audit's, and three stale `CLAUDE.md`
+statements no task owned. Gates pristine at every commit: `tsc` silent, `eslint` silent,
+**59 files / 627 passed / 2 skipped** (615 baseline + 12), the three documented
+`vite:dynamic-import-vars` warnings and nothing else, plus `@opennextjs/cloudflare build`.

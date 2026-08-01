@@ -31,6 +31,22 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
+      {/* Every TMDB image in the app comes from this origin, so the DNS + TCP +
+          TLS handshake is otherwise paid on whichever image is requested first —
+          most often the w92 thumbnails in TitleSearch on /profile. React hoists
+          this into <head>; the root layout deliberately declares no <head> of its
+          own, because the Metadata API owns that element.
+
+          This hint carries no crossOrigin, and must not. image.tmdb.org serves no
+          Access-Control-Allow-Origin, and Poster renders a bare <img src>, so
+          poster requests are no-CORS. Browsers keep CORS and no-CORS connections
+          in separate pools: a crossOrigin preconnect would warm a socket the
+          posters can never reuse, leaving the handshake on the critical path —
+          the opposite of what this hint is for.
+
+          The origin is written out rather than imported from poster.tsx: the root
+          layout should not pull in a component module for a <link>. */}
+      <link rel="preconnect" href="https://image.tmdb.org" />
       <body className="flex min-h-dvh flex-col font-body antialiased">
         <ReducedMotionBoot />
         <SkipLink />

@@ -202,6 +202,44 @@ describe("RankedList", () => {
     for (const item of items) expect(item.className).toContain("animate-rise-fade");
   });
 
+  it("prioritises the first pick's poster and only the first", () => {
+    // A second eager poster would compete for bandwidth with the one being sped
+    // up, so this asserts *which* image is eager, not merely that one of them is.
+    const five: Recommendation[] = [1, 2, 3, 4, 5].map((n) => ({
+      tmdbId: n,
+      matchScore: 100 - n,
+      explanation: `Pick ${n}`,
+    }));
+    const fiveTitles: Record<number, TitleSummary> = Object.fromEntries(
+      five.map(({ tmdbId }) => [
+        tmdbId,
+        {
+          title: `Film ${tmdbId}`,
+          year: 2020,
+          posterPath: `/film-${tmdbId}.jpg`,
+          genres: ["Drama"],
+          streaming: {},
+          lastRefreshedAt: FRESH,
+        },
+      ])
+    );
+    const { container } = render(
+      <Harness recommendations={five} titles={fiveTitles} />
+    );
+
+    const posters = Array.from(container.querySelectorAll("img"));
+    expect(posters).toHaveLength(5);
+    expect(posters.map((img) => img.getAttribute("loading"))).toEqual([
+      "eager",
+      "lazy",
+      "lazy",
+      "lazy",
+      "lazy",
+    ]);
+    expect(posters[0].getAttribute("alt")).toBe("Film 1 poster");
+    expect(posters[0].getAttribute("fetchpriority")).toBe("high");
+  });
+
   it("does not re-render the world when a rating changes", () => {
     const onRatingsChange = vi.fn();
     render(
