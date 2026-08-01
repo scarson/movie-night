@@ -1625,3 +1625,34 @@ assigning to `this` would write to the wrapper rather than the real object.
   `:disabled` never matches an `<a>` — but a literal crossing of a stated boundary. (The reviewer
   also cited `page.tsx:80` and `tonight/page.tsx:102`; both are false positives. The first is a
   `<button>`, the second a text link with bespoke classes and no control string.)
+
+### G6 — third review batch
+
+A second independent reviewer returned approve-with-fixes. It attacked the 1.4.11 guard with 27
+strings — `hover:`, `focus-visible:`, `sm:`, `md:hover:`, `dark:`, `group-hover:`, `peer-checked:`,
+`aria-disabled:`, `data-[state=open]:`, `[&:hover]:`, `!border-slate`, `border-slate!`,
+`border-slate/50`, newline and tab separation, and `"disabled:border-slate border-slate"` — without
+defeating it, and confirmed against the generated stylesheet that every `disabled:`-initial token
+compiles to a selector requiring `:disabled`, so an exempt token can only ever paint an inactive
+component. It also counted all 21 allowlist entries as exact, proved both new tests fail against
+`origin/dev`'s route files, exercised `chunk()` at n=0/1/89/90/91/100/180/181 with no off-by-one and
+no empty chunk, and confirmed the refine-panel disabled state in a real browser: slate fill
+`rgb(45,53,72)`, ash label, border-width 0, no paint movement on hover across all three control
+shapes.
+
+**One must-fix: four newly-added comments narrated history.** An ironic defect in the change whose
+G6-4 task exists to delete exactly that. `control-classes.test.ts` counted what call sites used to
+carry; two allowlist entries said the treatment "is central now"; the profile test described the
+existence check's former shape. All four now state the present constraint and why it holds. A fifth
+of my own ("as strict as a bare substring check everywhere it was ever meaningful") was caught in
+the same sweep and rewritten to enumerate what the pattern still catches. The corrected count stays
+in `DESIGN.md`'s Decisions Log, which is explicitly a historical record.
+
+**Declined, with reasons.** The reviewer noted no render test exercises an actually-disabled
+*outlined* control: "Start over" is never disabled, and the three that can be disabled
+(`groups/page.tsx:325` and `:429`, `profile/page.tsx:264`) live inside page components that would
+need auth, router and fetch mocking to render. Such a test would exercise the mock harness, not the
+treatment, and a render of `<button className={secondaryButtonClasses} disabled>` would only
+re-state its own input — the anti-pattern already rejected for the filled case. The composition
+assertions in `control-classes.test.ts` prove every outlined variant carries the treatment, and the
+browser check above covers the paint. Left uncovered deliberately rather than covered dishonestly.
