@@ -884,3 +884,57 @@ already had. All nine routes still render 200 with no `undefined` in any class a
 
 **Noted, not done:** the primary (amber fill) button is duplicated across **twelve** sites — more
 than the secondary was. Left alone to keep this commit to one concern; it wants the same treatment.
+
+---
+
+## Primary button classes extracted to one definition (2026-08-01)
+
+Branch `claude/primary-button-extract`, commit `dff9ca5`. **575 tests passing** (569 + 6 new).
+
+The follow-up the previous entry named. The amber-fill CTA was spelled out verbatim at
+**twelve** call sites across nine files — `page.tsx`, `quick` (x2), `groups`, `groups/join/[code]`,
+`results`, `profile`, `tonight`, `ritual` (x3), `refine-panel`. The grep found exactly the twelve
+the handoff predicted, which is the first time a duplication count has been right on the first try.
+
+**Same two-level split as the outlined treatment, for the same reason.** `primaryFillClasses` is
+`bg-amber text-midnight hover:bg-warm-white` — the fill, the label colour its 9.04:1 contrast is
+measured against, and the hover. Changing any one of the three without the others is the failure
+mode, so they are one indivisible string. It carries no radius, size, or display, because two of
+the twelve sites disagree on exactly those: the landing CTA is `inline-flex` with no
+`justify-center`, and the groups form button is 44px with `px-lg` to sit beside a 44px input.
+Both compose from `primaryControlClasses` (fill + radius + transition). The other ten use
+`primaryButtonClasses`, the 48px flex button that counterweights `secondaryButtonClasses`.
+
+**Four different disabled treatments are in play, and they stayed at their call sites.** This is
+the one finding worth Sam's attention:
+
+| Site | Disabled treatment |
+|------|--------------------|
+| `groups:226`, `groups/join/[code]:11` | `disabled:opacity-50` |
+| `ritual:337` | `disabled:opacity-60` |
+| `profile:27` | `disabled:bg-slate disabled:text-ash` |
+| `refine-panel:111` | `disabled:border-slate disabled:bg-transparent disabled:text-ash` |
+| the other six | none at all |
+
+`opacity-50` vs `opacity-60` in particular reads as a typo rather than a decision. Normalising
+them is a design call, not a refactor, so nothing was touched — but the primary CTA now looks
+disabled four different ways depending on which screen you are on. DESIGN.md does not specify a
+disabled treatment, which is probably the root cause.
+
+**Appending `disabled:` variants is safe; appending base utilities is not.** Tailwind generates
+`.disabled\:bg-slate:disabled`, whose specificity beats `.bg-amber` regardless of stylesheet
+order, so `${primaryButtonClasses} disabled:bg-slate` is well defined. `${primaryButtonClasses}
+px-lg` would not be — hence the groups button composing from the control level instead. This is
+the same trap recorded on `compactOutlinedButtonClasses`; the module's doc comments now say it
+in both places.
+
+**Verified as a refactor, not a redesign.** Reconstructed the composed string at each of the
+twelve sites and compared the resolved class *set* against `git HEAD`: identical at all twelve,
+with no exceptions this time. The `-slate` allowlist in `control-contrast.test.tsx` is unchanged,
+which independently confirms `profile` and `refine-panel` kept their disabled boundaries.
+
+**Guard.** `control-classes.test.ts` gains two anti-duplication cases (the `bg-amber px-xl`
+string, and the `bg-amber … hover:bg-warm-white` pair that catches a near-copy at a different
+size), plus four assertions pinning the split. The four filter blocks across the outlined and
+primary guards now share one `callSitesSpelling(pattern)` helper rather than being copy-pasted
+a third and fourth time.
