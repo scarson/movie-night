@@ -1114,3 +1114,41 @@ matters-only-at-scale, with the items already owned by the Phase 1 remediation p
 B6/D6, B7, B12) referenced rather than re-specified.
 
 Docs-only: CI's `paths-ignore` covers `**/*.md`, so no jobs run for this change.
+
+## Authenticated 1.4.10 verification, unblocked by a local session (2026-08-01)
+
+The 1.4.10 gap was an environment problem, not a layout problem, and the fix was to stop
+needing OAuth. `authenticateRequest()` only wants a JWT signed with the Worker's own
+`JWT_SECRET`, or a `sessions` row whose `token_hash` is the SHA-256 of the `mn-refresh`
+cookie — both manufacturable locally. A `.dev.vars` with a made-up secret, `npm run migrate:local`,
+fixture rows inserted straight into local D1, and a JWT minted by importing the project's own
+`createJWT` (so the claims cannot drift from what verifies them) puts a real signed-in session
+in front of `wrangler dev`. `/api/auth/me` returning the seeded user was the gate before any
+measurement was taken. Written up as a runbook in
+`dev/reports/2026-08-01-authenticated-a11y-verification.md`, because it also unblocks the
+screen-reader pass — that one still needs a human with VoiceOver, but no longer needs a deploy.
+
+**Every authenticated route reflows cleanly at 320px.** `/profile`, `/groups`, `/tonight`,
+`/quick`, all three `/ritual` steps, all three `/results` tabs, and the signed-in branch of
+`/groups/join/[code]`: `scrollWidth === clientWidth === 320`, zero overflowing elements, zero
+horizontally-scrollable subregions. The three surfaces that were the reason to care are fine —
+the 30-chip grid wraps with 27px to spare and does not grow when selection adds `font-medium`,
+the results tablist fits one row, and the taste map has no SVG or canvas at all, so 1.4.10's
+2-D exception never applies anywhere in the app.
+
+**Two real content losses, left unfixed and documented as open.** No horizontal scrolling, so
+they are not the failure anyone was looking for — but `truncate` clips text with no scrollbar
+and no `title`, which a `scrollWidth` check walks straight past. Catching them needed a separate
+sweep for `text-overflow: ellipsis` with `scrollWidth > clientWidth`. The `/groups` invite link
+loses 79px, about a quarter of the URL, and the comment above `copyInvite` justifies the
+clipboard-failure path on the grounds that the link is rendered in full — which stops being true
+below roughly 400px, exactly when a user is most likely to be on a phone. `/tonight`'s member
+list loses 43px and matters less.
+
+Three traps worth remembering. Seeded `titles.streaming` must be `StreamingInfo`
+(`flatrate: string[]`), not TMDB's raw `[{provider_name}]`, or the picks tab renders
+`On [object Object]`. Sibling agents in other worktrees share the port range, the scratchpad and
+the Browser pane — an unnamespaced log and the default 8787 got clobbered mid-run, and a sibling's
+tab stole the viewport size, so ports and log names need namespacing and `tabId` needs passing
+explicitly. And chip screenshots were captured with `playwright-core` installed into a scratch
+directory against the already-cached Chromium, so nothing was added to the project's dependencies.
