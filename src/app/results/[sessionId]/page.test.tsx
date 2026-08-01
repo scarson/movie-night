@@ -281,12 +281,14 @@ describe("results page", () => {
     expect(matchBody(posted[1]).removedTmdbIds).toEqual([27205, 155]);
   });
 
-  // 60 sequential remove-clicks, each a full getByRole scan over the rendered
-  // list — inherently heavy in jsdom. Observed between 12s and 24s on a machine
-  // running several suites at once, so the budget is set well clear of the
-  // contended upper end rather than the quiet-machine time. The assertion is
-  // deterministic; a failure here is a real regression, never a slow runner.
-  it("never sends more removed ids than the route will accept", { timeout: 60000 }, async () => {
+  // The fixture is ten picks past the route's 50-id ceiling, so the cap has to
+  // do real work rather than merely be touched. The remove controls are queried
+  // once and clicked from that array; re-querying per click would make the loop
+  // quadratic in an environment where an accessibility-tree scan is the most
+  // expensive thing a test can do. The 60 re-renders that remain still make this
+  // the heaviest test in the file, hence the explicit budget — but the assertion
+  // is deterministic, so a failure here is a real regression, never a slow runner.
+  it("never sends more removed ids than the route will accept", { timeout: 10000 }, async () => {
     vi.useFakeTimers();
     const many = Array.from({ length: 60 }, (_, i) => ({
       tmdbId: 1000 + i,
@@ -320,8 +322,12 @@ describe("results page", () => {
     await renderResults();
 
     fireEvent.click(screen.getByRole("tab", { name: /picks/i }));
-    for (const rec of many) {
-      fireEvent.click(screen.getByRole("button", { name: `Remove Film ${rec.tmdbId}` }));
+    const removeButtons = within(screen.getByRole("tabpanel")).getAllByRole("button", {
+      name: /^Remove Film /,
+    });
+    expect(removeButtons).toHaveLength(many.length);
+    for (const button of removeButtons) {
+      fireEvent.click(button);
     }
     await act(async () => {
       fireEvent.click(screen.getByTestId("regenerate"));
@@ -330,6 +336,7 @@ describe("results page", () => {
     const body = matchBody(matchCalls(calls)[0]);
     expect(body.removedTmdbIds).toHaveLength(50);
     // The 50 most recent survive — the oldest exclusions are the ones to drop.
+    expect(body.removedTmdbIds[0]).toBe(1010);
     expect(body.removedTmdbIds[49]).toBe(1059);
   });
 
