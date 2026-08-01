@@ -2372,3 +2372,54 @@ them — an ascending fixture would agree with index-ordered D1 results and prov
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 833 passed
 / 2 skipped (baseline 832), only the pre-existing `vite:dynamic-import-vars` warnings,
 `npx @opennextjs/cloudflare build` clean.
+
+## 2026-08-01 — E2E smoke verification of the merged Phase 1 remediation (`claude/e2e-smoke`)
+
+First pass exercising today's 22 behaviour changes as a **running application** — `wrangler dev` on
+the OpenNext build, port 8795, real D1 and real secret bindings — rather than through unit tests and
+jsdom. Full write-up: `dev/reports/2026-08-01-e2e-smoke-verification.md`.
+
+**Seven of eight items passed outright**: the B7 kill switch refuses locally with zero outbound
+Anthropic calls (proved by the absence of the `provider_auth_failed` log line and a 5.9 ms
+response), and `-1` / `abc` / unset all fall back to 2000 rather than reading as unlimited (proved
+at exactly 2000 rows this month); B7b maps a real Anthropic 401 to `503 kind:"provider_auth"` with
+the operator log line; G1's logout revokes a predecessor that was authenticating 128 ms earlier
+inside its grace window, while another device's active session stays 200; B2 gives an ex-member 403
+`left_group` on POST while GET still returns the round, and leaving a `__solo__` group is a no-op;
+B15 survives five simultaneous cold-start solo creates with one group and one membership row; 0001
+→ 0004 apply from an empty state to 13 tables with both new columns and all four 0004 index
+changes; the results page renders every tab from a seeded round and degrades to "Nothing picked yet"
+on a malformed `ai_response` instead of crashing.
+
+**One defect found and fixed here, TDD.** `getRecommendedTmdbIds` is a third read of
+`recommendations.ai_response` and the only one B13 left unguarded. A stored blob whose
+`recommendations` is present but not iterable threw `TypeError: number 5 is not iterable` out of the
+match route into the generic handler, so `POST /api/movie-sessions/[id]/match` returned
+`500 {"error":"Match failed"}` while `GET` on the same session degraded correctly to
+`"response":null`. That disagreement is the "one bad response bricks the page forever" shape B13
+existed to close: the results page offers **Find our match →** as the recovery affordance, wired to
+the path that 500s. Fixed with `if (!Array.isArray(parsed?.recommendations)) continue;` —
+`Array.isArray` rather than `isMatchingResponse`, deliberately, because this builds a *provenance*
+set and the existing `Number.isInteger(rec?.tmdbId)` guard shows the intent is salvage: the strict
+predicate would discard a whole round's ids over an unrelated field and silently drop the user's
+keep/remove intent. Verified on the live Worker after a rebuild — the same POST now reaches the
+provider and returns 503 instead of 500.
+
+**Left for Sam, not changed.** The brief for this pass asked for `provider_auth` to render its own
+UI framing rather than the `overloaded`/`timeout` "lie-down" copy. The merged plan asks for the
+opposite, verbatim, at
+`dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md:1616`, and both the route and the client
+map carry written justifications for the shared copy. The code follows the plan; the brief and the
+plan disagree with each other. Recorded so it is not double-reported.
+
+**Blind spots, all credential-shaped.** No Anthropic key, so no successful matching round was ever
+produced: `parseMatchingResponse` on real output, the `malformed` / `thin_results` / `timeout` /
+`overloaded` / `rate_limited` kinds, `PhasedLoading`, real round persistence and the refinement loop
+are unverified. No TMDB token, so profile enrichment's success path, `detailToTitle`, and the whole
+cron/weekly-refresh path (which is what `0003`'s `last_refresh_attempt_at` serves) are unexercised.
+Sessions were minted, so the Google OAuth routes, state/verifier cookies and first-login user
+creation were never walked. Also untouched: join-by-code and its rate limiter, account deletion, and
+anything deployed (`isSecure` was false throughout, so the `Secure` cookie attribute never emitted).
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 837 passed
+/ 2 skipped (baseline 836, +1 for the new regression test), `npx opennextjs-cloudflare build` clean.
