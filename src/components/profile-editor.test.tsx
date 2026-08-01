@@ -110,9 +110,11 @@ describe("ProfileEditor", () => {
 });
 
 describe("ProfileEditor list ceilings", () => {
-  // The 30-tag / 50-title caps belong to PUT /api/user/profile. Asserting them
-  // here rather than only on the pickers is what pins the wiring: each picker's
-  // own default matches, so a dropped `max` prop is invisible to its own tests.
+  // The 30-tag / 50-title caps belong to PUT /api/user/profile. These prove
+  // each ceiling is reachable through the composed editor and equals the
+  // server's. They cannot prove the `max` props are passed — every picker
+  // defaults to the same number, so removing them changes no behaviour. See
+  // the note on the second test.
   const ALL_PRESETS = [...MOOD_TAGS, ...GENRE_TAGS];
 
   function titles(count: number) {
@@ -165,7 +167,8 @@ describe("ProfileEditor list ceilings", () => {
   it("names the server's ceiling on every list", () => {
     // The ceiling each picker reports is its `max`. This cannot detect a
     // dropped prop — the components default to the same numbers — but it does
-    // catch the value drifting away from what the endpoint enforces.
+    // catch a picker being wired to the wrong list's ceiling, and it catches
+    // the value drifting away from what the endpoint enforces.
     render(
       <ProfileEditor
         value={{

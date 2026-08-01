@@ -106,9 +106,12 @@ describe("MoodScreen", () => {
 });
 
 describe("MoodScreen vibe ceiling", () => {
-  // The 30-entry cap belongs to POST /api/movie-sessions. Asserting it here
-  // rather than only on TagPicker is what pins the wiring: TagPicker's own
-  // default is also 30, so a dropped `max` prop is invisible to its tests.
+  // The 30-entry cap belongs to POST /api/movie-sessions. This proves the
+  // ceiling is reachable through the composed screen and that the number it
+  // enforces is the server's. It cannot prove the `max` prop is passed —
+  // TagPicker defaults to 30 too, so dropping the prop changes no behaviour.
+  // Pinning that would mean making `max` required, which the plan chose not to
+  // do (§8 G5-1 specifies `max?: number` with a default).
   const ALL_PRESETS = [...MOOD_TAGS, ...GENRE_TAGS];
 
   it("refuses a 31st vibe, the ceiling the session endpoint enforces", () => {

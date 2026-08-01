@@ -1390,10 +1390,20 @@ link as `overflow-hidden text-ellipsis whitespace-nowrap`, or the member list as
 (excluded `line-clamp-2` but not the strictly worse `line-clamp-1`), left the suite green; the check
 now goes through `src/test/clipping.ts` and both spellings fail. **And reverting
 `profile-editor.tsx` and `mood-screen.tsx` entirely also left it green** — five of the six render
-sites the plan named were untested, and inert besides, since each explicit `max` equals the
-component default. The ceilings are now exercised through the composed components, which is where
-the wiring lives. Four tests that hold on both sides are kept as boundary guards and labelled as
-such in the source, so the suite does not overstate itself.
+sites the plan named were untested. Ceiling tests now exercise them through the composed
+components, which catches a picker wired to the wrong list's ceiling and the value drifting from
+the endpoint's; **it does not pin the prop, and cannot.** Every explicit `max` equals the
+component's own default, so deleting all five changes no behaviour and fails nothing. The only
+fix that would pin them is making `max` required, and §8 G5-1 specifies `max?: number` with a
+default — so the limit is recorded here and in the tests' comments rather than designed around.
+Tests that hold on both sides of a fix are labelled as such where they exist, so the suite does
+not overstate itself.
+
+**That finding arrived the hard way.** The review that produced it reverted those two files inside
+the worktree rather than a copy and left the reversion staged; the next commit swept it up, and
+the suite stayed green through all of it — which is precisely the claim being made, demonstrated
+by accident. Restored in a named commit. The lesson is `git status` before every `git add`, even
+when the command names explicit paths, because the index can hold work that is not yours.
 
 **Review rounds.** Four, three by fresh agents with no conversation history. Findings acted on: the
 a11y record's "zero remaining ellipsis-clipped elements" claim covered only the two routes actually
