@@ -282,9 +282,11 @@ describe("results page", () => {
   });
 
   // 60 sequential remove-clicks, each a full getByRole scan over the rendered
-  // list — inherently heavy in jsdom and borderline against the 5s default on
-  // slower CI runners. The assertion is deterministic; give it real headroom.
-  it("never sends more removed ids than the route will accept", { timeout: 20000 }, async () => {
+  // list — inherently heavy in jsdom. Observed between 12s and 24s on a machine
+  // running several suites at once, so the budget is set well clear of the
+  // contended upper end rather than the quiet-machine time. The assertion is
+  // deterministic; a failure here is a real regression, never a slow runner.
+  it("never sends more removed ids than the route will accept", { timeout: 60000 }, async () => {
     vi.useFakeTimers();
     const many = Array.from({ length: 60 }, (_, i) => ({
       tmdbId: 1000 + i,

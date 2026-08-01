@@ -2078,3 +2078,24 @@ strengthened to assert the new unquoted labelled line, and to pin the benign quo
 bearing: `leaveGroup` currently accepts any group id, so leaving your own `__solo__` group would
 now revoke matching on your own solo sessions. G3-5 is marked droppable in the plan; it should not
 be dropped while this gate is in place.
+
+---
+
+## Repo hygiene — log merge strategy and a contended-timeout fix (2026-08-01)
+
+Two recurring costs from running eight remediation groups in parallel, fixed at the root.
+
+**`dev/implementation-log.md` now merges with `union`.** Every group appends a section at the end,
+so every rebase conflicted on the same file even though no two entries overlapped semantically.
+Five such conflicts were resolved by hand during the remediation campaign, and one of those
+resolutions briefly emptied the file (a `sed` built from a zsh array read `${M[0]}`, which is unset
+in zsh's 1-indexed arrays, so the command degenerated to a bare `d` that deleted every line — the
+file was restored with `git checkout --merge`). Union resolution keeps both sides instead. Ordering
+within the file carries no meaning, so a merged result is always correct; the only failure mode is
+a duplicated line when two branches edit the same one, which is visible and harmless.
+
+**`results/[sessionId]/page.test.tsx`'s 60-click case: 20s budget -> 60s.** Four separate agents hit
+it, and it timed out once against unmodified `dev`, so it was never that branch's regression. It ran
+between 12s and 24s on a machine hosting several concurrent suites. The assertion is deterministic;
+the budget is now set clear of the contended upper end rather than the quiet-machine time, per the
+project's standing rule to give heavy jsdom tests real headroom rather than trimming the assertion.

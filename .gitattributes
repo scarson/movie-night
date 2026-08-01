@@ -1,0 +1,5 @@
+# Append-only records. Parallel branches each add a section at the end, which
+# conflicts on every rebase even though the entries are independent. Union
+# resolution keeps both sides in place of a conflict; ordering within the file
+# carries no meaning, so a merged result is always correct here.
+dev/implementation-log.md merge=union
