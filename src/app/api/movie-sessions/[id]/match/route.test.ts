@@ -7,6 +7,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Anthropic, { APIError, APIConnectionError } from "@anthropic-ai/sdk";
 import type { Message } from "@anthropic-ai/sdk/resources/messages";
 import { createFakeD1, loadMigration, withFailingStatement, injectedFailureCount } from "@/test/fake-d1";
+import { recordStatements } from "@/test/statement-recorder";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
 import { leaveGroup } from "@/lib/groups";
@@ -56,6 +57,16 @@ async function seedGroupWithMembers(db: D1Database, groupId: string, memberIds: 
       .bind(crypto.randomUUID(), groupId, userId, "2026-01-01T00:00:00.000Z")
       .run();
   }
+}
+
+function seedProfile(db: D1Database, userId: string, comfortTitles: string, watchlist: string) {
+  return db
+    .prepare(
+      `INSERT INTO profiles (user_id, comfort_titles, watchlist, vibes, dealbreakers, streaming_services, updated_at)
+       VALUES (?, ?, ?, '["Cozy"]', '[]', '["Netflix"]', '2026-01-01T00:00:00.000Z')`
+    )
+    .bind(userId, comfortTitles, watchlist)
+    .run();
 }
 
 function seedTitle(db: D1Database, tmdbId: number, title: string, popularity = 50) {
@@ -904,5 +915,95 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     const serialized = JSON.stringify(await response.json());
     expect(serialized).not.toContain("roughDay");
     expect(serialized).not.toContain("rough_day");
+  });
+
+  describe("D1 round trips", () => {
+    /**
+     * A second round with nothing short-circuiting: both members carry profile
+     * title ids, a first round supplies the kept/removed provenance, and the
+     * request both keeps and rejects one of that round's picks. Every read on
+     * the path therefore does real work. The catalog is far under
+     * selectCandidates' 250-row pool, so its referenced-id chunk query — the
+     * one read whose count varies with catalog size — never fires.
+     */
+    async function setupSecondRound(db: D1Database): Promise<string> {
+      const sessionId = await setup(db);
+      await seedProfile(db, "u1", "[27205]", "[155]");
+      await seedProfile(db, "u2", "[603]", "[550]");
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: 1,
+        aiResponse: validResponse([27205, 155, 603]),
+        keptTmdbIds: [],
+        removedTmdbIds: [680],
+        steeringFeedback: "",
+        candidateSnapshot: [27205, 155, 603, 550, 680],
+      });
+      return sessionId;
+    }
+
+    const secondRoundBody = { keptTmdbIds: [27205], removedTmdbIds: [155] };
+
+    it("costs one round trip per read the round genuinely needs", async () => {
+      // The reads are cheap and the SQL is microseconds; what a match request
+      // spends in production is the number of times it goes to D1 and waits.
+      // The synchronous fake cannot show that as wall clock, so the budget is
+      // the count itself.
+      const base = createFakeD1(loadMigration());
+      const { db, roundTrips } = recordStatements(base);
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setupSecondRound(base);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 603, 550])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1", secondRoundBody);
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      // The session lookup and the live-membership probe (which needs the
+      // session's group id), the five reads that depend on nothing but the
+      // session id, the candidate pool, one title hydration for every name the
+      // prompt needs, the insert, and the response hydration.
+      expect(roundTrips).toHaveLength(7);
+      expect(Math.max(...roundTrips.map((trip) => trip.length))).toBe(5);
+    });
+
+    it("returns the same round, response and titles it did before the reads were collapsed", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setupSecondRound(db);
+      const engineResponse = validResponse([27205, 603, 550]);
+      const create = stubAnthropic([apiMessage(JSON.stringify(engineResponse))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1", secondRoundBody);
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      const body = await response.json<Record<string, unknown>>();
+      expect(body.round).toBe(2);
+      expect(body.response).toEqual(engineResponse);
+      expect(Object.keys(body.titles as Record<string, unknown>).sort()).toEqual(["27205", "550", "603"]);
+
+      // Every title name the prompt carries comes from those same hydrations:
+      // the members' own lists, the kept pick, and the rejections this round
+      // and last round together.
+      const params = create.mock.calls[0][0] as {
+        system: string;
+        messages: Array<{ content: string }>;
+      };
+      expect(params.system).toContain(
+        "KEEP these movies in your recommendations (they liked them): Inception (tmdbId 27205)"
+      );
+      expect(params.system).toContain(
+        "Do NOT recommend any of these movies (already rejected): The Dark Knight (tmdbId 155), Pulp Fiction (tmdbId 680)"
+      );
+      expect(params.messages[0].content).toContain(
+        "Member: Sam\n- Comfort movies: Inception\n- Watchlist: The Dark Knight"
+      );
+      expect(params.messages[0].content).toContain(
+        "Member: Alex\n- Comfort movies: The Matrix\n- Watchlist: Fight Club"
+      );
+    });
   });
 });

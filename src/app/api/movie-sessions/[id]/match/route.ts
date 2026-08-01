@@ -14,11 +14,7 @@ import {
 import { isGroupMember } from "@/lib/groups";
 import {
   getSessionForMember,
-  getSessionMembersWithProfiles,
-  getRoundNumber,
-  getAccumulatedRemovedIds,
-  getRecommendedTmdbIds,
-  countMatchesThisMonth,
+  getMatchRoundContext,
   formatTitleRefs,
   getTitlesMap,
   insertRecommendation,
@@ -112,9 +108,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
+    const { round, matchesThisMonth, recommendedTmdbIds, members, accumulatedRemovedIds } =
+      await getMatchRoundContext(db, id);
+
     // Round limit. Plain SELECT-then-insert: the TOCTOU race is ACCEPTED per
     // eng review — blast radius is one extra ~$0.04 call; no locking.
-    const round = await getRoundNumber(db, id);
     if (round > MAX_ROUNDS_PER_SESSION) {
       return withAuthHeaders(
         NextResponse.json(
@@ -132,7 +130,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const parsedLimit = Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10);
     const monthlyLimit =
       Number.isNaN(parsedLimit) || parsedLimit < 0 ? DEFAULT_MONTHLY_MATCH_LIMIT : parsedLimit;
-    if ((await countMatchesThisMonth(db)) >= monthlyLimit) {
+    if (matchesThisMonth >= monthlyLimit) {
       return withAuthHeaders(
         NextResponse.json(
           { error: "We're getting a lot of requests right now, try again later", kind: "monthly_cap" },
@@ -145,9 +143,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // A client may only keep or reject a film this session actually showed it.
     // Unrecognised ids are dropped rather than rejected: a stale second tab
     // holding an older round's ids must not hard-fail the app's costliest path.
-    const recommendedIds = await getRecommendedTmdbIds(db, id);
-    const acceptedKeptIds = keptTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
-    const acceptedRemovedIds = removedTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
+    const acceptedKeptIds = keptTmdbIds.filter((tmdbId) => recommendedTmdbIds.has(tmdbId));
+    const acceptedRemovedIds = removedTmdbIds.filter((tmdbId) => recommendedTmdbIds.has(tmdbId));
     if (acceptedRemovedIds.length !== removedTmdbIds.length) {
       console.log(
         JSON.stringify({
@@ -159,18 +156,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const members = await getSessionMembersWithProfiles(db, id);
     // This round's removals lead: the prompt's exclusion list is capped from the
     // front, and the films the group just rejected are the ones it must name.
-    const allRemovedIds = [
-      ...new Set([...acceptedRemovedIds, ...(await getAccumulatedRemovedIds(db, id))]),
-    ];
+    const allRemovedIds = [...new Set([...acceptedRemovedIds, ...accumulatedRemovedIds])];
 
     const candidates = await selectCandidates(db, members, session.discoverNew, new Set(allRemovedIds));
-    const titlesForNames = await getTitlesMap(
-      db,
-      [...new Set(members.flatMap((m) => [...m.comfortTitles, ...m.watchlist]))]
-    );
+    // Every name the prompt spells out — the members' own lists, the kept picks
+    // and the exclusions — comes from one hydration of their union.
+    const titlesForNames = await getTitlesMap(db, [
+      ...new Set([
+        ...members.flatMap((m) => [...m.comfortTitles, ...m.watchlist]),
+        ...acceptedKeptIds,
+        ...allRemovedIds,
+      ]),
+    ]);
     const nameList = (ids: number[]) =>
       ids.filter((tmdbId) => titlesForNames[tmdbId] !== undefined).map((tmdbId) => titlesForNames[tmdbId].title);
 
@@ -190,8 +189,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         moodVibes: session.moodVibes,
         moodText: session.moodText,
         discoverNew: session.discoverNew,
-        keptTitles: await formatTitleRefs(db, acceptedKeptIds),
-        removedTitles: await formatTitleRefs(db, allRemovedIds),
+        keptTitles: formatTitleRefs(titlesForNames, acceptedKeptIds),
+        removedTitles: formatTitleRefs(titlesForNames, allRemovedIds),
         steeringFeedback,
         candidates,
         solo: session.solo,

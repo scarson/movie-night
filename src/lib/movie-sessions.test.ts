@@ -10,12 +10,8 @@ import { deleteAccount } from "@/lib/account";
 import {
   createSoloGroup,
   createMovieSession,
-  getRoundNumber,
-  getAccumulatedRemovedIds,
-  getRecommendedTmdbIds,
-  countMatchesThisMonth,
+  getMatchRoundContext,
   getSessionForMember,
-  getSessionMembersWithProfiles,
   getTitlesMap,
   formatTitleRefs,
   insertRecommendation,
@@ -394,19 +390,19 @@ describe("createMovieSession", () => {
 });
 
 describe("round counting and accumulation", () => {
-  it("getRoundNumber returns 1 for a fresh session and count+1 afterwards", async () => {
+  it("reports round 1 for a fresh session and count+1 afterwards", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);
     const sessionId = await newSession(db);
 
-    expect(await getRoundNumber(db, sessionId)).toBe(1);
+    expect((await getMatchRoundContext(db, sessionId)).round).toBe(1);
     await seedRecommendation(db, sessionId, 1);
     await seedRecommendation(db, sessionId, 2);
-    expect(await getRoundNumber(db, sessionId)).toBe(3);
+    expect((await getMatchRoundContext(db, sessionId)).round).toBe(3);
   });
 
-  it("getAccumulatedRemovedIds unions removed ids across all prior rounds, deduped", async () => {
+  it("unions removed ids across all prior rounds, deduped", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);
@@ -417,11 +413,11 @@ describe("round counting and accumulation", () => {
     await seedRecommendation(db, sessionId, 2, { removedIds: [2, 3] });
     await seedRecommendation(db, otherSession, 1, { removedIds: [99] });
 
-    const ids = await getAccumulatedRemovedIds(db, sessionId);
+    const ids = (await getMatchRoundContext(db, sessionId)).accumulatedRemovedIds;
     expect([...ids].sort()).toEqual([1, 2, 3]);
   });
 
-  it("getAccumulatedRemovedIds returns the newest round's ids first", async () => {
+  it("returns the newest round's removed ids first", async () => {
     // The prompt's exclusion list is capped, and the entries worth keeping are
     // the most recent rejections. Order is the mechanism that decides that, so
     // it is asserted as an exact sequence rather than as a set.
@@ -434,20 +430,20 @@ describe("round counting and accumulation", () => {
     await seedRecommendation(db, sessionId, 2, { removedIds: [20, 21] });
     await seedRecommendation(db, sessionId, 3, { removedIds: [30, 31] });
 
-    expect(await getAccumulatedRemovedIds(db, sessionId)).toEqual([30, 31, 20, 21, 10, 11]);
+    expect((await getMatchRoundContext(db, sessionId)).accumulatedRemovedIds).toEqual([30, 31, 20, 21, 10, 11]);
   });
 
-  it("countMatchesThisMonth counts only rows created since the start of the current month", async () => {
+  it("counts only matches created since the start of the current month", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);
     const sessionId = await newSession(db);
 
     await seedRecommendation(db, sessionId, 1, { createdAt: "2020-01-15T00:00:00.000Z" });
-    expect(await countMatchesThisMonth(db)).toBe(0);
+    expect((await getMatchRoundContext(db, sessionId)).matchesThisMonth).toBe(0);
 
     await seedRecommendation(db, sessionId, 2, { createdAt: new Date().toISOString() });
-    expect(await countMatchesThisMonth(db)).toBe(1);
+    expect((await getMatchRoundContext(db, sessionId)).matchesThisMonth).toBe(1);
   });
 });
 
@@ -536,7 +532,7 @@ describe("getSessionForMember (rough-day privacy)", () => {
     await deleteAccount(db, "u2", () => {});
 
     const view = await getSessionForMember(db, sessionId, "u1");
-    const members = await getSessionMembersWithProfiles(db, sessionId);
+    const members = (await getMatchRoundContext(db, sessionId)).members;
     // Asserting the two against each other is the point: the bug was that the
     // view said "not solo" while exactly one member reached the model.
     expect(view?.solo).toBe(members.length < 2);
@@ -545,7 +541,7 @@ describe("getSessionForMember (rough-day privacy)", () => {
   });
 });
 
-describe("getSessionMembersWithProfiles", () => {
+describe("session members with profiles", () => {
   it("joins names, flags, and parsed profiles; missing profiles become empty defaults", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
@@ -554,7 +550,7 @@ describe("getSessionMembersWithProfiles", () => {
     await seedProfile(db, "u1");
     const sessionId = await newSession(db, { roughDay: true });
 
-    const members = await getSessionMembersWithProfiles(db, sessionId);
+    const members = (await getMatchRoundContext(db, sessionId)).members;
     const byId = new Map(members.map((m) => [m.userId, m]));
 
     expect(byId.get("u1")).toEqual({
@@ -589,7 +585,7 @@ describe("getSessionMembersWithProfiles", () => {
       .bind(crypto.randomUUID(), sessionId)
       .run();
 
-    const members = await getSessionMembersWithProfiles(db, sessionId);
+    const members = (await getMatchRoundContext(db, sessionId)).members;
     expect(members.map((m) => m.userId)).toEqual(["u1"]);
   });
 });
@@ -637,7 +633,9 @@ describe("titles helpers", () => {
     const db = createFakeD1(loadMigration());
     await seedTitle(db, 27205, "Inception");
 
-    expect(await formatTitleRefs(db, [27205, 999])).toEqual(["Inception (tmdbId 27205)"]);
+    expect(formatTitleRefs(await getTitlesMap(db, [27205]), [27205, 999])).toEqual([
+      "Inception (tmdbId 27205)",
+    ]);
   });
 });
 
@@ -723,7 +721,7 @@ describe("recommendation indexes", () => {
 
   // A DROP INDEX must not be able to change an answer. These two read through
   // the replaced index, so if the composite is wrong they fail.
-  it("getRoundNumber still counts every round of the session", async () => {
+  it("still counts every round of the session", async () => {
     const db = createFakeD1(schemaWithIndexes());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);
@@ -735,8 +733,8 @@ describe("recommendation indexes", () => {
     await seedRecommendation(db, sessionId, 3);
     await seedRecommendation(db, otherSession, 1);
 
-    expect(await getRoundNumber(db, sessionId)).toBe(4);
-    expect(await getRoundNumber(db, otherSession)).toBe(2);
+    expect((await getMatchRoundContext(db, sessionId)).round).toBe(4);
+    expect((await getMatchRoundContext(db, otherSession)).round).toBe(2);
   });
 
   // This copies the results route's query rather than calling it (the route needs
@@ -764,7 +762,7 @@ describe("recommendation indexes", () => {
     expect(latest?.round_number).toBe(3);
   });
 
-  it("countMatchesThisMonth still counts only this month's rows", async () => {
+  it("still counts only this month's matches", async () => {
     const db = createFakeD1(schemaWithIndexes());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);
@@ -773,7 +771,7 @@ describe("recommendation indexes", () => {
     await seedRecommendation(db, sessionId, 1, { createdAt: "2020-01-15T00:00:00.000Z" });
     await seedRecommendation(db, sessionId, 2, { createdAt: new Date().toISOString() });
 
-    expect(await countMatchesThisMonth(db)).toBe(1);
+    expect((await getMatchRoundContext(db, sessionId)).matchesThisMonth).toBe(1);
   });
 });
 
@@ -797,7 +795,7 @@ function roundWithRecommendations(tmdbIds: number[]): string {
   });
 }
 
-describe("getRecommendedTmdbIds", () => {
+describe("recommended id provenance", () => {
   it("unions the tmdb ids recommended across every prior round of the session", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
@@ -809,7 +807,7 @@ describe("getRecommendedTmdbIds", () => {
     await seedRawRound(db, sessionId, 2, roundWithRecommendations([2, 3]));
     await seedRawRound(db, otherSession, 1, roundWithRecommendations([99]));
 
-    const ids = await getRecommendedTmdbIds(db, sessionId);
+    const ids = (await getMatchRoundContext(db, sessionId)).recommendedTmdbIds;
 
     expect([...ids].sort((a, b) => a - b)).toEqual([1, 2, 3]);
   });
@@ -820,7 +818,7 @@ describe("getRecommendedTmdbIds", () => {
     await seedGroupWithMembers(db, "grp1", ["u1"]);
     const sessionId = await newSession(db);
 
-    expect(await getRecommendedTmdbIds(db, sessionId)).toEqual(new Set());
+    expect((await getMatchRoundContext(db, sessionId)).recommendedTmdbIds).toEqual(new Set());
   });
 
   it("skips a corrupt ai_response row and still returns the other rounds' ids", async () => {
@@ -832,7 +830,7 @@ describe("getRecommendedTmdbIds", () => {
     await seedRawRound(db, sessionId, 1, "not json");
     await seedRawRound(db, sessionId, 2, roundWithRecommendations([7, 8]));
 
-    const ids = await getRecommendedTmdbIds(db, sessionId);
+    const ids = (await getMatchRoundContext(db, sessionId)).recommendedTmdbIds;
 
     expect([...ids].sort((a, b) => a - b)).toEqual([7, 8]);
   });
@@ -852,6 +850,6 @@ describe("getRecommendedTmdbIds", () => {
       })
     );
 
-    expect(await getRecommendedTmdbIds(db, sessionId)).toEqual(new Set([42]));
+    expect((await getMatchRoundContext(db, sessionId)).recommendedTmdbIds).toEqual(new Set([42]));
   });
 });
