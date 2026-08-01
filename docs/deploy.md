@@ -147,11 +147,30 @@ to `dev` and `main`; deployment is manual via this command.
 
 ## Plan-tier check before the first cron run
 
+**Workers Paid is a prerequisite for this application.** Confirm the account is
+on Workers Paid before deploying — this is a pre-deploy checklist line, not a
+tuning knob.
+
 `wrangler.jsonc` registers a weekly cron (`0 9 * * 1`) that refreshes streaming
-availability. `STALE_TITLES_LIMIT` in `src/lib/cron-handler.ts` is **200**,
-which assumes the **Workers Paid** plan's CPU limits. On the Free plan the
-trigger will exceed its budget and fail every run — drop the constant to ~40
-before deploying on Free.
+availability for `STALE_TITLES_LIMIT` (200) titles per run.
+
+| Limit | Workers Free | Workers Paid |
+|---|---|---|
+| External subrequests per invocation | 50 | 10,000 |
+| Subrequests to Cloudflare services (D1) | 1,000 | matches the configured limit |
+| CPU time per cron invocation | 10 ms | 15 min (weekly interval ≥ 1 hour) |
+
+A 200-title run issues 200 external TMDB fetches — `fetchMovieDetail` folds
+keywords, credits and watch/providers into one request via `append_to_response`
+— plus 1 + `ceil(200/25)` = 9 internal D1 calls, which draw on the separate
+Cloudflare-services budget and never compete with the fetches.
+
+Subrequests are therefore not the Free-plan blocker; **CPU is**. Parsing 200
+TMDB detail documents does not fit in 10 ms, and neither does an OpenNext SSR
+render on the HTTP side. Lowering `STALE_TITLES_LIMIT` does not make the app
+viable on Free, and at 40/week a ~1,000-title catalog takes 25 weeks to sweep,
+so `asOfNote` would stamp most picks stale indefinitely. Leave it at 200 and
+deploy on Paid.
 
 ## Post-deploy verification
 

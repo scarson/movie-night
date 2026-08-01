@@ -3,10 +3,12 @@
 import { detailToEnrichment, fetchMovieDetail } from "./tmdb";
 import { sqliteIsoNow } from "./db";
 
-// ~200 TMDB detail fetches per invocation requires the Workers Paid plan's
-// 1000-subrequest limit. The Free plan caps at 50 subrequests/invocation —
-// if the account is on Free at deploy time, lower this to 40 (see
-// dev/implementation-log.md Task 3.3).
+// One external subrequest per title (fetchMovieDetail folds keywords, credits
+// and watch/providers into a single TMDB request). Workers Paid allows 10,000
+// external subrequests per invocation; Free allows 50 external plus 1,000 to
+// Cloudflare services, and D1 calls are internal so they never compete.
+// 200/week clears the ~1,000-title seed catalog in about five weeks.
+// Workers Paid is required — see docs/deploy.md §Plan-tier check.
 const STALE_TITLES_LIMIT = 200;
 const BATCH_CHUNK_SIZE = 25;
 

@@ -1813,3 +1813,33 @@ codebase — stays gated and shares one `onCall` counter.
 711 passed / 2 skipped, only the 3 pre-existing `vite:dynamic-import-vars` warnings. A 22-mutant
 study over `fake-d1.ts` kills 20; the survivors are the APFS-unkillable `.sort()` and one malformed
 no-op mutant.
+---
+
+## G4 — cron and worker (2026-08-01)
+
+Group G4 of the Phase 1 bug-hunt remediation plan
+(`dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md` §4): B6 (weekly-refresh starvation),
+D6 (cron error attribution), and the `STALE_TITLES_LIMIT` comment correction.
+
+### G4-3 — `STALE_TITLES_LIMIT` comment and the plan-tier documentation
+
+No behavioral change, so no new test — the constant stays at 200 and the query around it is
+untouched. The old comment asserted a 1,000-subrequest Paid ceiling and told a deployer on the
+Free plan to lower the constant to ~40. Both halves were wrong, and I re-verified the replacement
+against the Cloudflare docs rather than the plan's summary of them:
+
+- The 1,000-subrequest limit was removed 2026-02-11; Workers Paid now defaults to 10,000 per
+  invocation (configurable to 10M via `limits.subrequests`).
+- Workers Free is 50 *external* subrequests plus a separate 1,000-call budget for Cloudflare
+  services. D1 calls draw on the internal budget, so the 9 D1 calls a run makes never compete with
+  its 200 TMDB fetches.
+- CPU is the real Free-plan blocker: 10 ms per cron invocation on Free against 15 min on Paid at a
+  weekly (≥ 1 hour) interval. 200 TMDB detail parses do not fit in 10 ms and neither does an
+  OpenNext SSR render, so lowering the constant buys nothing and costs the catalog-freshness goal
+  B6 exists to protect (40/week over ~1,000 titles is a 25-week sweep).
+
+`docs/deploy.md` §Plan-tier check now states Workers Paid as a prerequisite with the numbers in a
+table, and no longer carries the "drop it to ~40" advice.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` all pristine — 59 files / 615 passed /
+2 skipped, unchanged from the baseline as expected for a comment-and-docs change.
