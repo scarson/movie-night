@@ -10,8 +10,11 @@
 const CLIPPING_UTILITIES = [
   /^truncate$/,
   /^text-ellipsis$/,
-  /^overflow-hidden$/,
-  /^whitespace-nowrap$/,
+  // Any axis, and `clip` as well as `hidden` — either hides the overflow.
+  /^overflow(-[xy])?-(hidden|clip)$/,
+  // `pre` suppresses wrapping just as `nowrap` does. `pre-wrap` and `pre-line`
+  // both still wrap, so they are not listed.
+  /^whitespace-(nowrap|pre)$/,
   /^line-clamp-\d+$/,
 ];
 
