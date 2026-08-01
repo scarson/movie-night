@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { D1_MAX_BOUND_PARAMS, createFakeD1, loadMigration, withFailingStatement } from "./fake-d1";
+import {
+  D1_MAX_BOUND_PARAMS,
+  createFakeD1,
+  injectedFailureCount,
+  loadMigration,
+  withFailingStatement,
+} from "./fake-d1";
 
 describe("createFakeD1", () => {
   it("round-trips an insert and select", async () => {
@@ -310,14 +316,76 @@ describe("withFailingStatement", () => {
     expect(table).toEqual({ name: "sessions" });
   });
 
-  it("still enforces the D1 bound-parameter ceiling", () => {
+  it("still enforces the D1 bound-parameter ceiling, ahead of the injected failure", () => {
     const db = withFailingStatement(createFakeD1(loadMigration()), {
       match: "INSERT INTO sessions",
     });
 
+    // Matching SQL, so the ceiling has to win at bind() before execution gates.
     expect(() =>
-      db.prepare("SELECT 1").bind(...new Array(D1_MAX_BOUND_PARAMS + 1).fill(null))
+      db.prepare(INSERT_SESSION_BOUND).bind(...new Array(D1_MAX_BOUND_PARAMS + 1).fill(null))
     ).toThrow(`D1_ERROR: too many SQL variables (101 > ${D1_MAX_BOUND_PARAMS})`);
+  });
+
+  it("refuses a batch statement prepared from a different handle", async () => {
+    const base = createFakeD1(loadMigration());
+    const db = withFailingStatement(base, { match: "INSERT INTO group_members" });
+
+    await expect(
+      db.batch([
+        base
+          .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+          .bind("grp1", "Movie Night", "ABC123", NOW),
+      ])
+    ).rejects.toThrow("batch() received a statement prepared from a different handle");
+  });
+
+  it("reports how many times the injection fired", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      match: "INSERT INTO sessions",
+    });
+    await seedUser(db, "u1");
+    expect(injectedFailureCount(db)).toBe(0);
+
+    await expect(db.prepare(insertSession("hash1")).run()).rejects.toThrow();
+    await expect(db.prepare(insertSession("hash2")).run()).rejects.toThrow();
+
+    expect(injectedFailureCount(db)).toBe(2);
+  });
+
+  it("reports zero firings when the match never matches", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      match: "INSERT INTO nothing",
+    });
+    await seedUser(db, "u1");
+    await db.prepare(insertSession("hash1")).run();
+
+    expect(injectedFailureCount(db)).toBe(0);
+  });
+
+  it("rejects a db it did not wrap", () => {
+    expect(() => injectedFailureCount(createFakeD1(loadMigration()))).toThrow(
+      "db was not built by withFailingStatement"
+    );
+  });
+
+  it("builds the default error per throw, so annotating one cannot taint the next", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      match: "INSERT INTO sessions",
+    });
+    await seedUser(db, "u1");
+
+    // Callers recovering from a D1 failure routinely annotate what they caught.
+    await db
+      .prepare(insertSession("hash1"))
+      .run()
+      .catch((err: Error) => {
+        err.message += " (first attempt)";
+      });
+
+    await expect(db.prepare(insertSession("hash2")).run()).rejects.toThrow(
+      /^D1_ERROR: injected failure$/
+    );
   });
 });
 
@@ -328,10 +396,11 @@ describe("loadMigration", () => {
     expect(sql).toContain("CREATE TABLE titles");
   });
 
-  // migrations/ holds a single file today, so the assertions below are the only
+  // While migrations/ holds a single file, the assertions below are the only
   // thing separating "reads the whole directory, in order" from "reads 0001".
   // loadMigration resolves its directory from process.cwd(), so a temporary cwd
   // is the injection point; vitest's forks pool makes process.chdir available.
+  // Under pool: "threads" process.chdir is undefined and this test would throw.
   it("concatenates every migration in filename order and ignores non-SQL files", () => {
     const root = mkdtempSync(join(tmpdir(), "movie-night-migrations-"));
     mkdirSync(join(root, "migrations"));
@@ -364,6 +433,7 @@ describe("loadMigration", () => {
   it("builds a database carrying every table the deployed schema has", async () => {
     const db = createFakeD1(loadMigration());
 
+    // A migration that adds or drops a table belongs in the list below.
     // NOT LIKE 'sqlite_%' drops the sqlite_sequence table SQLite creates for
     // rate_limit_log's AUTOINCREMENT id — it is internal, not part of the schema.
     const { results } = await db

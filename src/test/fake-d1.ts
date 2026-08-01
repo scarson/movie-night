@@ -128,13 +128,20 @@ export function createFakeD1(migrationSql: string): D1Database {
 }
 
 export interface FailureInjection {
-  /** Fail when the statement's SQL matches. Substring for a literal, RegExp for a pattern. */
+  /**
+   * Fail when the statement's SQL matches. Substring for a literal, RegExp for a
+   * pattern. Substrings match anywhere, so `"sessions"` also matches
+   * `movie_sessions` — match on enough of the statement to be unambiguous.
+   */
   match: string | RegExp;
   /** Fail only the Nth matching execution (1-based). Defaults to every match. */
   onCall?: number;
   /** The error thrown. Defaults to `new Error("D1_ERROR: injected failure")`. */
   error?: Error;
 }
+
+/** Reads the firing count off a wrapper built by withFailingStatement. */
+const INJECTED_FAILURES = Symbol("injectedFailures");
 
 /**
  * Delegates to a real fake-D1 statement, throwing at execution time when the
@@ -183,35 +190,50 @@ class FailingPreparedStatement {
  * committed) are otherwise unreachable in this suite — see
  * docs/pitfalls/testing-pitfalls.md §3.
  *
- * Interception rides on the statements this handle prepares, so statements
- * passed to its `batch()` must have been prepared from the returned handle too.
- * Statements prepared from the unwrapped db and batched through this one run
- * ungated, and the test goes silently green.
+ * Interception rides on the statements this handle prepares, so the code under
+ * test must receive the handle this returns — wrap the db before handing it to
+ * a route's mocked `getCloudflareContext`, not after. A statement prepared from
+ * the unwrapped db runs ungated.
+ *
+ * A `match` that never matches fires nothing and the test passes against
+ * unfixed code. Assert `injectedFailureCount(db)` to prove the failure happened.
  */
 export function withFailingStatement(db: D1Database, injection: FailureInjection): D1Database {
-  const { match, onCall } = injection;
   let matchedExecutions = 0;
+  let firedFailures = 0;
 
   const gate = (sql: string): void => {
+    const { match, onCall } = injection;
     // String.prototype.search leaves a global RegExp's lastIndex alone, so a /g
     // pattern cannot go stale between statements.
     const matched = typeof match === "string" ? sql.includes(match) : sql.search(match) !== -1;
     if (!matched) return;
     matchedExecutions += 1;
     if (onCall !== undefined && matchedExecutions !== onCall) return;
+    firedFailures += 1;
     // Built per throw, so a caller that annotates the error it catches cannot
     // leak that mutation into the next injected failure.
     throw injection.error ?? new Error("D1_ERROR: injected failure");
   };
 
   const wrappedDb = {
+    [INJECTED_FAILURES]: (): number => firedFailures,
+
     prepare(sql: string): D1PreparedStatement {
       return new FailingPreparedStatement(db.prepare(sql), sql, gate) as unknown as D1PreparedStatement;
     },
 
-    // The wrapped statements handed in carry the gate, so the underlying batch's
+    // The wrapped statements carry the gate, so the underlying batch's
     // BEGIN/ROLLBACK still sees the injected throw and rolls the transaction back.
-    batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+    // A foreign statement would run ungated, so refuse it rather than pass silently.
+    async batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+      for (const statement of statements) {
+        if (!(statement instanceof FailingPreparedStatement)) {
+          throw new Error(
+            "withFailingStatement: batch() received a statement prepared from a different handle"
+          );
+        }
+      }
       return db.batch<T>(statements);
     },
 
@@ -230,4 +252,18 @@ export function withFailingStatement(db: D1Database, injection: FailureInjection
   };
 
   return wrappedDb as unknown as D1Database;
+}
+
+/**
+ * How many times the wrapper's injected failure has actually been thrown.
+ * A `match` that never matches, or an `onCall` past the number of matching
+ * executions, injects nothing and leaves the code under test on its happy
+ * path — assert this to prove the failure the test claims to exercise occurred.
+ */
+export function injectedFailureCount(db: D1Database): number {
+  const read = (db as unknown as Record<symbol, unknown>)[INJECTED_FAILURES];
+  if (typeof read !== "function") {
+    throw new Error("injectedFailureCount: db was not built by withFailingStatement");
+  }
+  return (read as () => number)();
 }
