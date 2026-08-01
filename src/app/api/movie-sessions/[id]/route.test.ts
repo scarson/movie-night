@@ -7,6 +7,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
+import { deleteAccount, DELETED_USER_LABEL } from "@/lib/account";
 import type { MatchingResponse } from "@/types/matching";
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -211,5 +212,39 @@ describe("GET /api/movie-sessions/[id]", () => {
     const serialized = JSON.stringify(bodyForU1);
     expect(serialized.match(/roughDay/g)).toHaveLength(1);
     expect(serialized).not.toContain("rough_day");
+  });
+
+  it("never names a member who deleted their account, in the taste map or the prose", async () => {
+    // The GET re-serves the stored ai_response verbatim, so the promise made at
+    // the moment of deletion ("your name replaced by [deleted user]") is only
+    // kept if the stored round itself was scrubbed.
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setupSession(db);
+    await seedTitle(db, 27205, "Inception");
+
+    const response = sampleResponse([27205]);
+    response.tasteMap.members[0].summary = "Sam reaches for precise films.";
+    response.tasteMap.overlap.summary = "Sam and Alex both like a heist.";
+    response.recommendations[0].explanation = "A grief-shaped hole for Sam.";
+    response.conversational = "Tonight leans toward Sam.";
+    await insertRecommendation(db, {
+      sessionId,
+      roundNumber: 1,
+      aiResponse: response,
+      keptTmdbIds: [],
+      removedTmdbIds: [],
+      steeringFeedback: "",
+      candidateSnapshot: [27205],
+    });
+
+    await deleteAccount(db, "u1", () => {});
+
+    const body = await (await get(sessionId, "u2")).json<Record<string, any>>();
+    expect(JSON.stringify(body)).not.toContain("Sam");
+    expect(body.response.tasteMap.members[0].name).toBe(DELETED_USER_LABEL);
+    expect(body.response.conversational).toBe(`Tonight leans toward ${DELETED_USER_LABEL}.`);
+    // The survivor's own record is untouched.
+    expect(body.response.tasteMap.members[1].name).toBe("Alex");
   });
 });

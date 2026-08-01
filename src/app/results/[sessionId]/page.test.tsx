@@ -489,6 +489,38 @@ describe("results page", () => {
     expect(note.textContent).not.toContain("Bob Reyes");
   });
 
+  it("derives the weighting note from the viewer's own flag alone, and it claims no outcome", async () => {
+    // The component tests pass showWeightingNote in as a prop, so they can never
+    // exercise this derivation — which is why the over-claiming copy survived.
+    // The payload carries no other member's flag by design, so the note cannot
+    // depend on one; what it must also not do is assert what the picks did.
+    stubApi({
+      get: {
+        status: 200,
+        body: { session: { ...SESSION, roughDay: true }, round: 1, response: RESPONSE, titles: TITLES },
+      },
+    });
+    await renderResults();
+
+    await screen.findByRole("tab", { name: /taste map/i });
+    const note = screen.getByTestId("weighting-note");
+    expect(note.textContent).toMatch(/you asked us to put everyone else first/i);
+    expect(note.textContent).not.toMatch(/lean/i);
+  });
+
+  it("shows no weighting note to a two-member session's viewer who did not toggle", async () => {
+    stubApi({
+      get: {
+        status: 200,
+        body: { session: { ...SESSION, roughDay: false }, round: 1, response: RESPONSE, titles: TITLES },
+      },
+    });
+    await renderResults();
+
+    await screen.findByRole("tab", { name: /taste map/i });
+    expect(screen.queryByTestId("weighting-note")).toBeNull();
+  });
+
   it("says nothing about weighting on a solo night, flag or not", async () => {
     stubApi({
       get: {

@@ -195,8 +195,8 @@ export function TasteMap({ tasteMap, showWeightingNote }: TasteMapProps) {
           style={{ animationDelay: `${nextDelay()}ms` }}
           className="animate-rise-fade max-w-[62ch] border-t border-slate pt-md text-sm text-ash"
         >
-          At your request, tonight&apos;s picks lean toward everyone else. Only
-          you can see this.
+          You asked us to put everyone else first tonight. Only you can see
+          this.
         </p>
       )}
     </div>

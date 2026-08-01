@@ -231,10 +231,11 @@ export default function ProfilePage() {
               data-testid="delete-explanation"
               className="max-w-[62ch] text-base/[1.6] text-cream"
             >
-              This deletes your profile, your groups and your sign-in. Anything you shared
-              with other people — the sessions you ran together and what they were shown —
-              stays with them, with your name replaced by &ldquo;[deleted user]&rdquo;, so
-              their history doesn&apos;t develop holes. This can&apos;t be undone.
+              This deletes your profile and your sign-in, and removes you from your groups.
+              Anything you shared with other people — the sessions you ran together and what
+              they were shown — stays with them, with your name replaced by
+              &ldquo;[deleted user]&rdquo;, so their history doesn&apos;t develop holes. This
+              can&apos;t be undone.
             </p>
 
             <label htmlFor={confirmFieldId} className="mt-lg block text-sm text-cream">

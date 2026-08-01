@@ -344,8 +344,12 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         {tab === "map" && (
           <TasteMap
             tasteMap={response.tasteMap}
-            // Only ever the viewer's own flag, and only where weighting is real:
-            // with one member the engine applies none.
+            // Only ever the viewer's own flag, and deliberately blind to
+            // everyone else's. The note describes the viewer's own request, so
+            // it needs no knowledge of the engine's outcome — and gating it on
+            // that outcome would tell a toggler whether their partner toggled
+            // too. The member guard keeps it off a session where "everyone
+            // else" is nobody.
             showWeightingNote={session.roughDay && response.tasteMap.members.length > 1}
           />
         )}

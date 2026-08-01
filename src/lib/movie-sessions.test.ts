@@ -5,7 +5,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
-import { SOLO_GROUP_NAME } from "@/lib/groups";
+import { SOLO_GROUP_NAME, joinGroup } from "@/lib/groups";
+import { deleteAccount } from "@/lib/account";
 import {
   createSoloGroup,
   createMovieSession,
@@ -154,6 +155,114 @@ describe("createSoloGroup", () => {
     const g2 = await createSoloGroup(db, "u2");
 
     expect(g1).not.toBe(g2);
+  });
+
+  it("derives the group id and invite code from the user, so a second insert has nothing new to claim", async () => {
+    // The duplicate came from a per-call random id and a per-call random invite
+    // code: two callers past the fast-path SELECT satisfied every constraint and
+    // both succeeded. A per-user identity is what makes the insert idempotent.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+
+    const groupId = await createSoloGroup(db, "u1");
+
+    expect(groupId).toBe("solo-u1");
+    const group = await db
+      .prepare("SELECT invite_code FROM groups WHERE id = ?")
+      .bind(groupId)
+      .first<{ invite_code: string }>();
+    expect(group?.invite_code).toBe("solo-u1");
+  });
+
+  it("adopts an existing solo group whose membership row is missing instead of creating a second one", async () => {
+    // This is where a losing racer lands: the group row is already there but the
+    // fast-path SELECT, which joins group_members, does not see it. The three
+    // statements are sequenced (not batched) precisely so this path can insert
+    // the membership against a group row that is guaranteed to exist.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await db
+      .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+      .bind("solo-u1", SOLO_GROUP_NAME, "solo-u1", "2026-01-01T00:00:00.000Z")
+      .run();
+
+    const groupId = await createSoloGroup(db, "u1");
+
+    expect(groupId).toBe("solo-u1");
+    const { results: groups } = await db
+      .prepare("SELECT id FROM groups WHERE name = ?")
+      .bind(SOLO_GROUP_NAME)
+      .all();
+    expect(groups).toHaveLength(1);
+    const { results: members } = await db
+      .prepare("SELECT user_id FROM group_members WHERE group_id = ?")
+      .bind("solo-u1")
+      .all<{ user_id: string }>();
+    expect(members.map((m) => m.user_id)).toEqual(["u1"]);
+  });
+
+  it("creates exactly one group and one membership when called repeatedly", async () => {
+    // REPEATED, not concurrent. src/test/fake-d1.ts is backed by node:sqlite's
+    // synchronous DatabaseSync and cannot interleave two callers, so the actual
+    // race remains unprovable here — see docs/pitfalls/testing-pitfalls.md §5.
+    // What this pins is the property the fix rests on: the second call has
+    // nothing left to insert.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+
+    const first = await createSoloGroup(db, "u1");
+    const second = await createSoloGroup(db, "u1");
+    const third = await createSoloGroup(db, "u1");
+
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    const groups = await db
+      .prepare("SELECT COUNT(*) as count FROM groups WHERE name = ?")
+      .bind(SOLO_GROUP_NAME)
+      .first<{ count: number }>();
+    expect(groups?.count).toBe(1);
+    const members = await db
+      .prepare("SELECT COUNT(*) as count FROM group_members WHERE user_id = ?")
+      .bind("u1")
+      .first<{ count: number }>();
+    expect(members?.count).toBe(1);
+  });
+
+  it("reuses a pre-existing solo group that still has a random id", async () => {
+    // Solo groups created before the id became deterministic must keep working:
+    // the fast-path SELECT is what makes that true.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    const legacyId = crypto.randomUUID();
+    await db
+      .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+      .bind(legacyId, SOLO_GROUP_NAME, `solo-${crypto.randomUUID()}`, "2026-01-01T00:00:00.000Z")
+      .run();
+    await db
+      .prepare("INSERT INTO group_members (id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), legacyId, "u1", "2026-01-01T00:00:00.000Z")
+      .run();
+
+    expect(await createSoloGroup(db, "u1")).toBe(legacyId);
+    const { results } = await db
+      .prepare("SELECT id FROM groups WHERE name = ?")
+      .bind(SOLO_GROUP_NAME)
+      .all();
+    expect(results).toHaveLength(1);
+  });
+
+  it("leaves a solo group unjoinable even though its invite code is now guessable", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedUser(db, "u2", "Alex");
+    await createSoloGroup(db, "u1");
+
+    expect(await joinGroup(db, "u2", "solo-u1")).toBeNull();
+    const { results } = await db
+      .prepare("SELECT user_id FROM group_members WHERE group_id = ?")
+      .bind("solo-u1")
+      .all<{ user_id: string }>();
+    expect(results.map((m) => m.user_id)).toEqual(["u1"]);
   });
 });
 
@@ -396,6 +505,26 @@ describe("getSessionForMember (rough-day privacy)", () => {
 
     const view = await getSessionForMember(db, sessionId, "u1");
     expect(view?.solo).toBe(false);
+  });
+
+  it("reports solo once the session's other member has deleted their account", async () => {
+    // deleteAccount anonymizes session_members rather than deleting the row, so
+    // a raw COUNT(*) still counts the departed member while the prompt does not.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedUser(db, "u2", "Alex");
+    await seedGroupWithMembers(db, "grp2", ["u1", "u2"]);
+    const sessionId = await newSession(db, { groupId: "grp2" });
+
+    await deleteAccount(db, "u2", () => {});
+
+    const view = await getSessionForMember(db, sessionId, "u1");
+    const members = await getSessionMembersWithProfiles(db, sessionId);
+    // Asserting the two against each other is the point: the bug was that the
+    // view said "not solo" while exactly one member reached the model.
+    expect(view?.solo).toBe(members.length < 2);
+    expect(view?.solo).toBe(true);
+    expect(members).toHaveLength(1);
   });
 });
 

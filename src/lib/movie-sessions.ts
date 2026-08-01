@@ -18,10 +18,15 @@ export class NotGroupMemberError extends Error {
 /**
  * Returns the user's personal "__solo__" group id, creating it on first use.
  * Inserts directly (createGroup rejects the reserved name by design). The
- * invite code is a UUID-based string that can never match the 8-char join
- * format, so a solo group is unjoinable at the format check already.
+ * identity is derived from the user, so two callers that both get past the
+ * fast-path SELECT claim the same row rather than each creating one. The
+ * invite code can never match the 8-char join format, so a solo group is
+ * unjoinable at the format check already — and joinGroup excludes the reserved
+ * name regardless of code.
  */
 export async function createSoloGroup(db: D1Database, userId: string): Promise<string> {
+  // Fast path: an existing solo group — including one created while ids were
+  // still random — wins outright, and keeps the steady state at one query.
   const existing = await db
     .prepare(
       `SELECT g.id FROM groups g
@@ -32,17 +37,37 @@ export async function createSoloGroup(db: D1Database, userId: string): Promise<s
     .first<{ id: string }>();
   if (existing) return existing.id;
 
-  const groupId = crypto.randomUUID();
+  const groupId = `solo-${userId}`;
+  const inviteCode = `solo-${userId}`;
   const now = new Date().toISOString();
-  await db.batch([
-    db
-      .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
-      .bind(groupId, SOLO_GROUP_NAME, `solo-${crypto.randomUUID()}`, now),
-    db
-      .prepare("INSERT INTO group_members (id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), groupId, userId, now),
-  ]);
-  return groupId;
+
+  // Three separate statements, deliberately not a batch. D1 enforces foreign
+  // keys and group_members.group_id references groups(id), so batching would
+  // put the second caller inside a transaction that rolls back on the exact
+  // double-tap this exists to absorb. Sequenced, the group row is guaranteed
+  // present before the membership insert.
+
+  // Idempotent on the groups PK and on UNIQUE(invite_code).
+  await db
+    .prepare("INSERT OR IGNORE INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+    .bind(groupId, SOLO_GROUP_NAME, inviteCode, now)
+    .run();
+
+  // The authoritative id, whether this call inserted it or another did. A null
+  // here must be loud rather than an FK violation one statement later.
+  const row = await db
+    .prepare("SELECT id FROM groups WHERE invite_code = ?")
+    .bind(inviteCode)
+    .first<{ id: string }>();
+  if (!row) throw new Error("solo group insert did not land");
+
+  // Idempotent on UNIQUE(group_id, user_id).
+  await db
+    .prepare("INSERT OR IGNORE INTO group_members (id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), row.id, userId, now)
+    .run();
+
+  return row.id;
 }
 
 export interface CreateMovieSessionArgs {
@@ -170,7 +195,9 @@ export async function getSessionForMember(
     .prepare(
       `SELECT ms.id, ms.group_id, ms.mood_vibes, ms.mood_text, ms.discover_new, ms.is_quick_match,
               ms.created_at, sm.rough_day,
-              (SELECT COUNT(*) FROM session_members WHERE session_id = ms.id) as member_count
+              (SELECT COUNT(*) FROM session_members sm2
+               JOIN users u2 ON u2.id = sm2.user_id
+               WHERE sm2.session_id = ms.id) as member_count
        FROM movie_sessions ms
        JOIN session_members sm ON sm.session_id = ms.id AND sm.user_id = ?
        WHERE ms.id = ?`
@@ -199,6 +226,9 @@ export async function getSessionForMember(
     // Solo is a property of the session's membership, not the group's name —
     // matching the client (members.length < 2) and CLAUDE.md. A single-member
     // regular group is solo too, so the prompt never seeks overlap for one.
+    // member_count joins users for the same reason getSessionMembersWithProfiles
+    // does: a member who deleted their account leaves an anonymized
+    // session_members row behind but never reaches the model.
     solo: row.member_count < 2,
     createdAt: row.created_at,
     roughDay: row.rough_day === 1,

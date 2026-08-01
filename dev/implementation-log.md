@@ -1656,3 +1656,87 @@ treatment, and a render of `<button className={secondaryButtonClasses} disabled>
 re-state its own input — the anti-pattern already rejected for the filled case. The composition
 assertions in `control-classes.test.ts` prove every outlined variant carries the treatment, and the
 browser check above covers the paint. Left uncovered deliberately rather than covered dishonestly.
+
+## G3 — Sessions, groups, and account deletion (B5, B8, B9, B15, B14, D4)
+
+Branch `claude/rem-g3-sessions`, rebased onto `origin/dev` after G6 landed. Six tasks, six commits
+plus one review-fix commit. Suite went from 688 passed / 2 skipped (`origin/dev`) to 717 / 2 — 29
+new tests, no new skips, no change to the 3 baseline `vite:dynamic-import-vars` warnings.
+
+**B5 — the deleted user's name survived in every persisted round.** `deleteAccount` anonymized
+`session_members` and deleted the `users` row but never touched `recommendations.ai_response`, which
+the session GET re-serves verbatim. `scrubNameFromRounds` now runs *before* the batch — the batch
+destroys both the join key the scrub needs and the row the name is read from, so the order is
+load-bearing rather than stylistic, and it is also the safe failure order (a partial scrub leaves
+the account undeleted and retryable). It parses each blob and mutates the object: the structured
+`tasteMap.members[].name` keyed on `userId` always, and four prose fields (`conversational`,
+`tasteMap.overlap.summary`, each `members[].summary`, each `recommendations[].explanation`) behind
+a word-boundary literal replacement. Running the replacement over the serialized JSON would have
+rewritten document *keys* for a user named "name", so the parsed-object approach is pinned by a
+test. Free-text replacement is suppressed entirely when a surviving member shares the name
+(case-insensitively) — a blind replacement would scrub the survivor out of their own record — and
+for names under two characters. `escapeRegExp` deliberately omits `-` and `/`: escaping them is a
+`SyntaxError` under the `u` flag, which would have made deletion a 500 for anyone called
+"Anne-Marie".
+
+**Accepted collateral, made visible rather than surprising:** a literal replacement cannot tell the
+member "Carrie" from the film *Carrie*. A test asserts that both are replaced.
+
+**B8 — the weighting note claimed something the engine had not done.** `computeWeightNote` cancels
+the weighting when *every* member toggled, but the note asserted the picks leaned toward everyone
+else. Gating it on whether weighting actually applied was rejected on privacy grounds, not
+convenience: the toggler knows their own flag, so in a couple the note's presence would be a direct
+readout of their partner's private flag, against DESIGN.md's Rough-Day Toggle invariant. DESIGN.md
+line 124 already specifies the note should describe the user's own choice back to them, so the copy
+now does that and claims no outcome. `SessionView` is untouched and the page-level derivation is
+unchanged.
+
+**B9 — `member_count` disagreed with the members the prompt sees.** The subquery counted
+`session_members` raw while `getSessionMembersWithProfiles` inner-joins `users`, so after one member
+of a couple deleted their account the survivor's session reported `solo: false` while exactly one
+member reached the model — and the prompt asked a group of one where their tastes overlap. The
+count joins `users` on the same basis. The new test asserts the two against each other; they had
+complete unit tests in separate `describe` blocks against separate fixtures, which is precisely why
+nobody noticed they disagreed.
+
+**B15 — two `__solo__` groups per user.** Check-then-insert with a per-call random id *and* a
+per-call random invite code: two callers past the fast-path `SELECT` both satisfied
+`UNIQUE(invite_code)` and both succeeded. The identity is now derived from the user, so the second
+insert has nothing to claim. The group insert / re-select / member insert are three separate
+statements, **not** a batch: D1 enforces foreign keys, so batching would put the losing caller
+inside a transaction that rolls back on exactly the double-tap this absorbs. The fast-path `SELECT`
+stays — it keeps the steady state at one query and is what keeps random-id solo groups working.
+
+*Surface-area note:* the solo invite code is now derivable from a user id, and user ids are
+serialized to co-members via `tasteMap.members[].userId`. Three independent guards keep it unusable
+— the join route's 8-char `CODE_FORMAT`, `joinGroup`'s `name != '__solo__'` predicate, and the
+membership check in `createMovieSession` — and B14's `leaveGroup` guard closes the one route that
+previously accepted a solo group id. A test asserts the code cannot be joined.
+
+**B14 — the deletion copy promised something deletion does not do.** It said "This deletes your
+profile, your groups and your sign-in", but `deleteAccount` never touches the `groups` table.
+Cascading orphaned groups was rejected: "empty" is defined by `group_members`, but a member who left
+via `leaveGroup` keeps their `session_members` rows and a legitimate read of that history, so
+"A leaves, then B deletes" would destroy every session A can still read. The copy was what was
+wrong. `account.test.ts` now asserts the non-deletion explicitly so a later agent cannot
+"helpfully" add the cascade. `leaveGroup` also rejects `__solo__` ids — unreachable through the UI,
+which never lists solo groups, but the API accepts any id.
+
+**D4 — `rate_limit_log` grew without bound.** The prune is a separate statement with its own
+`try/catch`, never batched with the INSERT: `batch()` is a transaction, so a failed prune would roll
+back the rate-limit record while the caller went on to join. Scoped to `(scope, key)` so it uses
+`idx_rate_limit_scope_key` and cannot reach a future `'match'` scope with a different window.
+Rate-limit correctness is unaffected — the rows removed are already outside the counted window.
+
+### Gotchas found
+
+- **PREP has not landed on `dev`.** `withFailingStatement` does not exist, so D4's failing-prune
+  test uses a local statement-failure double in `groups.test.ts`. It should be replaced with the
+  shared helper when PREP-1 lands. Same dependency affects G1/G2/G4.
+- **The fake D1 cannot race.** B15's tests prove repeated-call idempotency and the losing racer's
+  *position* (a group row present with no membership row), never simultaneity. Named and commented
+  as such, per testing-pitfalls §5.
+- **`src/app/results/[sessionId]/page.test.tsx` is timing-fragile under load.** Its "never sends
+  more removed ids" case has a 20s timeout and swung between 11.9s and 23.6s on this machine while
+  other agents were running suites; it timed out once and passed on every re-run. Not touched — it
+  is not in G3's region — but it will flake in CI under contention.
