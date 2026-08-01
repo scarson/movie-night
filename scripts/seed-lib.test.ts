@@ -1,6 +1,7 @@
 // ABOUTME: Tests for the seed script's pure helpers — SQL statement construction
 // ABOUTME: (escaping, NULL handling, JSON serialization) and .dev.vars parsing.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { runWeeklyRefresh } from "../src/lib/cron-handler";
 import { createFakeD1, loadMigration } from "../src/test/fake-d1";
 import { parseDevVars, titleToInsertStatement, type SeedTitle } from "./seed-lib";
 
@@ -24,10 +25,10 @@ describe("titleToInsertStatement", () => {
     const sql = titleToInsertStatement(BASE_TITLE, "2026-07-18T00:00:00.000Z");
 
     expect(sql).toBe(
-      "INSERT OR REPLACE INTO titles (tmdb_id, content_type, title, year, genres, synopsis, poster_path, vote_count, vote_average, popularity, top_cast, keywords, streaming, seasons, last_refreshed_at, created_at, updated_at) VALUES " +
+      "INSERT OR REPLACE INTO titles (tmdb_id, content_type, title, year, genres, synopsis, poster_path, vote_count, vote_average, popularity, top_cast, keywords, streaming, seasons, last_refreshed_at, last_refresh_attempt_at, created_at, updated_at) VALUES " +
         "(27205, 'movie', 'Inception', 2010, '[\"Action\",\"Science Fiction\"]', 'A thief who steals corporate secrets.', '/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg', 36421, 8.369, 83.952, " +
         "'[\"Leonardo DiCaprio\",\"Joseph Gordon-Levitt\"]', '[\"dream\",\"subconscious\"]', '{\"link\":\"https://example.com/watch\",\"flatrate\":[\"Max\"]}', NULL, " +
-        "'2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z');"
+        "'2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z');"
     );
   });
 
@@ -68,7 +69,9 @@ describe("titleToInsertStatement", () => {
   it("always emits a bare NULL for seasons (movies only)", () => {
     const sql = titleToInsertStatement(BASE_TITLE, "2026-07-18T00:00:00.000Z");
 
-    expect(sql).toContain(", NULL, '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z');");
+    expect(sql).toContain(
+      ", NULL, '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z');"
+    );
   });
 
   it("serializes empty arrays and an empty streaming object as valid JSON, not NULL", () => {
@@ -164,6 +167,65 @@ describe("titleToInsertStatement — real SQLite round-trip (data-integrity chec
     const row = await execAndRead(sql);
 
     expect(row!.synopsis).toBe("");
+  });
+});
+
+describe("titleToInsertStatement — refresh bookkeeping", () => {
+  const NOW = new Date().toISOString();
+
+  function fakeEnv(db: D1Database): CloudflareEnv {
+    return {
+      DB: db,
+      GOOGLE_CLIENT_ID: "test-client-id",
+      GOOGLE_CLIENT_SECRET: "test-client-secret",
+      JWT_SECRET: "test-jwt-secret",
+      ANTHROPIC_API_KEY: "test-anthropic-key",
+      TMDB_API_TOKEN: "test-tmdb-token",
+    };
+  }
+
+  it("stamps last_refresh_attempt_at with the seed timestamp, matching last_refreshed_at", async () => {
+    const db = createFakeD1(loadMigration());
+
+    await db.exec(titleToInsertStatement(BASE_TITLE, NOW));
+
+    const row = await db
+      .prepare("SELECT last_refreshed_at, last_refresh_attempt_at FROM titles WHERE tmdb_id = ?")
+      .bind(BASE_TITLE.tmdbId)
+      .first<{ last_refreshed_at: string; last_refresh_attempt_at: string }>();
+    expect(row!.last_refresh_attempt_at).toBe(NOW);
+    expect(row!.last_refresh_attempt_at).toBe(row!.last_refreshed_at);
+  });
+
+  it("re-seeding a title the cron has already stamped rewrites the attempt stamp rather than clearing it", async () => {
+    const db = createFakeD1(loadMigration());
+    await db
+      .prepare(
+        `INSERT INTO titles (tmdb_id, content_type, title, popularity, last_refreshed_at, last_refresh_attempt_at, created_at)
+         VALUES (?, 'movie', 'Inception', 83.952, ?, ?, ?)`
+      )
+      .bind(BASE_TITLE.tmdbId, "2020-01-01T00:00:00.000Z", "2020-06-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z")
+      .run();
+
+    await db.exec(titleToInsertStatement(BASE_TITLE, NOW));
+
+    const row = await db
+      .prepare("SELECT last_refresh_attempt_at FROM titles WHERE tmdb_id = ?")
+      .bind(BASE_TITLE.tmdbId)
+      .first<{ last_refresh_attempt_at: string | null }>();
+    expect(row!.last_refresh_attempt_at).toBe(NOW);
+  });
+
+  it("leaves a freshly seeded title out of the weekly refresh's candidate set", async () => {
+    const db = createFakeD1(loadMigration());
+    await db.exec(titleToInsertStatement(BASE_TITLE, NOW));
+
+    const fetchStub = vi.fn();
+    const lines: string[] = [];
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, (line) => lines.push(line));
+
+    expect(fetchStub).not.toHaveBeenCalled();
+    expect(JSON.parse(lines[0])).toMatchObject({ refreshed: 0, fetch_errors: 0, write_errors: 0 });
   });
 });
 

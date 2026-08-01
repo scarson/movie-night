@@ -2260,3 +2260,59 @@ The assertion was strengthened rather than trimmed: it now pins both ends of the
 assertion, and flipping `slice(-50)` to `slice(0, 50)` fails on `expected 1000 to be 1010`. No
 sibling test in the file has the same re-scan-per-interaction shape; the only other loops advance
 fake timers or walk three views over a two-item fixture.
+## Follow-up: title writers stamp `last_refresh_attempt_at` (2026-08-01)
+
+Branch `claude/seed-refresh-stamps`, off `dev` @ 0c61f84. Filed by the G4 cron agent as outside its
+ownership: migration `0003` added `titles.last_refresh_attempt_at` and the weekly cron selects
+candidates on it (`WHERE last_refresh_attempt_at IS NULL OR ... < now-7d`), but the two writers that
+build a whole `titles` row omitted the column, so every row they wrote came back NULL — instantly
+due for refresh despite having been fetched from TMDB seconds earlier.
+
+**Both writers changed.** `scripts/seed-lib.ts` (`TITLES_COLUMNS` + `titleToInsertStatement`) and the
+enrichment insert in `src/app/api/user/profile/route.ts`. Both now write `now` into
+`last_refresh_attempt_at`, the same value they already write into `last_refreshed_at`.
+
+**Why `now`, and why the same value as `last_refreshed_at`.** The column means "when did we last try
+TMDB for this row", and both writers only reach the insert *after* a successful `fetchMovieDetail`.
+The attempt and the success are the same event, so any value other than `now` would be a claim about
+history that did not happen. Migration 0003's backfill (`SET last_refresh_attempt_at =
+last_refreshed_at`) says the same thing for pre-existing rows; these writers were simply not updated
+to hold the invariant it established. Copying `last_refreshed_at` and writing `now` are the same
+thing here precisely *because* both writers set `last_refreshed_at = now` — that equivalence is a
+property of these two call sites, not a general rule. The cron is the counter-example that proves
+it: on its failure path it advances the attempt stamp and deliberately leaves `last_refreshed_at`
+alone, because `asOfNote()` renders the latter to users.
+
+**The `INSERT OR REPLACE`-over-an-existing-row case, considered separately.** The worry is a row
+whose attempt stamp is *newer* than its refresh stamp — a title the cron has been failing on for
+weeks. Overwriting that with `now` discards the failure history. It is still right: the seed just
+succeeded where the cron kept failing, so the history is not lost, it is obsolete. Nothing keys off
+the gap between the two stamps except the staleness predicate, and re-arming that predicate for a
+row we just refreshed would be the bug, not the fix. Preserving the older stamp via
+`COALESCE`/upsert would also be strictly worse than the pre-0003 behaviour, where a re-seed left the
+catalog not-due for a week. Rejected as unnecessary complexity for a strictly worse outcome.
+
+**Nothing was left unchanged for symmetry's sake.** The profile-route writer has a far smaller blast
+radius (one row per hand-added title, and its `OR REPLACE` clause is effectively unreachable — the
+insert only runs for ids a `SELECT` just proved absent), but it is the same defect and the same
+one-token fix, and the invariant "every writer of a `titles` row sets both stamps" is worth more
+intact than the change costs. `src/lib/cron-handler.test.ts` already documents the sibling invariant
+for `last_refreshed_at` in a fixture comment.
+
+**Not touched:** no new migration (0003's backfill already covers rows written before this change,
+and rows written after it are correct at insert time), and no change to the cron's predicate or
+ordering.
+
+**TDD.** Three new assertions written first and watched fail: the seed round-trip returned `null`
+for `last_refresh_attempt_at`; the re-seed-over-a-stamped-row case returned `null`, proving the
+`INSERT OR REPLACE` clears it rather than leaving it; and the end-to-end check — seed a title, run
+`runWeeklyRefresh` — failed with the cron fetching the freshly-seeded title
+(`expected "vi.fn()" to not be called at all, but actually been called 1 times`). That third test
+uses the real cron query rather than restating the predicate, so it cannot drift from it. The
+profile-route assertion (`expect(row?.last_refresh_attempt_at).toBe(row?.last_refreshed_at)`) failed
+`expected null to be '2026-...'`. Two pre-existing exact-SQL assertions in `scripts/seed-lib.test.ts`
+also needed the new column in their expected string.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 835 passed
+/ 2 skipped (baseline 832 — the 3 new tests), only the 3 pre-existing `vite:dynamic-import-vars`
+warnings, `npx @opennextjs/cloudflare build` clean.

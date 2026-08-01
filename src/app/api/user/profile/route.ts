@@ -150,9 +150,14 @@ export async function PUT(request: NextRequest) {
         const now = new Date().toISOString();
         await db
           .prepare(
+            // last_refresh_attempt_at repeats last_refreshed_at: the TMDB fetch above
+            // is an attempt and a success both, and the weekly refresh selects
+            // candidates on the attempt stamp, so a NULL would put a title fetched
+            // seconds ago straight back in the queue.
             `INSERT OR REPLACE INTO titles (tmdb_id, content_type, title, year, genres, synopsis, poster_path,
-               vote_count, vote_average, popularity, top_cast, keywords, streaming, seasons, last_refreshed_at, created_at)
-             VALUES (?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+               vote_count, vote_average, popularity, top_cast, keywords, streaming, seasons, last_refreshed_at,
+               last_refresh_attempt_at, created_at)
+             VALUES (?, 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
           )
           .bind(
             title.tmdbId,
@@ -167,6 +172,7 @@ export async function PUT(request: NextRequest) {
             JSON.stringify(enrichment.topCast),
             JSON.stringify(enrichment.keywords),
             JSON.stringify(enrichment.streaming),
+            now,
             now,
             now
           )
