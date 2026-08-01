@@ -1998,3 +1998,19 @@ the same 7-day cadence as everyone else's, so 200 or more permanently-failing ti
 the sweep again — the same failure class as B6 at a higher threshold. The plan's contract ("a
 permanently-failing title consumes at most one slot per 7 days") is met; a catalog that ever
 approaches that threshold needs a different mechanism, such as backing off per consecutive failure.
+
+### G4 — final gate numbers
+
+The per-task numbers above were observed at the commits that produced them, on the PREP commit this
+branch first forked from. PREP moved on, so the branch was rebased onto its tip and everything
+re-run there:
+
+```
+npx tsc --noEmit   clean
+npm run lint       clean
+npm test           59 files / 645 passed / 2 skipped
+npx @opennextjs/cloudflare build   clean
+```
+
+645 = the PREP tip's 634 plus G4's 11 new cron cases (8 → 19 in `cron-handler.test.ts`). Still
+exactly 2 skips, still only the three baseline `vite:dynamic-import-vars` warnings.
