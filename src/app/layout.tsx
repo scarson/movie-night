@@ -31,6 +31,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${fraunces.variable} ${satoshi.variable}`}>
+      <head>
+        {/* Posters come from a third-party origin on the results page; the DNS +
+            TCP + TLS handshake is otherwise paid on the LCP element itself.
+            crossOrigin is required — poster <img> requests are anonymous
+            CORS-mode, so a preconnect without it warms a connection they cannot
+            reuse. The origin is written out rather than imported from
+            poster.tsx: the root layout should not pull in a component module
+            for a <link>. */}
+        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="" />
+      </head>
       <body className="flex min-h-dvh flex-col font-body antialiased">
         <ReducedMotionBoot />
         <SkipLink />

@@ -30,6 +30,13 @@ describe("RootLayout", () => {
     expect(markup).toContain("--font-satoshi");
   });
 
+  it("preconnects to the poster origin, with CORS so the poster <img> reuses the connection", () => {
+    const link = markup.match(/<link[^>]*rel="preconnect"[^>]*>/);
+    expect(link).not.toBeNull();
+    expect(link![0]).toContain('href="https://image.tmdb.org"');
+    expect(link![0]).toContain("crossorigin");
+  });
+
   it("renders page content inside the layout", () => {
     expect(markup).toContain("page content");
   });
