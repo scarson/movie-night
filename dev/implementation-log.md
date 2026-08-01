@@ -2236,3 +2236,27 @@ constant is not a tuning knob, and it still applies to a second environment or a
 Added alongside it the one figure that must not be trusted from memory — Paid was capped at 1,000
 subrequests per invocation until 2026-02-11, and two independent reviews of this code reasoned from
 that stale number and reached opposite conclusions about this very constant.
+
+---
+
+## Removed-ids cap test: structural cost, not a timeout (2026-08-01)
+
+`"never sends more removed ids than the route will accept"` in
+`src/app/results/[sessionId]/page.test.tsx` was the heaviest test in the suite. Its 60-item fixture
+was correct; the loop over it was not. Each of the 60 remove-clicks re-ran
+`screen.getByRole("button", { name })` over the whole document, and an accessibility-tree scan is
+the most expensive operation available in jsdom — so the click loop cost grew with the square of
+the fixture. Querying the remove controls once, scoped to the picks tabpanel, and clicking from
+that array took the isolated test from 2671ms to ~950ms and the file from 5.49s to ~2.8s. The
+explicit budget came down from 60000ms to 10000ms.
+
+Measured, not assumed: shrinking the fixture from 60 to 56 saved ~20ms once the queries were fixed,
+so the fixture stays ten clear of the 50-id ceiling. A fixture that only grazes the cap proves
+less. The 60 React re-renders that remain are inherent to clicking 60 controls and are what the
+10000ms budget (>10x the measured time) covers on a contended CI runner.
+
+The assertion was strengthened rather than trimmed: it now pins both ends of the surviving window
+(`[0] === 1010`, `[49] === 1059`). Verified by mutation — deleting the cap fails on the length
+assertion, and flipping `slice(-50)` to `slice(0, 50)` fails on `expected 1000 to be 1010`. No
+sibling test in the file has the same re-scan-per-interaction shape; the only other loops advance
+fake timers or walk three views over a two-item fixture.
