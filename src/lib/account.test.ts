@@ -397,6 +397,8 @@ describe("deleteAccount — scrubbing the deleted name from persisted rounds", (
     expect(doc.tasteMap.members[0].name).toBe(DELETED_USER_LABEL);
     // A literal replacement here would scrub the SURVIVOR out of their own record.
     expect(doc.tasteMap.members[1].name).toBe("sam");
+    expect(doc.tasteMap.members[1].summary).toBe("sam wants warmth.");
+    expect(doc.tasteMap.overlap.summary).toBe("Sam and sam both like a heist.");
     expect(doc.conversational).toBe("Sam and sam are the same word tonight.");
     expect(lines.map((line) => JSON.parse(line))).toContainEqual({
       event: "scrub_name_shared_with_member",
@@ -483,6 +485,24 @@ describe("deleteAccount — scrubbing the deleted name from persisted rounds", (
       .bind("rec-corrupt")
       .first<{ ai_response: string }>();
     expect(corrupt!.ai_response).toBe("{not json");
+  });
+
+  it("tolerates a parseable round that is not a MatchingResponse", async () => {
+    // Every prose field is read behind a typeof check and both arrays behind an
+    // Array.isArray, so a document missing tasteMap entirely is a no-op rather
+    // than a throw that would abort the whole deletion.
+    const db = createFakeD1(loadMigration());
+    await seedTwoMemberRound(db, "Alice", round());
+    await seedRecommendation(db, "rec-partial", "sess1", '{"ok":true}');
+
+    await expect(deleteAccount(db, "u1", () => {})).resolves.toBeUndefined();
+
+    const partial = await db
+      .prepare("SELECT ai_response FROM recommendations WHERE id = ?")
+      .bind("rec-partial")
+      .first<{ ai_response: string }>();
+    expect(partial!.ai_response).toBe('{"ok":true}');
+    expect((await storedRound(db)).tasteMap.members[0].name).toBe(DELETED_USER_LABEL);
   });
 
   it("scrubs every round of every session the deleted user belonged to", async () => {
