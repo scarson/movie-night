@@ -15,7 +15,7 @@ import {
   startSession,
   type GroupSummary,
 } from "@/lib/session-flow";
-import { secondaryButtonClasses } from "@/components/control-classes";
+import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
 
 /** The tag subset worth a single tap. The full vocabulary lives in the ritual. */
 const QUICK_TAGS = [
@@ -174,7 +174,7 @@ function Quick() {
                 void submit();
               }
             }}
-            className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
+            className={primaryButtonClasses}
           >
             Try again
           </button>
@@ -264,7 +264,7 @@ function Quick() {
         <button
           type="button"
           onClick={() => void submit()}
-          className="flex min-h-12 w-full items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white sm:w-auto"
+          className={`${primaryButtonClasses} w-full sm:w-auto`}
         >
           Find our match →
         </button>

@@ -11,7 +11,7 @@ import {
   defaultGroupSelection,
   type GroupOption,
 } from "@/components/group-picker";
-import { secondaryButtonClasses } from "@/components/control-classes";
+import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
 
 export default function Tonight() {
   const { user, loading } = useAuth();
@@ -82,7 +82,7 @@ export default function Tonight() {
       <div className="mt-2xl flex flex-col gap-sm sm:flex-row">
         <Link
           href={`/quick${target}`}
-          className="flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white"
+          className={primaryButtonClasses}
         >
           Quick match
         </Link>

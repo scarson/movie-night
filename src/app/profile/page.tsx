@@ -20,12 +20,11 @@ import {
   subscribeReducedMotion,
   syncReducedMotion,
 } from "@/lib/reduced-motion";
-import { secondaryButtonClasses } from "@/components/control-classes";
+import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
 
 const CONFIRM_WORD = "delete";
 
-const PRIMARY_BUTTON =
-  "flex min-h-12 items-center justify-center rounded-control bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:bg-slate disabled:text-ash";
+const PRIMARY_BUTTON = `${primaryButtonClasses} disabled:bg-slate disabled:text-ash`;
 
 function Section({
   title,

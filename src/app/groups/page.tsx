@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
-import { outlinedControlClasses } from "@/components/control-classes";
+import { outlinedControlClasses, primaryControlClasses } from "@/components/control-classes";
 
 interface GroupSummary {
   id: string;
@@ -223,7 +223,7 @@ export default function Groups() {
   const submitClasses =
     `min-h-11 shrink-0 px-lg text-base font-medium ${outlinedControlClasses} disabled:opacity-50`;
   const primaryClasses =
-    "min-h-11 shrink-0 rounded-control bg-amber px-lg text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:opacity-50";
+    `min-h-11 shrink-0 px-lg text-base font-semibold ${primaryControlClasses} disabled:opacity-50`;
 
   return (
     <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">

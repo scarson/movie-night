@@ -3,7 +3,7 @@
 "use client";
 
 import { useId } from "react";
-import { secondaryButtonClasses } from "@/components/control-classes";
+import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
 
 const MAX_STEERING = 300;
 
@@ -108,7 +108,7 @@ export function RefinePanel({
           data-testid="regenerate"
           disabled={spent || busy}
           onClick={onRegenerate}
-          className="flex min-h-12 items-center justify-center rounded-control border border-transparent bg-amber px-xl text-base font-semibold text-midnight transition-colors duration-100 hover:bg-warm-white disabled:border-slate disabled:bg-transparent disabled:text-ash"
+          className={`${primaryButtonClasses} border border-transparent disabled:border-slate disabled:bg-transparent disabled:text-ash`}
         >
           {refineButtonLabel(hasRatings, hasFeedback)}
         </button>
