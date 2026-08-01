@@ -18,7 +18,13 @@ import Quick from "@/app/quick/page";
 const ALICE = { userId: "u1", email: "alice@example.com", name: "Alice Chen", avatarUrl: null };
 const BOB = { userId: "u2", name: "Bob Reyes", avatarUrl: null };
 
-function stubApi(overrides: { match?: { status: number; body: unknown } } = {}) {
+interface StubOptions {
+  session?: { status: number; body: unknown };
+  match?: { status: number; body: unknown };
+}
+
+/** Reads `overrides` at request time, so a test may flip a route mid-flow. */
+function stubApi(overrides: StubOptions = {}) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -36,7 +42,8 @@ function stubApi(overrides: { match?: { status: number; body: unknown } } = {}) 
         );
       }
       if (url === "/api/movie-sessions") {
-        return new Response(JSON.stringify({ sessionId: "s1" }), { status: 200 });
+        const c = overrides.session ?? { status: 200, body: { sessionId: "s1" } };
+        return new Response(JSON.stringify(c.body), { status: c.status });
       }
       if (url.endsWith("/match")) {
         const m = overrides.match ?? { status: 200, body: { round: 1 } };
@@ -298,31 +305,10 @@ describe("quick match", () => {
     // "Change the vibe", the resubmit's create failure falls back on the first
     // session, and "Try again" re-runs the vibe the user just abandoned —
     // behind a button whose label promises the opposite.
-    const calls: { url: string; method: string; body: unknown }[] = [];
-    const state = { createOk: true };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (method !== "GET") {
-          calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        }
-        if (url === "/api/auth/me") return new Response(JSON.stringify(ALICE), { status: 200 });
-        if (url === "/api/movie-sessions") {
-          return state.createOk
-            ? new Response(JSON.stringify({ sessionId: "s1" }), { status: 200 })
-            : new Response(JSON.stringify({ error: "Couldn't start that." }), { status: 500 });
-        }
-        if (url.endsWith("/match")) {
-          return new Response(
-            JSON.stringify({ error: "The projectionist is having a nap.", kind: "timeout" }),
-            { status: 503 }
-          );
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      })
-    );
+    const options: StubOptions = {
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    };
+    const calls = stubApi(options);
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderQuick();
 
@@ -336,7 +322,7 @@ describe("quick match", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Cozy" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Thrilling" }));
 
-    state.createOk = false;
+    options.session = { status: 500, body: { error: "Couldn't start that." } };
     fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
     await waitFor(() => expect(calls).toHaveLength(3));
     await settleNarrative();
@@ -348,7 +334,7 @@ describe("quick match", () => {
     // Retrying must attempt a fresh session, never re-match the abandoned one.
     expect(calls[3].url).toBe("/api/movie-sessions");
     expect(calls[3].body).toMatchObject({ moodVibes: ["Thrilling"] });
-    expect(calls.some((c) => c.url === "/api/movie-sessions/s1/match" && c !== calls[1])).toBe(false);
+    expect(calls.filter((c) => c.url === "/api/movie-sessions/s1/match")).toHaveLength(1);
   });
 
   it("'Try again' still reuses the existing session", async () => {

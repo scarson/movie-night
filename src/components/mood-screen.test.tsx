@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MoodScreen, type MoodScreenProps } from "@/components/mood-screen";
+import { MOOD_TAGS, GENRE_TAGS } from "@/config/tags";
 
 function baseProps(overrides: Partial<MoodScreenProps> = {}): MoodScreenProps {
   return {
@@ -101,5 +102,24 @@ describe("MoodScreen", () => {
   it("tells you the picks are unweighted when no mood is chosen", () => {
     render(<MoodScreen {...baseProps({ moodVibes: [] })} />);
     expect(screen.getByText(/surprise us/i)).toBeTruthy();
+  });
+});
+
+describe("MoodScreen vibe ceiling", () => {
+  // The 30-entry cap belongs to POST /api/movie-sessions. Asserting it here
+  // rather than only on TagPicker is what pins the wiring: TagPicker's own
+  // default is also 30, so a dropped `max` prop is invisible to its tests.
+  const ALL_PRESETS = [...MOOD_TAGS, ...GENRE_TAGS];
+
+  it("refuses a 31st vibe, the ceiling the session endpoint enforces", () => {
+    const onMoodVibesChange = vi.fn();
+    const atCap = [...ALL_PRESETS.slice(0, 29), "rainy sunday"];
+    render(<MoodScreen {...baseProps({ moodVibes: atCap, onMoodVibesChange })} />);
+
+    const vibes = screen.getByRole("group", { name: /tonight/i });
+    fireEvent.click(within(vibes).getByRole("checkbox", { name: ALL_PRESETS[29] }));
+
+    expect(onMoodVibesChange).not.toHaveBeenCalled();
+    expect(within(vibes).getByText("30 is the limit — remove one first.")).toBeTruthy();
   });
 });

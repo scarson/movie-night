@@ -424,24 +424,4 @@ describe("the mood back-edge", () => {
     expect(calls[4].body).toMatchObject({ moodVibes: ["Slow-Burn"] });
     expect(calls.filter((c) => c.url === "/api/movie-sessions/s1/match")).toHaveLength(1);
   });
-
-  it("'Try again' still reuses the existing session", async () => {
-    const calls = stubApi({
-      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
-    });
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    await renderRitual();
-    await advanceToMood(calls, 1);
-
-    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
-    await waitFor(() => expect(calls).toHaveLength(3));
-    await settleNarrative();
-    await screen.findByRole("alert");
-
-    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
-
-    await waitFor(() => expect(calls).toHaveLength(4));
-    expect(calls[3].url).toBe("/api/movie-sessions/s1/match");
-    expect(calls.filter((c) => c.url === "/api/movie-sessions")).toHaveLength(1);
-  });
 });

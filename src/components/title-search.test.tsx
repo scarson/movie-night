@@ -234,6 +234,20 @@ describe("TitleSearch entry limit", () => {
     expect(screen.getByText("50 of 50 chosen")).toBeTruthy();
   });
 
+  it("keeps the query and the results when it refuses, so the notice sits beside what it refused", async () => {
+    const fetchStub = vi.fn(async () => searchResponse([ARRIVAL]));
+    vi.stubGlobal("fetch", fetchStub);
+    render(<TitleSearch selected={filler(50)} onChange={vi.fn()} />);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "arri" } });
+    await advance(250);
+    fireEvent.click(screen.getByRole("button", { name: "Arrival (2016)" }));
+
+    expect((input as HTMLInputElement).value).toBe("arri");
+    expect(screen.getByRole("button", { name: "Arrival (2016)" })).toBeDefined();
+  });
+
   it("honours an explicit max below the default", () => {
     const onChange = vi.fn();
     render(

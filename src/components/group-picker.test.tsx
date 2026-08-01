@@ -8,6 +8,7 @@ import {
   defaultGroupSelection,
   type GroupOption,
 } from "@/components/group-picker";
+import { clippingUtilities } from "@/test/clipping";
 
 const alice = { userId: "u1", name: "Alice Chen", avatarUrl: null };
 const bob = { userId: "u2", name: "Bob Reyes", avatarUrl: null };
@@ -91,7 +92,7 @@ describe("1.4.10 Reflow — the member list", () => {
     ],
   };
 
-  it("wraps the member list rather than clipping it", () => {
+  it("declares no clipping utility on the member list, so it wraps (structural guard)", () => {
     // 1.4.10 Reflow. At 320px these names need ~43px more than the row gives
     // them, so `truncate` drops the tail silently — no scrollbar, no title, and
     // nothing a document-level `scrollWidth` sweep can see.
@@ -104,12 +105,12 @@ describe("1.4.10 Reflow — the member list", () => {
     render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
 
     const line = screen.getByText("Alexandra Featherstonehaugh, Jordan");
-    const classes = line.className.split(/\s+/);
-    expect(classes).not.toContain("truncate");
-    // Unbounded wrapping, not line-clamp-2: a clamp still discards whatever
-    // does not fit, which is the loss of information 1.4.10 forbids.
-    expect(classes).not.toContain("line-clamp-2");
-    expect(classes).toContain("break-words");
+    // Denylist rather than just "not truncate", and it covers every clamp:
+    // unbounded wrapping is the requirement, and a line-clamp of any depth
+    // still discards whatever does not fit — the same loss of information
+    // 1.4.10 forbids, one line further down.
+    expect(clippingUtilities(line)).toEqual([]);
+    expect(line.className.split(/\s+/)).toContain("break-words");
   });
 
   it("keeps the full member list in the DOM", () => {
