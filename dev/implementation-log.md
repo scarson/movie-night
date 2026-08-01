@@ -1422,3 +1422,27 @@ over the deduped union of both title lists against the local catalog. Since the 
 merges TMDB results, adding 11 catalog-new titles in one pass is an ordinary thing to do and takes
 the same unactionable 400 that B10 exists to prevent. Different axis (per-save, cross-list,
 catalog-relative), so `max` does not touch it. B10's discipline is not fully satisfied until it is.
+
+## G6 — Chunking discipline and the canonical disabled treatment (2026-08-01)
+
+Executes group G6 of `dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md`: D2, D7, the
+canonical disabled-control treatment, and the two forbidden historical-context comments.
+
+### G6-1 — D2: `resolveIds` is chunked
+
+`resolveIds` in `src/app/api/titles/search/route.ts` bound `...ids` directly, and
+`MAX_RESOLVED_IDS` is 100 — exactly D1's hard ceiling, with zero headroom. It was the only
+`.bind(...spread)` in the codebase outside `chunk` / `D1_IN_CHUNK_SIZE`. Now loops
+`chunk(ids, D1_IN_CHUNK_SIZE)` accumulating into the existing `byId` map; the closing
+`ids.map((id) => byId.get(id))` still re-imposes the caller's order, so chunking cannot reorder.
+
+**The plan's two prescribed tests cannot fail before the fix.** Both are order assertions, and the
+old code preserved order too; the fake D1 rejects only *above* 100, so it cannot distinguish "at
+the ceiling" from "one over" — which is the plan's own stated reason the bug is invisible. Wrote
+both anyway (they pin behavior) plus a third that does fail first: `src/test/statement-recorder.ts`
+wraps a `D1Database` and records each bound statement's parameter count, and the test asserts the
+widest is `<= D1_IN_CHUNK_SIZE`. It failed with `expected 100 to be less than or equal to 90` —
+the headroom property PLAT-1 actually asks for, rather than "it happens to fit today".
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 618 passed / 2 skipped
+(615 baseline + 3), no new warnings.

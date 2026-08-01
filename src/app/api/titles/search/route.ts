@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
+import { chunk, D1_IN_CHUNK_SIZE } from "@/lib/db";
 import { searchMovies, searchResultsToSummaries, type SearchSummary } from "@/lib/tmdb";
 
 const LOCAL_LIMIT = 10;
@@ -51,16 +52,18 @@ function parseIds(raw: string): number[] {
  * the profile PUT enriches unknown ids at save time, so every saved id is here.
  */
 async function resolveIds(db: D1Database, ids: number[]): Promise<SearchSummary[]> {
-  const placeholders = ids.map(() => "?").join(",");
-  const { results } = await db
-    .prepare(
-      `SELECT tmdb_id, title, year, poster_path FROM titles
-       WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
-    )
-    .bind(...ids)
-    .all<TitleRow>();
-
-  const byId = new Map(results.map((row) => [row.tmdb_id, rowToSummary(row)]));
+  const byId = new Map<number, SearchSummary>();
+  for (const batch of chunk(ids, D1_IN_CHUNK_SIZE)) {
+    const placeholders = batch.map(() => "?").join(",");
+    const { results } = await db
+      .prepare(
+        `SELECT tmdb_id, title, year, poster_path FROM titles
+         WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
+      )
+      .bind(...batch)
+      .all<TitleRow>();
+    for (const row of results) byId.set(row.tmdb_id, rowToSummary(row));
+  }
   return ids.map((id) => byId.get(id)).filter((summary) => summary !== undefined);
 }
 
