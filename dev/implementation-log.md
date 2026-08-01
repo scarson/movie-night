@@ -2222,3 +2222,17 @@ review and surfaces only when an implementer runs the prescribed test or a revie
 justification against reality. Every one of the eight remediation groups found at least one. In each
 case the code was correct and the *justification* was wrong — the failure mode that ossifies in a
 comment and outlives anyone who could question it.
+
+---
+
+## Plan tier confirmed — Workers Paid (2026-08-01)
+
+Sam confirmed the Cloudflare account is on Workers Paid, which closes the last standing question from
+the 2026-07-28 handoff. `docs/deploy.md`'s plan-tier section changes from a pre-deploy checklist item
+into a recorded ✅, and the handoff's Tier-3 entry says the same. `STALE_TITLES_LIMIT` stays at 200.
+
+The reasoning is kept rather than deleted, because it is not dead weight: it documents why the
+constant is not a tuning knob, and it still applies to a second environment or a change of account.
+Added alongside it the one figure that must not be trusted from memory — Paid was capped at 1,000
+subrequests per invocation until 2026-02-11, and two independent reviews of this code reasoned from
+that stale number and reached opposite conclusions about this very constant.
