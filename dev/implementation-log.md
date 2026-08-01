@@ -1467,9 +1467,10 @@ Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 620
 
 ### G6-3 — the canonical disabled-control treatment
 
-Eight sites across five files carried six different treatments: `disabled:opacity-50` (four sites),
-`disabled:opacity-60` (one), and two different slate/ash spellings. `DESIGN.md` could not say which
-was right, because it had never said anything.
+Eight sites across five files carried five distinct strings: `disabled:opacity-50` (four sites),
+`disabled:opacity-60` (one), and three different slate/ash spellings (`profile/page.tsx:27`,
+`profile/page.tsx:264`, `refine-panel.tsx:111`, no two alike). `DESIGN.md` could not say which was
+right, because it had never said anything.
 
 The rule, now in `DESIGN.md` §Accessibility beside the 2026-07-27 slate decision and in the
 Decisions Log: **a disabled control leaves the amber hierarchy.** Filled controls drop the amber
@@ -1577,3 +1578,50 @@ asserted as constants in `control-classes.test.ts`, not laundered through a rend
 An independent reviewer was dispatched to run the three rounds in parallel with the self-review and
 stalled without reporting; the rounds above are the author's own, and the two findings they produced
 were both fixed before the PR opened. A fresh pair of eyes on the diff is still worth having.
+
+### G6 — second review batch
+
+An independent reviewer confirmed the two self-caught fixes and found no remaining correctness
+defect. It also re-derived the narrowed 1.4.11 guard from scratch: `disabled:hover:border-slate` is
+killed by the lookahead, `md:` / `hover:` / `aria-checked:` / `focus-visible:` prefixes are all still
+caught, and `\S*` cannot cross whitespace, so `"hover:border-cream disabled:border-slate"` does not
+false-match. Its one false positive is the reversed `hover:disabled:border-slate`, which is
+harmless. Four items were actionable.
+
+**1. Asymmetric assertion.** `control-classes.test.ts` checked the filled string against the whole
+`border-slate` token but the outlined string against `disabled:bg-slate` only — so a bare or
+`hover:`-prefixed slate *fill* added to `disabledOutlinedClasses` would have passed, which is
+exactly the "never a fill change on an outlined control" half of the rule. Both sides now match the
+bare token.
+
+**2. "Six treatments" was wrong, and it was headed into a permanent design doc.** There are **five
+distinct strings** — `disabled:opacity-50`, `disabled:opacity-60`, and three different slate
+spellings (`profile/page.tsx:27`, `profile/page.tsx:264`, `refine-panel.tsx:111`, no two alike) —
+across eight sites in five files. The figure was inherited from the plan's header, which also said
+"six files". Corrected in `DESIGN.md`'s Decisions Log, in the test comment, and above.
+
+**3. `statement-recorder.ts` rests on an unstated assumption.** `Object.create(statement)` delegates
+`first`/`all`/`run`/`raw` to the real object, and those read `db`, `sql` and `params` through the
+prototype chain. That works only because `FakeD1PreparedStatement` uses TypeScript `private`, which
+erases to ordinary properties. ECMAScript `#private` fields would break every delegated call — and
+`fake-d1.ts` is PREP's file, so someone could make that change without ever opening this one. The
+dependency is now stated in the doc comment, along with the related trap that a fake method
+assigning to `this` would write to the wrapper rather than the real object.
+
+**4. Two boundary crossings, disclosed rather than reframed.**
+
+- **Rewriting the five pre-existing 1.4.11 assertions in `control-contrast.test.tsx` was an
+  ownership crossing, not a plan omission.** Plan §1.3 grants G6 "the `ALLOWED` map and its
+  comments" — not those assertions. The alternative the plan leaves open is to *not* fold
+  `disabledOutlinedClasses` into `outlinedControlClasses`, which was never surfaced before choosing.
+  The call stands: folding is plan step 2, and the assertions were imprecise about resting state
+  regardless. But it was a deliberate decision, and the earlier write-up framed it as the plan
+  failing to anticipate something, which understated it. For the record, only the tag-picker's Add
+  button actually broke — `Chip`, `ToggleRow`, `RoughDayToggle` and the `GroupPicker` row all
+  compose from the untouched `outlinedBoundaryClasses`.
+- **G6-3 says "do NOT add a disabled treatment to `<Link>` elements", and step 2's mandated fold
+  does exactly that.** Four anchors now carry `disabled:*` utilities:
+  `results/[sessionId]/page.tsx:156` and `:384`, and `tonight/page.tsx:85` and `:91`. Inert —
+  `:disabled` never matches an `<a>` — but a literal crossing of a stated boundary. (The reviewer
+  also cited `page.tsx:80` and `tonight/page.tsx:102`; both are false positives. The first is a
+  `<button>`, the second a text link with bespoke classes and no control string.)

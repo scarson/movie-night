@@ -129,8 +129,12 @@ describe("disabled control classes", () => {
   it("state each level in its own vocabulary and never the other's", () => {
     // DESIGN.md: filled controls drop the fill, outlined controls drop the
     // boundary. One rule, expressed twice — not two rules.
+    //
+    // Both sides match the bare token, so any prefix is caught. Pinning the
+    // outlined side to a `disabled:`-prefixed pattern would let a bare or
+    // `hover:`-prefixed slate fill through, which is the same violation.
     expect(disabledFillClasses).not.toMatch(/border-slate/);
-    expect(disabledOutlinedClasses).not.toMatch(/disabled:bg-slate/);
+    expect(disabledOutlinedClasses).not.toMatch(/bg-slate/);
   });
 
   it("reach every composed control", () => {
@@ -147,7 +151,7 @@ describe("disabled control classes", () => {
   });
 
   it("are never expressed as opacity, anywhere in the source", () => {
-    // Eight sites across five files carried six different treatments, two of them
+    // Eight sites across five files carried five distinct strings, two of them
     // different opacity values. Opacity is outside the token system entirely.
     const opacitySites = sourceFiles()
       .filter(([, src]) => /disabled:opacity-/.test(src))

@@ -18,6 +18,17 @@ export interface BoundStatement {
  *
  * Only statements that are bound are recorded; a `prepare(sql).all()` with no
  * parameters never reaches the interception point.
+ *
+ * **Requires the fake's state to be reachable through the prototype chain.** Each
+ * wrapper is an `Object.create` of the real object, so the delegated
+ * `first`/`all`/`run`/`raw` resolve `db`, `sql` and `params` off their prototype.
+ * That holds while those are ordinary properties — TypeScript's `private` is a
+ * compile-time marker and erases to exactly that. ECMAScript `#private` fields in
+ * `fake-d1.ts` are not reachable through a prototype, and adopting them there
+ * would make every delegated call throw here, so the two files have to stay in
+ * step. For the same reason a fake method must not assign to `this`: the write
+ * would land on the wrapper as an own property and leave the real object
+ * untouched. Nothing assigns today.
  */
 export function recordStatements(db: D1Database): {
   db: D1Database;
