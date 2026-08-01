@@ -1339,9 +1339,10 @@ statements no task owned. Gates pristine at every commit: `tsc` silent, `eslint`
 `vite:dynamic-import-vars` warnings and nothing else, plus `@opennextjs/cloudflare build`.
 ## 2026-08-01 — G5: picker limits, the mood back-edge, and the two open AA failures
 
-Branch `claude/rem-g5-ui`, four tasks from §8 of the remediation plan. Baseline 615 passed / 2
-skipped → **638 passed / 2 skipped**, +23 tests. `npx tsc --noEmit`, `npm run lint`, `npm test` and
-`npx opennextjs-cloudflare build` all clean.
+Branch `claude/rem-g5-ui`, four tasks from §8 of the remediation plan. Rebased onto `dev` after G7
+landed, so the baseline is G7's **627 passed / 2 skipped** → **676 passed / 2 skipped**, +49 tests
+across 60 files. `npx tsc --noEmit`, `npm run lint`, `npm test` and `npx opennextjs-cloudflare
+build` all clean.
 
 **B10 — the pickers now enforce the counts the server enforces.** `TagPicker` and `TitleSearch`
 capped tag *length* but never entry *count*, so the reported path — select all 30 presets (16 mood
