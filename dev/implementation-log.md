@@ -1575,9 +1575,9 @@ Also confirmed: no new test asserts a derived value passed straight back as its 
 rendered assertions run against `RefinePanel`, a real call site, and the class constants are
 asserted as constants in `control-classes.test.ts`, not laundered through a render.
 
-An independent reviewer was dispatched to run the three rounds in parallel with the self-review and
-stalled without reporting; the rounds above are the author's own, and the two findings they produced
-were both fixed before the PR opened. A fresh pair of eyes on the diff is still worth having.
+An independent reviewer ran the three rounds in parallel with the self-review. Its report reached the
+coordinator rather than this session, so the rounds above are the author's own and the two findings
+they produced were fixed before the PR opened; the reviewer's batch is recorded in the next section.
 
 ### G6 — second review batch
 
