@@ -525,15 +525,13 @@ describe("buildMatchingPrompt", () => {
       expect(system).toContain("S".repeat(300));
     });
 
-    it("caps 200-entry title lists at 50 entries each", () => {
+    it("caps 200-entry comfort, watchlist and kept lists at 50 entries each", () => {
       const comfort = Array.from({ length: 200 }, (_, i) => `Comfort-${String(i + 1).padStart(3, "0")}`);
       const watch = Array.from({ length: 200 }, (_, i) => `Watch-${String(i + 1).padStart(3, "0")}`);
       const kept = Array.from({ length: 200 }, (_, i) => `Kept-${String(i + 1).padStart(3, "0")}`);
-      const removed = Array.from({ length: 200 }, (_, i) => `Removed-${String(i + 1).padStart(3, "0")}`);
       const input = promptInput({
         members: [member("Ana", { comfortTitles: comfort, watchlist: watch })],
         keptTitles: kept,
-        removedTitles: removed,
       });
       const { system, user } = buildMatchingPrompt(input);
       const all = system + user;
@@ -544,8 +542,26 @@ describe("buildMatchingPrompt", () => {
       expect(all).not.toContain("Watch-051");
       expect(all).toContain("Kept-050");
       expect(all).not.toContain("Kept-051");
-      expect(all).toContain("Removed-050");
-      expect(all).not.toContain("Removed-051");
+    });
+
+    it("keeps the newest 100 exclusions and drops the oldest when the list overflows", () => {
+      // The caller hands removedTitles in newest-first order, so the entries that
+      // survive the cap must be the ones the group just rejected. Dropping those
+      // is the failure that matters: the model re-offers a film seconds after
+      // someone swiped it away. Entries are numbered by recency, not by id, so
+      // "the first N survive" cannot look self-evidently right.
+      const removed = Array.from(
+        { length: 200 },
+        (_, i) => `Removed-rank-${String(i + 1).padStart(3, "0")} (tmdbId ${9000 + i})`
+      );
+      const { system } = buildMatchingPrompt(promptInput({ removedTitles: removed }));
+
+      expect(system).toContain("Removed-rank-001");
+      expect(system).toContain("Removed-rank-100");
+      expect(system).not.toContain("Removed-rank-101");
+      expect(system).not.toContain("Removed-rank-200");
+      const exclusionLine = system.split("\n").find((l) => l.includes("Do NOT recommend"))!;
+      expect(exclusionLine.split("Removed-rank-")).toHaveLength(101);
     });
   });
 });

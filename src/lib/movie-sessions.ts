@@ -146,10 +146,14 @@ export async function getRoundNumber(db: D1Database, sessionId: string): Promise
   return (row?.count ?? 0) + 1;
 }
 
-/** Union of removed tmdb ids across every prior round of the session, deduped. */
+/**
+ * Union of removed tmdb ids across every prior round of the session, deduped,
+ * newest round first. The prompt's exclusion list is capped from the front, so
+ * the order here decides which rejections survive truncation.
+ */
 export async function getAccumulatedRemovedIds(db: D1Database, sessionId: string): Promise<number[]> {
   const { results } = await db
-    .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ?")
+    .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? ORDER BY round_number DESC")
     .bind(sessionId)
     .all<{ removed_tmdb_ids: string }>();
   const ids = new Set<number>();

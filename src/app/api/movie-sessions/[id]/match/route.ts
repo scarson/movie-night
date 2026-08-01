@@ -132,8 +132,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const members = await getSessionMembersWithProfiles(db, id);
+    // This round's removals lead: the prompt's exclusion list is capped from the
+    // front, and the films the group just rejected are the ones it must name.
     const allRemovedIds = [
-      ...new Set([...(await getAccumulatedRemovedIds(db, id)), ...acceptedRemovedIds]),
+      ...new Set([...acceptedRemovedIds, ...(await getAccumulatedRemovedIds(db, id))]),
     ];
 
     const candidates = await selectCandidates(db, members, session.discoverNew, new Set(allRemovedIds));

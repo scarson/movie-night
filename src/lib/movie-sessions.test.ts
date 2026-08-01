@@ -421,6 +421,22 @@ describe("round counting and accumulation", () => {
     expect([...ids].sort()).toEqual([1, 2, 3]);
   });
 
+  it("getAccumulatedRemovedIds returns the newest round's ids first", async () => {
+    // The prompt's exclusion list is capped, and the entries worth keeping are
+    // the most recent rejections. Order is the mechanism that decides that, so
+    // it is asserted as an exact sequence rather than as a set.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRecommendation(db, sessionId, 1, { removedIds: [10, 11] });
+    await seedRecommendation(db, sessionId, 2, { removedIds: [20, 21] });
+    await seedRecommendation(db, sessionId, 3, { removedIds: [30, 31] });
+
+    expect(await getAccumulatedRemovedIds(db, sessionId)).toEqual([30, 31, 20, 21, 10, 11]);
+  });
+
   it("countMatchesThisMonth counts only rows created since the start of the current month", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");

@@ -18,6 +18,13 @@ const MAX_TAG_CHARS = 30;
 const MAX_MOOD_TEXT_CHARS = 200;
 const MAX_STEERING_CHARS = 300;
 const MAX_TITLE_LIST_ENTRIES = 50;
+/**
+ * The exclusion list gets its own, larger cap. Roughly 10 tokens per
+ * "Title (tmdbId 12345)" entry, so ~1,000 tokens against a 7,000-9,000-token
+ * CANDIDATES block. The reachable legitimate ceiling is 10 rounds x 7
+ * recommendations = 70, so every honest list fits with headroom.
+ */
+const MAX_REMOVED_TITLE_ENTRIES = 100;
 const MAX_TAG_LIST_ENTRIES = 30;
 const CANDIDATE_POOL_SIZE = 250;
 const CANDIDATE_CAP = 200;
@@ -240,7 +247,8 @@ export function buildMatchingPrompt(input: MatchingPromptInput): { system: strin
     : "You may recommend movies from members' comfort lists or watchlists if they're a great match, but also include discoveries they may not have considered.";
 
   const keptTitles = clampTitleList(input.keptTitles);
-  const removedTitles = clampTitleList(input.removedTitles);
+  // Sliced from the front because the caller supplies newest-first.
+  const removedTitles = input.removedTitles.slice(0, MAX_REMOVED_TITLE_ENTRIES);
   const refinementNote =
     keptTitles.length > 0 || removedTitles.length > 0
       ? `\nREFINEMENT ROUND:${

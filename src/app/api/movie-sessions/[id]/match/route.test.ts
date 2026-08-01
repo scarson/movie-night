@@ -448,6 +448,58 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(results).toHaveLength(0);
   });
 
+  it("keeps this round's removal in the prompt when the exclusion list overflows its cap", async () => {
+    // Nine prior rounds carry 15 removals each — 135 accumulated ids, well past
+    // the 100-entry prompt cap. The id removed on THIS request is the one a user
+    // would notice coming back, so it is the one that must survive truncation,
+    // and the earliest rounds are the ones that fall off.
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    // formatTitleRefs drops any id with no titles row, so the catalog must hold
+    // every removed id or the list never reaches the cap.
+    for (let id = 1; id <= 135; id++) await seedTitle(db, id, `Bulk ${id}`, 200 - id);
+    await seedTitle(db, 500, "Just Rejected", 1000);
+    for (const [id, title] of FIVE_TITLES) await seedTitle(db, id, title, 5);
+    const { sessionId } = await createMovieSession(db, {
+      userId: "u1",
+      groupId: "grp1",
+      moodVibes: [],
+      moodText: "",
+      discoverNew: false,
+      isQuickMatch: false,
+      roughDay: false,
+    });
+    for (let round = 1; round <= 9; round++) {
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: round,
+        // Round 9 recommends 500, which is what makes removing it this round legitimate.
+        aiResponse: validResponse(round === 9 ? [500, 27205, 155] : [27205, 155, 603]),
+        keptTmdbIds: [],
+        removedTmdbIds: Array.from({ length: 15 }, (_, i) => (round - 1) * 15 + i + 1),
+        steeringFeedback: "",
+        candidateSnapshot: [],
+      });
+    }
+    const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const response = await postMatch(sessionId, "u1", { removedTmdbIds: [500] });
+    logSpy.mockRestore();
+
+    expect(response.status).toBe(200);
+    const params = create.mock.calls[0][0] as { system: string };
+    const exclusionLine = params.system.split("\n").find((l) => l.includes("Do NOT recommend"))!;
+    expect(exclusionLine).toContain("Just Rejected (tmdbId 500)");
+    // The cap bit: round 9's removals survive, rounds 1 and 2's are dropped.
+    expect(exclusionLine).toContain("Bulk 135 (tmdbId 135)");
+    expect(exclusionLine).not.toContain("Bulk 15 (tmdbId 15)");
+    expect(exclusionLine).not.toContain("Bulk 30 (tmdbId 30)");
+    expect(exclusionLine.split("(tmdbId ")).toHaveLength(101);
+  });
+
   it("keeps removed titles out of the candidate pool the model is given", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
