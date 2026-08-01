@@ -48,15 +48,23 @@ three are Phase 2 tables, created empty by design.
 
 ### Pending migrations — not yet applied to the remote database
 
-The ✅ above covers `0001` only. Apply these in numeric order:
+Section 2 is marked DONE for `0001` only. Everything listed here still has to be
+applied by hand, in numeric order, before the deploy that depends on it. Add one
+bullet and one command line per new migration.
 
 - [ ] `0003_title_refresh_attempt.sql` — adds `titles.last_refresh_attempt_at`
       and backfills it from `last_refreshed_at`. The weekly refresh selects
-      candidates on this column; without it the cron's `SELECT` fails and no
-      title is ever refreshed again.
+      candidates on this column; without it the cron's `SELECT` fails on every
+      run and no title is ever refreshed again.
 
 ```bash
 npx wrangler d1 execute movie-night-db --remote --file=migrations/0003_title_refresh_attempt.sql
+```
+
+Verify afterwards:
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --command="SELECT COUNT(*) AS backfilled FROM titles WHERE last_refresh_attempt_at IS NOT NULL"
 ```
 
 - [ ] `0004_recommendation_indexes.sql`
