@@ -10,6 +10,7 @@ import {
   MatchingError,
   type MatchingErrorKind,
 } from "@/lib/matching";
+import { isGroupMember } from "@/lib/groups";
 import {
   getSessionForMember,
   getSessionMembersWithProfiles,
@@ -88,6 +89,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const session = await getSessionForMember(db, id, user.userId);
     if (!session) {
       return withAuthHeaders(NextResponse.json({ error: "Session not found" }, { status: 404 }), headers);
+    }
+
+    // session_members outlives group membership on purpose, so history stays
+    // readable — but running a new round spends the account owner's budget on
+    // the remaining members' present-day profiles. That needs live membership.
+    if (!(await isGroupMember(db, session.groupId, user.userId))) {
+      return withAuthHeaders(
+        NextResponse.json(
+          {
+            error: "You've left this group — you can still read this evening, but not run it again",
+            kind: "left_group",
+          },
+          { status: 403 }
+        ),
+        headers
+      );
     }
 
     // Round limit. Plain SELECT-then-insert: the TOCTOU race is ACCEPTED per

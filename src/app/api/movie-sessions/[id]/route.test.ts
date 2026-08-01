@@ -8,6 +8,7 @@ import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
 import { deleteAccount, DELETED_USER_LABEL } from "@/lib/account";
+import { leaveGroup } from "@/lib/groups";
 import type { MatchingResponse } from "@/types/matching";
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -192,6 +193,33 @@ describe("GET /api/movie-sessions/[id]", () => {
       streaming: { flatrate: ["Netflix"] },
       lastRefreshedAt: "2026-07-01T00:00:00.000Z",
     });
+  });
+
+  it("still serves the stored round to someone who has left the group", async () => {
+    // Read access to history is deliberately preserved when write/spend access
+    // is revoked — POST .../match gates on group_members, this GET does not.
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setupSession(db);
+    await seedTitle(db, 27205, "Inception");
+    const stored = sampleResponse([27205]);
+    await insertRecommendation(db, {
+      sessionId,
+      roundNumber: 1,
+      aiResponse: stored,
+      keptTmdbIds: [],
+      removedTmdbIds: [],
+      steeringFeedback: "",
+      candidateSnapshot: [27205],
+    });
+
+    await leaveGroup(db, "u2", "grp1");
+    const response = await get(sessionId, "u2");
+
+    expect(response.status).toBe(200);
+    const body = await response.json<Record<string, any>>();
+    expect(body.round).toBe(1);
+    expect(body.response).toEqual(stored);
   });
 
   it("NEVER includes another member's rough_day — each member sees only their own flag", async () => {

@@ -59,6 +59,7 @@ const ERROR_FRAMING = new Map<string, ErrorFraming>([
     { heading: "That was a tough brief — loosen a dealbreaker?", retry: false, loosen: true },
   ],
   ["round_limit", { heading: "That's the evening's last round", retry: false }],
+  ["left_group", { heading: "You've left this group", retry: false }],
 ]);
 
 const DEFAULT_FRAMING: ErrorFraming = { heading: "That didn't work", retry: true };

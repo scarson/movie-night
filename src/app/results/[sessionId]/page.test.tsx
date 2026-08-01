@@ -613,6 +613,29 @@ describe("results page", () => {
     expect(screen.getByTestId("refine-error-heading").tagName).toBe("H2");
   });
 
+  it("frames a left_group refusal without a retry button", async () => {
+    // A retry can only ever fail again — the membership is gone — and it would
+    // sit next to a stored round the ex-member can still read.
+    vi.useFakeTimers();
+    stubApi({
+      match: {
+        status: 403,
+        body: {
+          error: "You've left this group — you can still read this evening, but not run it again",
+          kind: "left_group",
+        },
+      },
+    });
+    await renderResults();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("refine-error-heading").textContent).toBe("You've left this group");
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+  });
+
   it("falls back to the default framing for an error kind it does not know", async () => {
     vi.useFakeTimers();
     // "constructor" is an inherited key on any plain object, so a bare index

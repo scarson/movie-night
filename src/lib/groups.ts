@@ -149,6 +149,18 @@ export async function getGroupDetailForMember(
   return { ...rowToGroup(row), members: await fetchMembers(db, row.id) };
 }
 
+/**
+ * True when the user currently holds a group_members row. Write/spend authority
+ * tracks live membership; read access to stored history does not.
+ */
+export async function isGroupMember(db: D1Database, groupId: string, userId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?")
+    .bind(groupId, userId)
+    .first();
+  return row !== null;
+}
+
 /** Returns every group userId belongs to, with member lists, excluding "__solo__" groups. */
 export async function getGroupsForUser(db: D1Database, userId: string): Promise<GroupWithMembers[]> {
   const { results } = await db

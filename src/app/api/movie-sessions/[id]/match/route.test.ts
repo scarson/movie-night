@@ -9,6 +9,7 @@ import type { Message } from "@anthropic-ai/sdk/resources/messages";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
+import { leaveGroup } from "@/lib/groups";
 import type { MatchingResponse } from "@/types/matching";
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -446,6 +447,67 @@ describe("POST /api/movie-sessions/[id]/match", () => {
       .bind(sessionId)
       .all();
     expect(results).toHaveLength(0);
+  });
+
+  describe("group membership gates the spend path", () => {
+    it("refuses a new round for someone who has left the group", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+
+      await leaveGroup(db, "u2", "grp1");
+      const response = await postMatch(sessionId, "u2");
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: "You've left this group — you can still read this evening, but not run it again",
+        kind: "left_group",
+      });
+      expect(create).not.toHaveBeenCalled();
+      const { results } = await db
+        .prepare("SELECT * FROM recommendations WHERE session_id = ?")
+        .bind(sessionId)
+        .all();
+      expect(results).toHaveLength(0);
+    });
+
+    it("still lets a current member of the same group run a round", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await leaveGroup(db, "u2", "grp1");
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+    });
+
+    it("lets a solo session's creator match — they always hold their own __solo__ membership", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1", "Sam");
+      for (const [id, title] of FIVE_TITLES) await seedTitle(db, id, title);
+      const { sessionId } = await createMovieSession(db, {
+        userId: "u1",
+        groupId: null,
+        moodVibes: [],
+        moodText: "",
+        discoverNew: false,
+        isQuickMatch: true,
+        roughDay: false,
+      });
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+    });
   });
 
   it("keeps this round's removal in the prompt when the exclusion list overflows its cap", async () => {
