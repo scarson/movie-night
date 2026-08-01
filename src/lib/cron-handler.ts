@@ -1,12 +1,15 @@
 // ABOUTME: Weekly cron orchestrator that refreshes streaming availability, popularity,
-// ABOUTME: and vote counts for the most-popular stale titles from TMDB.
+// ABOUTME: and vote counts from TMDB for the titles refreshed least recently.
 import { detailToEnrichment, fetchMovieDetail } from "./tmdb";
 import { sqliteIsoNow } from "./db";
 
-// ~200 TMDB detail fetches per invocation requires the Workers Paid plan's
-// 1000-subrequest limit. The Free plan caps at 50 subrequests/invocation —
-// if the account is on Free at deploy time, lower this to 40 (see
-// dev/implementation-log.md Task 3.3).
+// One external subrequest per title (fetchMovieDetail folds keywords, credits
+// and watch/providers into a single TMDB request). Workers Paid allows 10,000
+// subrequests per invocation, external and internal together; Free allows 50
+// external plus a separate 1,000 to Cloudflare services, so there the run's D1
+// calls never compete with its TMDB fetches.
+// 200/week clears the ~1,000-title seed catalog in about five weeks.
+// Workers Paid is required — see docs/deploy.md §Plan-tier check.
 const STALE_TITLES_LIMIT = 200;
 const BATCH_CHUNK_SIZE = 25;
 
@@ -25,30 +28,48 @@ export async function runWeeklyRefresh(
   const stale = await db
     .prepare(
       `SELECT tmdb_id, content_type FROM titles
-       WHERE last_refreshed_at IS NULL OR last_refreshed_at < ${sqliteIsoNow("-7 days")}
-       ORDER BY popularity DESC
+       WHERE last_refresh_attempt_at IS NULL OR last_refresh_attempt_at < ${sqliteIsoNow("-7 days")}
+       ORDER BY last_refreshed_at ASC, popularity DESC
        LIMIT ${STALE_TITLES_LIMIT}`
     )
     .all<StaleTitleRow>();
 
   const now = new Date().toISOString();
   let refreshed = 0;
-  let errors = 0;
+  let fetchErrors = 0;
+  let writeErrors = 0;
   let pending: D1PreparedStatement[] = [];
+  let pendingAttempts: D1PreparedStatement[] = [];
 
   // Commit the queued chunk. Clear `pending` before awaiting so a failed batch
-  // isn't re-submitted (and grown) on the next chunk boundary, count titles
-  // only once the write commits, and swallow the failure so one bad chunk
-  // neither aborts the run nor propagates out of the final flush.
+  // isn't re-submitted (and grown) on the next chunk boundary, count the rows
+  // the batch actually changed rather than the statements queued, and swallow
+  // the failure so one bad chunk neither aborts the run nor propagates out of
+  // the final flush. A failed chunk writes no stamp of either kind, so its
+  // titles stay candidates and the next run retries them.
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     const batch = pending;
     pending = [];
     try {
-      await db.batch(batch);
-      refreshed += batch.length;
+      const results = await db.batch(batch);
+      refreshed += results.reduce((rows, result) => rows + (result.meta?.changes ?? 0), 0);
     } catch {
-      errors += batch.length;
+      writeErrors += batch.length;
+    }
+  };
+
+  // Commit the queued attempt stamps. These ride their own array so their
+  // changed rows never reach `refreshed`: a run where every fetch failed writes
+  // one attempt stamp per title and must still report zero refreshes.
+  const flushAttempts = async (): Promise<void> => {
+    if (pendingAttempts.length === 0) return;
+    const batch = pendingAttempts;
+    pendingAttempts = [];
+    try {
+      await db.batch(batch);
+    } catch {
+      writeErrors += batch.length;
     }
   };
 
@@ -59,13 +80,14 @@ export async function runWeeklyRefresh(
       pending.push(
         db
           .prepare(
-            "UPDATE titles SET streaming = ?, popularity = ?, vote_count = ?, vote_average = ?, last_refreshed_at = ? WHERE tmdb_id = ? AND content_type = ?"
+            "UPDATE titles SET streaming = ?, popularity = ?, vote_count = ?, vote_average = ?, last_refreshed_at = ?, last_refresh_attempt_at = ? WHERE tmdb_id = ? AND content_type = ?"
           )
           .bind(
             JSON.stringify(enrichment.streaming),
             detail.popularity,
             detail.vote_count,
             detail.vote_average,
+            now,
             now,
             row.tmdb_id,
             row.content_type
@@ -76,11 +98,34 @@ export async function runWeeklyRefresh(
         await flush();
       }
     } catch {
-      errors++;
+      fetchErrors++;
+      // Record that the title was tried. Without this it keeps satisfying the
+      // staleness predicate and re-consumes a slot on every run, starving the
+      // tail of the catalog. last_refreshed_at stays untouched because
+      // asOfNote() renders it to the user.
+      pendingAttempts.push(
+        db
+          .prepare(
+            "UPDATE titles SET last_refresh_attempt_at = ? WHERE tmdb_id = ? AND content_type = ?"
+          )
+          .bind(now, row.tmdb_id, row.content_type)
+      );
+
+      if (pendingAttempts.length >= BATCH_CHUNK_SIZE) {
+        await flushAttempts();
+      }
     }
   }
 
   await flush();
+  await flushAttempts();
 
-  log(JSON.stringify({ event: "cron_refresh", refreshed, errors }));
+  log(
+    JSON.stringify({
+      event: "cron_refresh",
+      refreshed,
+      fetch_errors: fetchErrors,
+      write_errors: writeErrors,
+    })
+  );
 }

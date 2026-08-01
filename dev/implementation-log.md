@@ -1813,3 +1813,204 @@ codebase — stays gated and shares one `onCall` counter.
 711 passed / 2 skipped, only the 3 pre-existing `vite:dynamic-import-vars` warnings. A 22-mutant
 study over `fake-d1.ts` kills 20; the survivors are the APFS-unkillable `.sort()` and one malformed
 no-op mutant.
+---
+
+## G4 — cron and worker (2026-08-01)
+
+Group G4 of the Phase 1 bug-hunt remediation plan
+(`dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md` §4): B6 (weekly-refresh starvation),
+D6 (cron error attribution), and the `STALE_TITLES_LIMIT` comment correction.
+
+### G4-3 — `STALE_TITLES_LIMIT` comment and the plan-tier documentation
+
+No behavioral change, so no new test — the constant stays at 200 and the query around it is
+untouched. The old comment asserted a 1,000-subrequest Paid ceiling and told a deployer on the
+Free plan to lower the constant to ~40. Both halves were wrong, and I re-verified the replacement
+against the Cloudflare docs rather than the plan's summary of them:
+
+- The 1,000-subrequest limit was removed 2026-02-11; Workers Paid now defaults to 10,000 per
+  invocation (configurable to 10M via `limits.subrequests`).
+- Workers Free is 50 *external* subrequests plus a separate 1,000-call budget for Cloudflare
+  services. D1 calls draw on the internal budget, so the 9 D1 calls a run makes never compete with
+  its 200 TMDB fetches.
+- CPU is the real Free-plan blocker: 10 ms per cron invocation on Free against 15 min on Paid at a
+  weekly (≥ 1 hour) interval. 200 TMDB detail parses do not fit in 10 ms and neither does an
+  OpenNext SSR render, so lowering the constant buys nothing and costs the catalog-freshness goal
+  B6 exists to protect (40/week over ~1,000 titles is a 25-week sweep).
+
+`docs/deploy.md` §Plan-tier check now states Workers Paid as a prerequisite with the numbers in a
+table, and no longer carries the "drop it to ~40" advice.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` all pristine — 59 files / 627 passed /
+2 skipped, unchanged from this branch's base as expected for a comment-and-docs change. (627, not
+the plan's 615: G4 is stacked on PREP, whose `fake-d1.test.ts` adds 12 cases.)
+
+### G4-2 — D6: rows not statements, split counters, and a named cron crash line
+
+Three changes to the cron's observability, all in `src/lib/cron-handler.ts` and `worker.ts`:
+
+- `flush()` now sums `meta.changes` across the `db.batch` results instead of adding
+  `batch.length`. The old count was statements *queued*; an `UPDATE ... WHERE tmdb_id = ? AND
+  content_type = ?` that matches zero rows counted as a refresh.
+- The single `errors` counter split into `fetch_errors` (per-title TMDB failures) and
+  `write_errors` (a failed batch). One number could not distinguish a TMDB outage from a D1 write
+  failure, which is the first thing you need to know from the summary line.
+- `worker.ts` awaits `runWeeklyRefresh` inside `try/catch`, logs a `cron_failed` line, and
+  rethrows. A rejection handed to `ctx.waitUntil` still reports the invocation as *successful* to
+  Cloudflare's cron metrics; awaiting and rethrowing marks it failed. `ctx` is now unused and was
+  dropped from the signature rather than suppressed.
+
+**The row-vs-statement test needed care.** The obvious fixture — bind a mismatched `content_type`
+— cannot be built honestly: the `UPDATE` binds `row.content_type` straight from the `SELECT` that
+produced the row, so the bound value can never disagree with the stored one. The test instead
+deletes the first title's row from inside the injected `fetchImpl` while it handles the second id,
+which is the only way production code can emit a statement matching zero rows. Writing a statement
+the production code never emits would have been testing the test.
+
+`worker.ts` has no test file (it is excluded from `tsconfig.json` because it imports build-time
+OpenNext artifacts); the change was verified by reading and by `npx @opennextjs/cloudflare build`,
+which completed clean.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` (59 files / 628 passed / 2 skipped — the
+PREP-stacked base of 627 plus the one new row-counting test), and the OpenNext build.
+
+### G4-1 — B6: the weekly refresh sweeps the whole catalog and never fakes freshness
+
+`migrations/0003_title_refresh_attempt.sql` adds `titles.last_refresh_attempt_at` and backfills it
+from `last_refreshed_at`. The cron now predicates on the attempt column and orders on the success
+column:
+
+```sql
+WHERE last_refresh_attempt_at IS NULL OR last_refresh_attempt_at < <now -7 days>
+ORDER BY last_refreshed_at ASC, popularity DESC
+```
+
+SQLite sorts NULLs first on `ASC`, so never-successfully-refreshed rows lead and popularity is the
+within-run tiebreaker. The success `UPDATE` stamps both columns; the per-title failure path queues
+an attempt-only `UPDATE` on a **separate** array with its own flush, so its changed rows can never
+reach `refreshed` — a run where all 200 fetches fail must report `refreshed: 0`, not 200.
+
+`last_refreshed_at` is never written on a failure. `asOfNote()` renders it on every pick's
+streaming line, so stamping it on a failed fetch would make the UI assert a freshness that never
+happened.
+
+**What each new test actually discriminates.** Reverting only the query (predicate and ORDER BY)
+fails four of them: the predicate test, the week-elapsed sweep, the permanently-failing-title test,
+and the composite-ordering test. Two are guards that pass either way and are named to claim nothing
+more — the no-time-elapsed forward-progress test (with every fetch succeeding, a predicate on
+`last_refreshed_at` advances too) and the attempt-stamps-never-inflate-`refreshed` test (the
+unfixed code wrote no attempt stamps at all, so its counters happen to agree).
+
+Mechanism B — a week's jitter re-qualifying the whole popularity head — *is* provable here, and the
+first version of this work wrongly recorded that it was not. The fake D1's clock is SQLite's own
+`now` and cannot be moved, but rewinding the stored timestamps by 8 days is equivalent for a
+predicate and an ORDER BY that only ever compare stored values against `now`. `rewindOneWeek()` does
+that, and against the unfixed query the two runs come back identical instead of disjoint.
+
+Fixtures were rewritten to states production can actually reach: every writer of a `titles` row
+(`scripts/seed-lib.ts`, the profile-save enrichment insert, the cron's own success `UPDATE`) sets
+`last_refreshed_at`, so a NULL there is not a producible state and no fixture uses one any more
+(testing-pitfalls §7). A NULL `last_refresh_attempt_at` *is* producible — those two inserts do not
+set it — and is kept where it is the point of the test.
+
+Two write-error branches are now covered with PREP-1's `withFailingStatement`: a failed refresh
+write (`UPDATE titles SET streaming …`) and a failed attempt stamp. The second counts the title in
+both `fetch_errors` and `write_errors` — they describe different failures of the same title, and
+swallowing the write failure would hide a D1 outage on the failure path entirely. I mutation-checked
+that branch (removing the counter increment fails the test) because the test was written after the
+code it covers.
+
+`docs/deploy.md` §2 gains the `### Pending migrations — not yet applied to the remote database`
+subsection with `0003` in it. The plan assigns creation of that subsection to G1 (which lands
+`0002` and merges first); G1 was not present in the tree when this landed, so G4 created it rather
+than append a migration line under a heading marked ✅ DONE where a deployer would skip it.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` — 59 files / 637 passed / 2 skipped, still
+exactly 2 skips, no new warnings.
+
+### G4 — query-plan note for whoever next touches `titles` indexing
+
+The candidate query's plan changed. Before, `ORDER BY popularity DESC LIMIT 200` walked
+`idx_titles_popularity` and stopped early (`dev/reports/2026-08-01-performance-audit.md:456`).
+The composite `ORDER BY last_refreshed_at ASC, popularity DESC` cannot use that index, so
+`EXPLAIN QUERY PLAN` is now:
+
+```
+SCAN titles
+USE TEMP B-TREE FOR ORDER BY
+```
+
+Over a ~1,000-title catalog, once a week, that is negligible — it is not worth a covering index
+today, and the plan explicitly allocates only one migration to this group. Recorded here so a
+future catalog an order of magnitude larger has the starting point rather than a surprise.
+
+### G4 — findings from the independent review round, and what changed
+
+An adversarial review by a fresh agent with no session context found one blocker and three
+substantive issues. All are fixed above; recorded here because the blocker is the interesting one.
+
+**Blocker — the flagship forward-progress test proved nothing.** Seeding 400 titles, running twice
+with no time elapsed, and asserting disjoint windows passes against the *unfixed* query: with every
+fetch succeeding, a predicate on `last_refreshed_at` advances exactly as well as one on the attempt
+column. Its comment also claimed to model cron jitter, which a non-advancing clock does not do. The
+test is now split: one case models a real week passing (`rewindOneWeek()`) and fails against the
+unfixed query, and one keeps the immediate-rerun guard under a name that claims only that.
+
+**Two evidence lines were copied from the plan rather than observed.** The gate results recorded for
+G4-3 and G4-2 said 615 and 616 — the plan's `origin/dev` baseline. This branch is stacked on PREP,
+whose `fake-d1.test.ts` adds 12 cases, so the observed numbers were 627 and 628. Corrected. Writing
+down a number you expect rather than the one that printed defeats the point of the gate.
+
+**Fixture realism.** See the note above about NULL `last_refreshed_at`.
+
+**Two accuracy corrections to comments.** The subrequest comment said D1 calls "never compete" with
+TMDB fetches; that holds on Free, which has a separate 1,000-call internal budget, but on Paid
+internal and external subrequests share the single 10,000 limit. And `worker.ts`'s comment described
+`waitUntil`, which the file no longer contains — it now reads as a prohibition against reaching for
+it, which is the durable form of that warning.
+
+**Surfaced, not fixed:** neither `scripts/seed-lib.ts` nor the profile-save enrichment insert in
+`src/app/api/user/profile/route.ts` writes `last_refresh_attempt_at`, so a title they insert looks
+due for a refresh the moment it lands. The seeder is the one that matters: it is an
+`INSERT OR REPLACE` over the whole catalog, so a re-seed resets every attempt stamp the cron has
+written. The profile route only enriches ids its own existence check found missing, so it never
+replaces a live row. Both files belong to other groups' scope; filed as follow-up.
+
+### G4 — second review round
+
+A second independent review checked the first round's fixes and swept for what it missed. It
+confirmed `rewindOneWeek()` is sound (a uniform shift of both stored columns is order- and
+difference-preserving for a predicate and an ORDER BY that only compare stored values against
+`now`), reproduced the four-test kill on a reverted query, and re-ran each recorded gate number
+from its own commit. Three things came out of it:
+
+**The 7-day window was not tested.** Every fixture was either 2020 or an hour ago, so
+`sqliteIsoNow("-7 days")` could be changed to `-1 days` or `-30 days` with all tests still green —
+a wrong window would ship either 7× the TMDB spend or a catalog that never sweeps. There is now a
+boundary case with rows at 6 and 8 days; it fails under both of those mutations.
+
+**A false claim in this log, corrected above.** The profile route's `INSERT OR REPLACE` cannot
+overwrite a live `titles` row, because the ids it enriches are exactly the ones its own existence
+check did not find. The seeder is the writer that genuinely resets attempt stamps on every re-seed.
+
+**Residual edge, in spec but worth naming.** A permanently-failing title's attempt stamp ages out on
+the same 7-day cadence as everyone else's, so 200 or more permanently-failing titles would starve
+the sweep again — the same failure class as B6 at a higher threshold. The plan's contract ("a
+permanently-failing title consumes at most one slot per 7 days") is met; a catalog that ever
+approaches that threshold needs a different mechanism, such as backing off per consecutive failure.
+
+### G4 — final gate numbers
+
+The per-task numbers above were observed at the commits that produced them, on the PREP commit this
+branch first forked from. PREP moved on, so the branch was rebased onto its tip and everything
+re-run there:
+
+```
+npx tsc --noEmit   clean
+npm run lint       clean
+npm test           59 files / 645 passed / 2 skipped
+npx @opennextjs/cloudflare build   clean
+```
+
+645 = the PREP tip's 634 plus G4's 11 new cron cases (8 → 19 in `cron-handler.test.ts`). Still
+exactly 2 skips, still only the three baseline `vite:dynamic-import-vars` warnings.

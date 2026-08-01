@@ -48,7 +48,24 @@ three are Phase 2 tables, created empty by design.
 
 ### Pending migrations — not yet applied to the remote database
 
-The ✅ above covers `0001` only. Apply these in numeric order:
+Section 2 is marked DONE for `0001` only. Everything listed here still has to be
+applied by hand, in numeric order, before the deploy that depends on it. Add one
+bullet and one command line per new migration.
+
+- [ ] `0003_title_refresh_attempt.sql` — adds `titles.last_refresh_attempt_at`
+      and backfills it from `last_refreshed_at`. The weekly refresh selects
+      candidates on this column; until it is applied the cron's `SELECT` fails
+      on every run and no title is refreshed.
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --file=migrations/0003_title_refresh_attempt.sql
+```
+
+Verify afterwards — the two counts must match:
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --command="SELECT COUNT(*) AS total, COUNT(last_refresh_attempt_at) AS backfilled FROM titles"
+```
 
 - [ ] `0004_recommendation_indexes.sql`
 
@@ -147,11 +164,31 @@ to `dev` and `main`; deployment is manual via this command.
 
 ## Plan-tier check before the first cron run
 
+**Workers Paid is a prerequisite for this application.** Confirm the account is
+on Workers Paid before deploying — this is a pre-deploy checklist line, not a
+tuning knob.
+
 `wrangler.jsonc` registers a weekly cron (`0 9 * * 1`) that refreshes streaming
-availability. `STALE_TITLES_LIMIT` in `src/lib/cron-handler.ts` is **200**,
-which assumes the **Workers Paid** plan's CPU limits. On the Free plan the
-trigger will exceed its budget and fail every run — drop the constant to ~40
-before deploying on Free.
+availability for `STALE_TITLES_LIMIT` (200) titles per run.
+
+| Limit | Workers Free | Workers Paid |
+|---|---|---|
+| External subrequests per invocation | 50 | 10,000 |
+| Subrequests to Cloudflare services (D1) | 1,000 | matches the configured limit |
+| CPU time per cron invocation | 10 ms | 15 min (weekly interval ≥ 1 hour) |
+
+A 200-title run issues 200 external TMDB fetches — `fetchMovieDetail` folds
+keywords, credits and watch/providers into one request via `append_to_response`
+— plus 1 + `ceil(200/25)` = 9 internal D1 calls. On Free those 9 draw on the
+separate Cloudflare-services budget and never compete with the fetches; on Paid
+all 209 share the single 10,000 allowance, which is equally untroubled.
+
+Subrequests are therefore not the Free-plan blocker; **CPU is**. Parsing 200
+TMDB detail documents does not fit in 10 ms, and neither does an OpenNext SSR
+render on the HTTP side. Lowering `STALE_TITLES_LIMIT` does not make the app
+viable on Free, and at 40/week a ~1,000-title catalog takes 25 weeks to sweep,
+so `asOfNote` would stamp most picks stale indefinitely. Leave it at 200 and
+deploy on Paid.
 
 ## Post-deploy verification
 
