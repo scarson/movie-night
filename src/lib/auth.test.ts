@@ -33,6 +33,13 @@ function seedSession(
     .run();
 }
 
+/** The refresh token a Set-Cookie header just handed the client. */
+function refreshTokenFrom(headers: Headers): string {
+  const cookie = headers.getSetCookie().find((c) => c.startsWith("mn-refresh="));
+  if (!cookie) throw new Error("no mn-refresh cookie was set");
+  return cookie.slice("mn-refresh=".length).split(";")[0];
+}
+
 function sessionRows(db: D1Database, userId: string) {
   return db
     .prepare("SELECT token_hash, rotated_at, expires_at FROM sessions WHERE user_id = ? ORDER BY token_hash")
@@ -630,6 +637,62 @@ describe("authenticateRequest", () => {
     expect(result.headers.has("Set-Cookie")).toBe(false);
 
     vi.useRealTimers();
+  });
+
+  it("removes a spent session row once a later rotation leaves its grace window behind", async () => {
+    // Rotation now accumulates rows — the replacement, plus the spent one kept
+    // alive for its grace window — so something has to remove them
+    // (testing-pitfalls §4, cleanup and eviction).
+    const { authenticateRequest, sha256 } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    await seedUser(db);
+
+    vi.useFakeTimers();
+    const refreshToken = "valid-refresh-token";
+    const tokenHash = await sha256(refreshToken);
+    await seedSession(db, { tokenHash, userId: "u1" });
+
+    const first = await authenticateRequest(makeRequest({ "mn-refresh": refreshToken }), db, secret);
+    const second = refreshTokenFrom(first.headers);
+
+    vi.advanceTimersByTime(31_000); // the first rotation is now out of grace
+    const third = refreshTokenFrom(
+      (await authenticateRequest(makeRequest({ "mn-refresh": second }), db, secret)).headers
+    );
+
+    // Only the row spent a moment ago and its replacement: the seeded token's
+    // row is gone, not merely outnumbered.
+    const { results } = await sessionRows(db, "u1");
+    expect(results.map((row) => row.token_hash)).toEqual(
+      [await sha256(second), await sha256(third)].sort()
+    );
+    expect(results.map((row) => row.token_hash)).not.toContain(tokenHash);
+
+    vi.useRealTimers();
+  });
+
+  it("completes the rotation when pruning spent rows fails", async () => {
+    // The prune is deliberately outside the claim batch: tidying up is not worth
+    // rolling a rotation back for.
+    const { authenticateRequest, sha256 } = await import("./auth");
+    const raw = createFakeD1(loadMigration());
+    await seedUser(raw);
+
+    const refreshToken = "valid-refresh-token";
+    const tokenHash = await sha256(refreshToken);
+    await seedSession(raw, { tokenHash, userId: "u1" });
+
+    const db = withFailingStatement(raw, { match: "DELETE FROM sessions WHERE user_id" });
+
+    const result = await authenticateRequest(makeRequest({ "mn-refresh": refreshToken }), db, secret);
+
+    expect(injectedFailureCount(db)).toBe(1);
+    expect(result.user).toEqual({ userId: "u1", email: "a@b.com" });
+    expect(result.headers.getSetCookie().length).toBe(2);
+
+    const { results } = await sessionRows(raw, "u1");
+    expect(results.length).toBe(2);
+    expect(results.filter((row) => row.rotated_at === null).length).toBe(1);
   });
 
   it("leaves the original session usable when the replacement insert fails", async () => {
