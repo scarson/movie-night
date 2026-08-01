@@ -170,7 +170,9 @@ export async function getSessionForMember(
     .prepare(
       `SELECT ms.id, ms.group_id, ms.mood_vibes, ms.mood_text, ms.discover_new, ms.is_quick_match,
               ms.created_at, sm.rough_day,
-              (SELECT COUNT(*) FROM session_members WHERE session_id = ms.id) as member_count
+              (SELECT COUNT(*) FROM session_members sm2
+               JOIN users u2 ON u2.id = sm2.user_id
+               WHERE sm2.session_id = ms.id) as member_count
        FROM movie_sessions ms
        JOIN session_members sm ON sm.session_id = ms.id AND sm.user_id = ?
        WHERE ms.id = ?`
@@ -199,6 +201,9 @@ export async function getSessionForMember(
     // Solo is a property of the session's membership, not the group's name —
     // matching the client (members.length < 2) and CLAUDE.md. A single-member
     // regular group is solo too, so the prompt never seeks overlap for one.
+    // member_count joins users for the same reason getSessionMembersWithProfiles
+    // does: a member who deleted their account leaves an anonymized
+    // session_members row behind but never reaches the model.
     solo: row.member_count < 2,
     createdAt: row.created_at,
     roughDay: row.rough_day === 1,

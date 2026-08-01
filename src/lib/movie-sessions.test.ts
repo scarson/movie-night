@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { SOLO_GROUP_NAME } from "@/lib/groups";
+import { deleteAccount } from "@/lib/account";
 import {
   createSoloGroup,
   createMovieSession,
@@ -396,6 +397,26 @@ describe("getSessionForMember (rough-day privacy)", () => {
 
     const view = await getSessionForMember(db, sessionId, "u1");
     expect(view?.solo).toBe(false);
+  });
+
+  it("reports solo once the session's other member has deleted their account", async () => {
+    // deleteAccount anonymizes session_members rather than deleting the row, so
+    // a raw COUNT(*) still counts the departed member while the prompt does not.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedUser(db, "u2", "Alex");
+    await seedGroupWithMembers(db, "grp2", ["u1", "u2"]);
+    const sessionId = await newSession(db, { groupId: "grp2" });
+
+    await deleteAccount(db, "u2", () => {});
+
+    const view = await getSessionForMember(db, sessionId, "u1");
+    const members = await getSessionMembersWithProfiles(db, sessionId);
+    // Asserting the two against each other is the point: the bug was that the
+    // view said "not solo" while exactly one member reached the model.
+    expect(view?.solo).toBe(members.length < 2);
+    expect(view?.solo).toBe(true);
+    expect(members).toHaveLength(1);
   });
 });
 
