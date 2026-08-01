@@ -119,8 +119,9 @@ describe("1.4.10 Reflow — the member list", () => {
   });
 
   it("keeps the group name unclipped above it", () => {
-    // The name was never truncated and must stay that way.
+    // The name identifies the row being chosen, so it must stay whole — fixing
+    // the member line below it must not be paid for by clipping this.
     render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
-    expect(screen.getByText("Sunday Nights").className).not.toContain("truncate");
+    expect(clippingUtilities(screen.getByText("Sunday Nights"))).toEqual([]);
   });
 });
