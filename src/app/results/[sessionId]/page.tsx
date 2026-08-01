@@ -228,6 +228,11 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   const regenerate = () =>
     void runRound({ keptTmdbIds, removedTmdbIds, steeringFeedback: steering.trim() });
 
+  // Membership is only observable from a refusal — the read path still serves an
+  // ex-member — so it is derived here rather than fetched, and gates every control
+  // that posts to the match route. The no-round branch below has one of its own.
+  const leftGroup = refineError?.kind === "left_group";
+
   if (busy) {
     return (
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
@@ -263,6 +268,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         )}
         <button
           type="button"
+          disabled={leftGroup}
           onClick={() => void runRound({ keptTmdbIds: [], removedTmdbIds: [], steeringFeedback: "" })}
           className={`${primaryButtonClasses} mt-xl w-full sm:w-auto`}
         >
@@ -408,6 +414,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
         onRegenerate={regenerate}
         onStartOver={() => router.push("/tonight")}
         exhausted={exhausted}
+        leftGroup={leftGroup}
       />
     </main>
   );
