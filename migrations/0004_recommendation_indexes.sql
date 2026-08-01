@@ -16,6 +16,9 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_created_at ON recommendations(cre
 DROP INDEX IF EXISTS idx_recommendations_session;
 CREATE INDEX IF NOT EXISTS idx_recommendations_session_round ON recommendations(session_id, round_number DESC);
 
--- movie_sessions is never selected by group_id, and no Phase 1 code path deletes
--- a groups row, so this index serves no read and no cascade.
+-- movie_sessions is never selected by group_id, and no code path deletes a groups
+-- row, so this index serves no read and no cascade — it only costs write
+-- amplification on every session insert. Anyone adding a DELETE FROM groups must
+-- restore it (rollback SQL above): the ON DELETE CASCADE from groups would
+-- otherwise full-scan movie_sessions.
 DROP INDEX IF EXISTS idx_movie_sessions_group;

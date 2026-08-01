@@ -535,12 +535,15 @@ describe("recommendation indexes", () => {
   // top of it explicitly here. Every statement in that file is IF [NOT] EXISTS,
   // so applying it a second time is a no-op and this stays correct whatever
   // loadMigration() reads.
-  function schemaWithIndexes(): string {
-    const indexes = readFileSync(
+  function indexMigration(): string {
+    return readFileSync(
       join(process.cwd(), "migrations/0004_recommendation_indexes.sql"),
       "utf-8"
     );
-    return `${loadMigration()}\n${indexes}`;
+  }
+
+  function schemaWithIndexes(): string {
+    return `${loadMigration()}\n${indexMigration()}`;
   }
 
   async function indexNames(db: D1Database): Promise<string[]> {
@@ -563,14 +566,13 @@ describe("recommendation indexes", () => {
   });
 
   it("re-applying the migration is a no-op rather than an error", async () => {
-    const sql = schemaWithIndexes();
-    const indexes = readFileSync(
-      join(process.cwd(), "migrations/0004_recommendation_indexes.sql"),
-      "utf-8"
-    );
-    const names = await indexNames(createFakeD1(`${sql}\n${indexes}`));
+    const names = await indexNames(createFakeD1(`${schemaWithIndexes()}\n${indexMigration()}`));
     expect(names).toContain("idx_recommendations_created_at");
     expect(names).toContain("idx_recommendations_session_round");
+    // The half a botched second run would break: the drops must stay dropped,
+    // not be resurrected by the initial schema being replayed alongside them.
+    expect(names).not.toContain("idx_recommendations_session");
+    expect(names).not.toContain("idx_movie_sessions_group");
   });
 
   // A DROP INDEX must not be able to change an answer. These two read through
@@ -591,7 +593,12 @@ describe("recommendation indexes", () => {
     expect(await getRoundNumber(db, otherSession)).toBe(2);
   });
 
-  it("the latest-round lookup still returns the highest round of that session", async () => {
+  // This copies the results route's query rather than calling it (the route needs
+  // a full authenticated request, and src/app/api/movie-sessions/[id]/route.ts is
+  // another group's file). It therefore proves the *query shape* still resolves
+  // against the replaced index — not that the route does. If that route's query
+  // changes, this copy must change with it or it stops covering anything.
+  it("the latest-round query shape still selects the highest round of that session", async () => {
     const db = createFakeD1(schemaWithIndexes());
     await seedUser(db, "u1", "Sam");
     await seedGroupWithMembers(db, "grp1", ["u1"]);

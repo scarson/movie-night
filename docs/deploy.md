@@ -55,8 +55,7 @@ npx wrangler d1 execute movie-night-db --remote --file=migrations/0004_recommend
 ```
 
 `0004` is index-only and every statement is `IF [NOT] EXISTS`, so re-applying it
-is a no-op. It contains the only two irreversible statements pending. To roll
-back:
+is a no-op. Its two `DROP INDEX`es are irreversible; to roll them back:
 
 ```sql
 CREATE INDEX idx_recommendations_session ON recommendations(session_id);

@@ -31,9 +31,9 @@ describe("RootLayout", () => {
   });
 
   it("preconnects to the poster origin in the no-CORS mode the posters use", () => {
-    const link = markup.match(/<link[^>]*rel="preconnect"[^>]*>/);
+    const link = markup.match(/<link[^>]*href="https:\/\/image\.tmdb\.org"[^>]*>/);
     expect(link).not.toBeNull();
-    expect(link![0]).toContain('href="https://image.tmdb.org"');
+    expect(link![0]).toContain('rel="preconnect"');
     // image.tmdb.org serves no Access-Control-Allow-Origin and Poster renders a
     // bare <img src>, so the posters are no-CORS requests. Browsers pool CORS
     // and no-CORS connections separately, so a crossorigin preconnect here would
