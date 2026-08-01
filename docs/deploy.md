@@ -148,13 +148,15 @@ Run these against the live site in order; each depends on the previous:
    account, join, then run a two-person match and confirm the taste map names
    both people.
 7. `curl -I https://<host>/_next/static/chunks/<any-hashed-chunk>.js` and confirm
-   `Cache-Control: public, max-age=31536000, immutable`. `public/_headers`
-   sets this so content-hashed assets stop being revalidated on every repeat
-   visit, but the `max-age=0, must-revalidate` default it corrects was only ever
-   observed under `wrangler dev` — this is the step that confirms it in
-   production. If production was already sending `immutable` before
-   `public/_headers` existed, the finding evaporates and the file can be
-   removed. Record which it was.
+   `Cache-Control: public, max-age=31536000, immutable`. `public/_headers` sets
+   this so content-hashed assets stop being revalidated on every repeat visit.
+   The rule is confirmed to parse and apply under `wrangler dev` (the chunk and
+   the woff2 both flip to `immutable`, the HTML keeps its `s-maxage=31536000`),
+   so a miss here means a platform difference, not a syntax error. What is
+   **not** confirmed is production's *default*: the `max-age=0, must-revalidate`
+   this corrects was only ever observed under `wrangler dev`. If production was
+   already sending `immutable` before `public/_headers` existed, the finding
+   evaporates and the file can be removed. Record which it was.
 
 ## Known deferrals
 
