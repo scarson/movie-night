@@ -210,18 +210,20 @@ npm run dev             # Next.js dev server (Turbopack)
 npm run build           # Production build (next build)
 npm test                # Run tests (vitest run)
 npm run test:watch      # Watch mode tests
-npm run lint            # ESLint (next lint)
+npm run lint            # ESLint (eslint .)
 npx tsc --noEmit        # Type-check (excludes worker.ts — see tsconfig)
 npm run preview         # OpenNext build + wrangler dev (local CF preview)
 npm run deploy          # OpenNext build + wrangler deploy
-npm run seed:local      # Seed titles catalog from TMDB into local D1
+npm run migrate:local   # Apply migrations/0001_initial_schema.sql to local D1
+npm run seed:local      # Seed titles catalog from TMDB into local D1 (tsx scripts/seed.ts --local)
 ```
 
 ### Cloudflare Wrangler / D1
 
 ```bash
-npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql  # Apply migration locally
-npx wrangler d1 execute movie-night-db --local --command="SELECT * FROM table"            # Query local D1
+npm run migrate:local                                                                     # Apply the schema to local D1
+npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql  # Same command, spelled out
+npx wrangler d1 execute movie-night-db --local --command="SELECT * FROM titles LIMIT 5"   # Query local D1
 ```
 
 ## Cloudflare Platform Questions
@@ -241,34 +243,35 @@ In QA mode, flag any code that doesn't match DESIGN.md.
 
 | Layer | Choice |
 |-------|--------|
-| Framework | Next.js 15 (App Router) |
-| UI | React 19 |
-| Language | TypeScript 5 (strict) |
+| Framework | Next.js 16 (App Router) |
+| UI | React 19, Tailwind CSS 4 (`@tailwindcss/postcss`) |
+| Language | TypeScript 6 (strict) |
 | Hosting | Cloudflare Workers (via OpenNext) |
-| Database | Cloudflare D1 (SQLite) |
-| KV Store | Cloudflare Workers KV |
-| Scheduling | Cron Triggers → Worker `scheduled()` handler |
-| Testing | Vitest 4 |
-| Linting | ESLint 9 (next/core-web-vitals) |
+| Database | Cloudflare D1 (SQLite), binding `DB` |
+| Scheduling | Cron Triggers → Worker `scheduled()` handler (weekly) |
+| AI | `@anthropic-ai/sdk` — matching engine, model `claude-sonnet-5` |
+| External data | TMDB API v3 (catalog seed, title search, weekly refresh) |
+| Testing | Vitest 4 (node env; component tests opt into jsdom per-file) |
+| Linting | ESLint 9 (flat config: `eslint-config-next` + `react/no-danger`) |
 | Auth | `arctic` (OAuth), `jose` (JWT) |
-| Deploy | GitHub Actions → OpenNext build → wrangler deploy |
+| Deploy | Manual `npm run deploy` (OpenNext build → wrangler deploy). CI does not deploy — see `docs/deploy.md` |
 
 ## Architecture (Key Points)
 
-**Data model** — tables in D1 (see `migrations/0001_initial_schema.sql`): `users`, `profiles`, `groups`, `group_members`, `movie_sessions`, `session_members`, `recommendations`, `titles`, plus Phase 2 tables created empty (`watch_history`, `watch_ratings`, `tension_axes`). Groups are the unit of matching — a couple is a group of 2, solo mode is a group of 1.
+**Data model** — 13 tables in D1, all from the single migration `migrations/0001_initial_schema.sql`: `users`, `sessions` (refresh-token hashes), `profiles`, `groups`, `group_members`, `movie_sessions`, `session_members`, `recommendations`, `titles`, `rate_limit_log`, plus Phase 2 tables created empty (`watch_history`, `watch_ratings`, `tension_axes`). Groups are the unit of matching — a couple is a group of 2, solo mode is a group of 1.
 
-**Matching engine** — `src/lib/matching.ts`: `buildMatchingPrompt()` (initial/refinement modes, solo detected from member count) → Claude API → `parseMatchingResponse()` (JSON schema validation, `tmdb_id` resolution against D1). Rate-limited to 10 rounds/session via `round_number` in `recommendations`. Structured JSON logging on every call.
+**Matching engine** — `src/lib/matching.ts`: `selectCandidates()` (deterministic candidate pull from `titles`) → `buildMatchingPrompt()` (initial/refinement modes, member-generic so solo falls out of member count) → `callClaude()` via `@anthropic-ai/sdk` → `parseMatchingResponse()` (JSON schema validation, `tmdb_id` resolution against the candidate set); `runMatching()` ties them together. Structured JSON logging on every call. Two limits, both enforced in `src/app/api/movie-sessions/[id]/match/route.ts`: 10 rounds per session (`MAX_ROUNDS_PER_SESSION`, counted via `round_number` in `recommendations`) and a monthly account-wide cap (`MONTHLY_MATCH_LIMIT`, default 2000).
 
-**Worker entry** — `worker.ts` wraps OpenNext for HTTP + adds `scheduled()` for cron. Excluded from `tsconfig.json` because it imports build-time OpenNext artifacts.
+**Worker entry** — `worker.ts` wraps OpenNext for HTTP + adds `scheduled()`, which hands off to `runWeeklyRefresh()`. Excluded from `tsconfig.json` because it imports build-time OpenNext artifacts.
 
-**Cron** — `src/lib/cron-handler.ts` runs weekly, refreshes streaming availability on `titles` from TMDB Watch Providers and updates `last_refreshed_at`.
+**Cron** — `src/lib/cron-handler.ts` (`runWeeklyRefresh`) runs on `0 9 * * 1` (Mondays 09:00 UTC, set in `wrangler.jsonc`). It takes the 200 most popular `titles` rows whose `last_refreshed_at` is null or older than 7 days, refetches each from TMDB (`append_to_response=keywords,credits,watch/providers`), and writes back streaming availability, popularity, vote count/average and `last_refreshed_at` in batches of 25. A failed batch is counted and skipped, never retried.
 
 ## Conventions
 
 - Path alias: `@/` → `src/` (configured in tsconfig + vitest)
 - D1 types (`D1Database`, etc.) are ambient globals from `@cloudflare/workers-types`
-- Cloudflare env bindings and secret bindings (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET`) declared in `env.d.ts`
-- Tests live alongside source: `src/**/*.test.ts`
+- Cloudflare bindings and secrets are declared on `CloudflareEnv` in `env.d.ts`: `DB`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET`, `ANTHROPIC_API_KEY`, `TMDB_API_TOKEN`, and optional `MONTHLY_MATCH_LIMIT`
+- Tests live alongside source — vitest collects `src/**/*.test.{ts,tsx}` and `scripts/**/*.test.ts`. The default environment is node; component tests opt in with a `// @vitest-environment jsdom` docblock
 - Tag vocabulary (mood + genre tags shared by profiles and session mood): `src/config/tags.ts`
 
 ### Gotchas
@@ -302,7 +305,7 @@ When suppression is necessary, prefer **inline `// eslint-disable-next-line rule
 
 **Update `dev/implementation-log.md` after each commit** — record what was built, key implementation decisions, gotchas discovered, and quality check results. This is the primary mechanism for preserving context across compacted sessions.
 
-**CI runs parallel jobs**: type-check (`npx tsc --noEmit`), lint (`npm run lint`), test (`npm test`), build (`npx @opennextjs/cloudflare build`). Runs on pushes to `dev` and `main` and PRs targeting either.
+**CI runs parallel jobs**: type-check (`npx tsc --noEmit`), lint (`npm run lint`), test (`npm test`), build (`npx @opennextjs/cloudflare build`). Runs on pushes to `dev` and `main` and PRs targeting either. Docs-only changes are skipped by `paths-ignore` (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) — a PR touching only those will show no CI runs, which is expected, not a failure.
 
 ## Project Layout
 
@@ -320,13 +323,14 @@ src/
     profile/ privacy/
   components/        # React components per DESIGN.md
   config/            # tags.ts (mood + genre tag vocabulary)
-  hooks/             # React hooks
+  hooks/             # React hooks (use-auth)
   lib/               # Core logic: auth, db, matching, tmdb, groups, movie-sessions,
                      # account, cron-handler, session-flow, reduced-motion
-  test/              # Test helpers (fake-d1) + fixtures
-  types/             # TypeScript interfaces (matching response, D1 row types, auth)
-migrations/          # D1 SQL migrations
-scripts/             # TMDB seed script
+  test/              # Test helpers (fake-d1, contrast) + TMDB fixtures
+  types/             # TypeScript interfaces (db.ts — D1 row types incl. auth sessions;
+                     # matching.ts — matching request/response shapes)
+migrations/          # D1 SQL migrations (0001_initial_schema.sql)
+scripts/             # TMDB seed script (seed.ts + seed-lib.ts)
 worker.ts            # Cloudflare Worker entry (HTTP via OpenNext + cron scheduled())
 wrangler.jsonc       # Cloudflare config (D1 binding, cron triggers, observability)
 ```

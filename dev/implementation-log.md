@@ -1012,3 +1012,32 @@ chip grid, results tablist and taste map — the densest layouts in the app, and
 likely to overflow at 320px — were never on screen. Finishing it needs a signed-in session under
 `npm run preview` or the deployed app, which is the same blocker the screen-reader pass has;
 the doc now says so in one place.
+
+## CLAUDE.md / AGENTS.md audited against the codebase (2026-08-01)
+
+Line-by-line audit of every factual claim in the agent-guidance files, each one checked against the
+tree rather than against memory. The seeded-from-another-project boilerplate was already largely
+gone; what remained were claims that had drifted as the stack moved.
+
+**Two claims were actively wrong in a way that could mislead.** The Tech Stack table listed
+Cloudflare Workers KV — there is no `kv_namespaces` block in `wrangler.jsonc` and no `KVNamespace`
+reference anywhere in `src/`, so the row invited a binding that does not exist. And Deploy claimed
+"GitHub Actions → OpenNext build → wrangler deploy"; `.github/workflows/` contains only `ci.yml`,
+which has no deploy job. Deployment is the manual `npm run deploy` documented in `docs/deploy.md`.
+
+**The rest was drift.** Framework/language versions lagged two majors (`next ^16.2.10`,
+`typescript ^6.0.3`); `npm run lint` is `eslint .` under a flat config, not `next lint`; the env
+binding list named three of seven `CloudflareEnv` members, omitting `DB`, `ANTHROPIC_API_KEY`,
+`TMDB_API_TOKEN` and `MONTHLY_MATCH_LIMIT`; the data model listed 11 of the migration's 13 tables,
+missing `sessions` and `rate_limit_log`; the test glob omitted `.tsx` and `scripts/`; and the cron
+paragraph described only half of what `runWeeklyRefresh` does, with no schedule attached to
+"runs weekly" (it is `0 9 * * 1`, top-200-by-popularity, batches of 25).
+
+The two limits on matching now say where they live — both are enforced in the match route, not in
+`matching.ts`, which is where you would look first and not find them.
+
+`AGENTS.md` was regenerated from the corrected `CLAUDE.md` through the seven known
+framework-phrasing substitutions, so the sibling-sync invariant is mechanical rather than manual.
+
+Docs-only: CI's `paths-ignore` covers `**/*.md`, so no jobs run for this change. That fact is now
+written into the CI paragraph, since "no checks" on a docs PR reads as a failure otherwise.
