@@ -1916,3 +1916,19 @@ than append a migration line under a heading marked ✅ DONE where a deployer wo
 
 Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` — 59 files / 636 passed / 2 skipped, still
 exactly 2 skips, no new warnings.
+
+### G4 — query-plan note for whoever next touches `titles` indexing
+
+The candidate query's plan changed. Before, `ORDER BY popularity DESC LIMIT 200` walked
+`idx_titles_popularity` and stopped early (`dev/reports/2026-08-01-performance-audit.md:456`).
+The composite `ORDER BY last_refreshed_at ASC, popularity DESC` cannot use that index, so
+`EXPLAIN QUERY PLAN` is now:
+
+```
+SCAN titles
+USE TEMP B-TREE FOR ORDER BY
+```
+
+Over a ~1,000-title catalog, once a week, that is negligible — it is not worth a covering index
+today, and the plan explicitly allocates only one migration to this group. Recorded here so a
+future catalog an order of magnitude larger has the starting point rather than a surprise.
