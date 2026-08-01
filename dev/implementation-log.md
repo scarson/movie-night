@@ -2435,4 +2435,56 @@ look self-evidently right (testing-pitfalls §4, truncation direction).
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 848 passed
 / 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
-`npx @opennextjs/cloudflare build` clean.
+## Poster `srcset` + `sizes` (branch `claude/poster-srcset`)
+
+`Poster` requested a single fixed TMDB width — `w342` for the picks list, `w92` for the
+title-search thumbnail — regardless of device pixel ratio. It now emits the TMDB poster ladder as
+`srcset` (`w92, w154, w185, w342, w500`, each with a `w` descriptor) plus a `sizes` string
+describing the box.
+
+**Layout evidence, read out of the compiled stylesheet (`.open-next/assets/_next/static/chunks/*.css`),
+not inferred.** `sm` compiles to `@media (min-width:40rem)`; the picks-list row compiles to
+`grid-template-columns:minmax(0,14rem) 1fr` with `.sm\:grid-cols-\[13rem_1fr\]` →
+`grid-template-columns:13rem 1fr`; `--spacing:.25rem`, so the title-search `w-8` span is exactly
+`2rem`. So the poster column is at most 14rem below 40rem and exactly 13rem above it, and the
+thumbnail is 2rem. `sizes` is written in the same units the grid uses (`rem`, and `40rem` rather
+than `640px`) so the two cannot drift if the root font size changes.
+
+- default `sizes="(min-width: 40rem) 13rem, 14rem"` — the picks-list card
+- `TitleSearch` passes `sizes="2rem"` — one line, the only call-site change, and it is required:
+  left on the default the browser would fetch a poster-sized variant for a 32px thumbnail.
+
+**The ladder stops at w500 deliberately.** Real `Content-Length` from `image.tmdb.org`: w92 6.2 KB,
+w154 14.1 KB, w185 15.7 KB, w342 44.7 KB, w500 87.1 KB, w780 162.6 KB. w780 would only ever be
+selected by a phone at DPR 3, which is 163 KB for a 224px box against 87 KB at w500 for 2.2×
+density.
+
+**Honest accounting: this costs bytes on retina, it does not save them.** The audit
+(`dev/reports/2026-08-01-performance-audit.md` §6.3) predicted "roughly halving poster bytes on
+DPR-1 desktop". That does not survive contact with the actual column: the box is 208 CSS px, and
+the smallest candidate covering 208 device px is `w342` — `w185` would be upscaled. So DPR-1 keeps
+`w342` and saves nothing, while DPR-2 moves `w342 → w500`, about +42 KB per poster, ~+250 KB across
+a six-pick list. What the change actually buys is correctness of resolution: today a DPR-2 phone
+renders `w342` into a 224px box at 1.53 device-px per CSS px. Title search is unchanged in practice
+(`w92` at DPR 1–2, `w154` at DPR 3). Anyone who wants the bytes back should cap the ladder at
+`w342`, which reduces this to a no-op for the picks list.
+
+**Verification.** The attributes are asserted in jsdom and are correct by construction; **actual
+variant selection is not verified in a browser.** jsdom has no layout and never evaluates `sizes`,
+and every `Poster` call site is behind auth (`/results/[sessionId]`, `/profile`, `/ritual`), so a
+real render would need a seeded, authenticated session. Not claimed as measured.
+
+Preserved unchanged: the first-pick `priority` (eager + `fetchpriority=high`) and the comment
+explaining it is *not* an LCP fix; unconditional `decoding="async"`; the no-poster `<div>` fallback,
+which now also asserts it emits no `srcset`/`sizes`; and the `crossOrigin`-less `preconnect` in
+`src/app/layout.tsx` — posters are no-CORS `<img src>` requests and TMDB's CDN sends no
+`Access-Control-Allow-Origin`, so a CORS-mode preconnect would warm an unusable socket.
+
+**Tests.** Four new, all confirmed failing first with `expected null to be …` — the attributes did
+not exist. Two in `poster.test.tsx` pin the exact `srcset` string and the default `sizes`, one pins
+a caller-supplied `sizes`, and one in `title-search.test.tsx` pins the thumbnail's `2rem`.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 852 passed
+/ 2 skipped, only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean. Rebased onto `dev` @ d99cf7c and all four re-run there;
+against the a60483f the work started from, the counts were 61 / 840 / 2 (baseline 836, +4 new).
