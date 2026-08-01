@@ -167,6 +167,56 @@ describe("profile settings", () => {
     expect(screen.queryByText(/^Saved$/)).toBeNull();
   });
 
+  it("names a title the save could not add, and offers the remedy for it", async () => {
+    stubApi({
+      put: {
+        status: 200,
+        body: {
+          profile: { ...SAVED, comfortTitles: [] },
+          skippedTitles: [{ tmdbId: 27205, reason: "not-found" }],
+        },
+      },
+    });
+    await renderProfile();
+
+    await screen.findByRole("heading", { name: /comfort films/i });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+
+    const notice = screen.getByText(/^Saved\./);
+    expect(notice.getAttribute("aria-live")).toBe("polite");
+    expect(notice.textContent).toContain("Inception");
+    expect(notice.textContent).toContain("isn't in TMDB anymore");
+    expect(notice.textContent).toContain("pick something else instead");
+    // The save landed. A bare "Saved" alongside would be the half of the story
+    // that isn't news, and two polite regions would talk over each other.
+    expect(screen.queryByText(/^Saved$/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("drops the skipped-title notice once the profile is edited again", async () => {
+    stubApi({
+      put: {
+        status: 200,
+        body: {
+          profile: { ...SAVED, comfortTitles: [] },
+          skippedTitles: [{ tmdbId: 27205, reason: "not-found" }],
+        },
+      },
+    });
+    await renderProfile();
+
+    await screen.findByRole("heading", { name: /comfort films/i });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(screen.getByText(/^Saved\./)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hulu" }));
+    expect(screen.queryByText(/^Saved\./)).toBeNull();
+  });
+
   it("surfaces a failed save instead of implying it worked", async () => {
     stubApi({ put: { status: 500, body: { error: "Failed to save profile" } } });
     await renderProfile();

@@ -4,6 +4,7 @@ import type { ProfileDraft } from "@/components/profile-editor";
 import type { TitleRef } from "@/components/title-search";
 import type { SessionView, TitleSummary } from "@/lib/movie-sessions";
 import type { MatchingResponse } from "@/types/matching";
+import type { SkippedTitle } from "@/types/profile";
 
 export interface Member {
   userId: string;
@@ -110,15 +111,77 @@ export async function fetchGroup(groupId: string): Promise<GroupSummary | null> 
   return { name: body.group.name, members: body.group.members };
 }
 
-export async function saveProfile(draft: ProfileDraft): Promise<string | null> {
-  const { error } = await send("/api/user/profile", "PUT", {
-    comfortTitles: draft.comfortTitles.map((t) => t.tmdbId),
-    watchlist: draft.watchlist.map((t) => t.tmdbId),
-    vibes: draft.vibes,
-    dealbreakers: draft.dealbreakers,
-    streamingServices: draft.streamingServices,
-  });
-  return error;
+/** How many titles a skipped-title notice names before it counts the rest. */
+const SKIPPED_NAMES_SHOWN = 3;
+
+function nameList(names: string[]): string {
+  const shown = names.slice(0, SKIPPED_NAMES_SHOWN);
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  if (shown.length === 1) return shown[0];
+  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
+
+/**
+ * Phrases what a save could not add, or null when the whole edit landed. The
+ * two reasons need different remedies — a title TMDB has dropped will never
+ * save, one it couldn't answer for probably will — so they get a clause each.
+ */
+function skippedNotice(skipped: SkippedTitle[], draft: ProfileDraft): string | null {
+  if (skipped.length === 0) return null;
+
+  const byId = new Map(
+    [...draft.comfortTitles, ...draft.watchlist].map((title) => [title.tmdbId, title.title])
+  );
+  const named = (reason: SkippedTitle["reason"]) =>
+    skipped
+      .filter((title) => title.reason === reason)
+      .map((title) => byId.get(title.tmdbId) ?? `#${title.tmdbId}`);
+
+  const gone = named("not-found");
+  const unreachable = named("unavailable");
+  const clauses: string[] = [];
+  if (gone.length > 0) {
+    clauses.push(
+      gone.length === 1
+        ? `${nameList(gone)} isn't in TMDB anymore, so it wasn't added — pick something else instead.`
+        : `${nameList(gone)} aren't in TMDB anymore, so they weren't added — pick something else instead.`
+    );
+  }
+  if (unreachable.length > 0) {
+    clauses.push(
+      unreachable.length === 1
+        ? `We couldn't reach TMDB for ${nameList(unreachable)}, so it wasn't added — try again in a little while.`
+        : `We couldn't reach TMDB for ${nameList(unreachable)}, so they weren't added — try again in a little while.`
+    );
+  }
+  return `Saved. ${clauses.join(" ")}`;
+}
+
+export interface ProfileSaveResult {
+  /** The server's user-facing error, or null when the save landed. */
+  error: string | null;
+  /**
+   * Titles the save could not add, already phrased. A save can land and still
+   * carry one of these, so it is not an alternative to `error`.
+   */
+  notice: string | null;
+}
+
+export async function saveProfile(draft: ProfileDraft): Promise<ProfileSaveResult> {
+  const { data, error } = await send<{ skippedTitles?: SkippedTitle[] }>(
+    "/api/user/profile",
+    "PUT",
+    {
+      comfortTitles: draft.comfortTitles.map((t) => t.tmdbId),
+      watchlist: draft.watchlist.map((t) => t.tmdbId),
+      vibes: draft.vibes,
+      dealbreakers: draft.dealbreakers,
+      streamingServices: draft.streamingServices,
+    }
+  );
+  if (error !== null) return { error, notice: null };
+  return { error: null, notice: skippedNotice(data?.skippedTitles ?? [], draft) };
 }
 
 export interface StartSessionArgs {

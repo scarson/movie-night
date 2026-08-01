@@ -38,6 +38,7 @@ function Ritual() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<string | null>(null);
 
   const [moodVibes, setMoodVibes] = useState<string[]>([]);
   const [moodText, setMoodText] = useState("");
@@ -129,12 +130,16 @@ function Ritual() {
     if (step === 0) {
       setSaving(true);
       setSaveError(null);
-      const error = await saveProfile(draft);
+      setSkipped(null);
+      const { error, notice } = await saveProfile(draft);
       setSaving(false);
       if (error !== null) {
         setSaveError(error);
         return;
       }
+      // A title we couldn't add is news, not a dead end — the profile saved,
+      // so the ritual carries on and the notice travels with it.
+      setSkipped(notice);
     }
     setStep(step + 1);
   };
@@ -318,6 +323,15 @@ function Ritual() {
           </>
         )}
       </div>
+
+      {/* Mounted whether or not it has anything to say: a polite region added to
+          the page at the same moment as its text is announced inconsistently. */}
+      <p
+        aria-live="polite"
+        className={`max-w-[62ch] text-sm text-amber ${skipped === null ? "" : "mt-lg"}`}
+      >
+        {skipped ?? ""}
+      </p>
 
       {saveError !== null && (
         <p role="alert" className="mt-lg text-sm text-ember">
