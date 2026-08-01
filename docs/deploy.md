@@ -44,6 +44,25 @@ Expect 13 tables: `group_members`, `groups`, `movie_sessions`, `profiles`,
 `tension_axes`, `titles`, `users`, `watch_history`, `watch_ratings`. The last
 three are Phase 2 tables, created empty by design.
 
+### Pending migrations — not yet applied to the remote database
+
+The ✅ above covers `0001` only. Apply these in numeric order:
+
+- [ ] `0004_recommendation_indexes.sql`
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --file=migrations/0004_recommendation_indexes.sql
+```
+
+`0004` is index-only and every statement is `IF [NOT] EXISTS`, so re-applying it
+is a no-op. It contains the only two irreversible statements pending. To roll
+back:
+
+```sql
+CREATE INDEX idx_recommendations_session ON recommendations(session_id);
+CREATE INDEX idx_movie_sessions_group ON movie_sessions(group_id);
+```
+
 ## 3. Configure the Google OAuth client
 
 In Google Cloud Console, create an OAuth 2.0 Web application client and add
