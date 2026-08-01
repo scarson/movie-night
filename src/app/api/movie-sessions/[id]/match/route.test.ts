@@ -257,7 +257,7 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(row).toMatchObject({
       round_number: 1,
       model: "claude-sonnet-5",
-      prompt_version: "p1.0",
+      prompt_version: "p1.1",
     });
     expect(JSON.parse(row!.candidate_snapshot as string).sort((a: number, b: number) => a - b)).toEqual(
       [155, 550, 603, 680, 27205]
@@ -301,7 +301,9 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     // Removed list = prior round's 155 plus this round's 603, by title.
     expect(params.system).toContain("The Dark Knight (tmdbId 155)");
     expect(params.system).toContain("The Matrix (tmdbId 603)");
-    expect(params.system).toContain('"less gloomy"');
+    expect(params.system).toContain(
+      "Their feedback on the previous recommendations (verbatim, one line): less gloomy"
+    );
 
     const row = await db
       .prepare("SELECT removed_tmdb_ids, kept_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 2")
