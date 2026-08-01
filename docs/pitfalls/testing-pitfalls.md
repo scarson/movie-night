@@ -47,6 +47,7 @@ Silent error swallowing is one of the largest bug categories in any codebase. Ev
 - [ ] **Information leakage via error codes checked.** When a handler must return the same status code regardless of whether a resource exists (anti-enumeration), test that ALL error paths return the same status — including DB errors on post-lookup queries that leak existence.
 - [ ] **Error-path side effects verified.** If an error path is supposed to roll back state / release a lock / clear a cache, assert that it did.
 - [ ] **Error-path resource cleanup verified.** Acquired resources (file handles, DB connections, semaphores) must be released even on error. Test with `defer`-equivalent patterns or explicit cleanup assertions.
+- [ ] **Partial failure of a multi-write sequence is tested at each step.** For any sequence that destroys state before recreating it, inject a failure at every write and assert the caller is left recoverable. A suite that only covers "the write works" and "the input was invalid" never touches the interrupted-success path. **🔥 Found 2026-08-01:** refresh rotation does `DELETE ... RETURNING` then `INSERT`s a replacement (`src/lib/auth.ts:115-159`); a throw on the insert permanently destroys a 90-day session and escapes every route's `try` block, because `authenticateRequest` is called before it. Same shape in the match route, where a D1 failure after the billed Anthropic call discards a paid round (`src/app/api/movie-sessions/[id]/match/route.ts:154-165`).
 
 ---
 
@@ -60,6 +61,8 @@ Happy-path tests prove "it works" for one input. Negative property tests prove "
 - [ ] **Empty / null / zero inputs.** Every parameter that accepts a value should be tested with empty string, null, zero, empty array, empty map. "Did not crash" is not the same as "handled correctly."
 - [ ] **Oversized inputs.** Long strings, deeply nested structures, large collections. Where are your truncation / rejection boundaries, and are they enforced?
 - [ ] **Unicode / encoding edge cases.** Multi-byte chars, combining sequences, RTL text, emoji, zero-width joiners, NUL bytes. Anywhere strings cross a boundary (storage, display, comparison) needs this.
+- [ ] **Truncation direction is asserted, not just the cap.** When a list is capped, test past the cap and assert *which* entries survive — and name in the test why those are the ones that matter. A fixture numbered in ascending order makes "the first N survive" look self-evidently right. **🔥 Found 2026-08-01:** the accumulated removed-titles list is built oldest-first and sliced `[0,50]` (`src/lib/matching.ts:185-187`), so past 50 exclusions the films the user just rejected are the ones dropped — while the client slices `[-50]` and keeps the opposite end. The existing cap test passes while asserting the wrong direction.
+- [ ] **Repeat invocations of a batch job make forward progress.** Run any "process the N stalest records" job twice against a dataset larger than N and assert the second run touches different records. Single-run tests prove the right N were picked *this* time, which is not the same claim. **🔥 Found 2026-08-01:** the weekly refresh orders by `popularity DESC LIMIT 200` over a ~1000-title catalog and writes `last_refreshed_at` only on success (`src/lib/cron-handler.ts:25-32, 78-80`), so popular titles that always fail — and, whenever cron jitter re-qualifies them, the whole top 200 — hold the same slots week after week while the tail is never refreshed.
 
 ---
 
@@ -72,6 +75,9 @@ If the code can be executed concurrently, test it concurrently. Single-threaded 
 - [ ] **Rate-limit enforcement under concurrency.** Count-then-insert rate limits can be bypassed by concurrent requests that all read the same count before any insert. Test with burst requests.
 - [ ] **Idempotency under retry/concurrency.** If an operation should be idempotent (accepting an invitation twice, retrying a failed payment), test concurrent execution — the second attempt must not produce a 500 from a constraint violation.
 - [ ] **Bootstrap / first-time races.** First-user, first-org, or any "only if none exist" flow tested with concurrent attempts. Exactly one must win.
+- [ ] **The *loser* of a single-use claim is asserted, not just the winner.** "Exactly one succeeds" is half the contract; assert what the other caller receives and that it is distinguishable from a genuinely-failed request. Then enumerate the client's request fan-out — every `Promise.all` of authenticated fetches — and check that N−1 of them losing is acceptable. **🔥 Found 2026-08-01:** the loser of a refresh-token rotation race returns `{ user: null }` (`src/lib/auth.ts:120-125`), which every route renders as a 401 and every page turns into a redirect to the landing screen. `/ritual` fires three such requests at once and `/profile` two, so any client-side navigation after the 15-minute session-cookie window dead-ends on an error screen. The existing test asserts the cookie half of that branch and stops.
+
+> **Harness limitation — read before writing anything in this section.** `src/test/fake-d1.ts` is backed by `node:sqlite`'s synchronous `DatabaseSync` and cannot interleave two callers, so none of the concurrency items above are currently provable in the unit suite — including "Bootstrap / first-time races", which `createSoloGroup` (`src/lib/movie-sessions.ts:24-46`) would fail. Closing them needs either an async-capable fake with an injectable yield point between statements, or Miniflare-backed integration tests. Until then, treat these items as review checks, not test checks, and say so rather than marking them covered.
 
 ---
 
@@ -80,6 +86,7 @@ If the code can be executed concurrently, test it concurrently. Single-threaded 
 Configuration errors, bad boundaries, and missing validation are a surprisingly large portion of production incidents. Test the edges.
 
 - [ ] **Default values are tested.** What does the code do when a config value is absent? Crash? Use a default? Silently use zero? All three are possible; the right behavior needs a test.
+- [ ] **Falsy-but-valid config values are tested, not just absent ones.** `0` and `""` are legitimate settings that `||`-style defaulting silently discards, and they are usually the values an operator reaches for in an incident. Testing "absent" and "some truthy value" leaves the dangerous case between them untested. **🔥 Found 2026-08-01:** `Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10) || 2000` (`src/app/api/movie-sessions/[id]/match/route.ts:105`) turns the spend kill switch `MONTHLY_MATCH_LIMIT=0` back into the default 2000-call allowance. Use `?? DEFAULT` with an explicit `Number.isNaN` check.
 - [ ] **Invalid config is rejected at load time.** A system that loads invalid config, then crashes on first use of it, surfaces the error too late. Test that config validation runs at load.
 - [ ] **Environment-specific behavior.** If code behaves differently in dev vs. prod (feature flags, degraded modes), test both paths. Don't assume dev-tested code works in prod.
 - [ ] **Feature flag flip behavior.** Test both flag-on and flag-off paths. A feature behind a flag that's never tested with the flag off can't be safely rolled back.
@@ -101,17 +108,13 @@ The test suite itself is code. It decays if not maintained. Messy test infrastru
 
 ---
 
-## 8. TODO — Project-Specific Topic
+## 8. Cross-Table Lifecycle & Authorization Freshness
 
-<!-- TODO: add topic sections as the project surfaces specific testing disciplines. Examples from other projects:
-- AOT Correctness (for .NET AOT-compiled code)
-- Serialization Boundary (round-trip JSON tests)
-- Sandbox Bindings (JS sandbox API coverage)
-- Cross-Platform (tests that must pass on Windows and Linux)
-Each section follows the same [ ] checkbox format as the sections above.
-Delete this placeholder when you add real content. -->
+Membership, identity and history live in different tables with different lifecycles. A mutation on one table is easy to test in isolation and passes; the bug is always in a *reader* keyed on a table the mutation didn't touch. Test the mutation AND every downstream read.
 
-TODO — project-specific topic.
+- [ ] **Authorization is re-tested after the granting relationship is revoked.** For every route that authorizes off a historical join record, add a test that revokes the live relationship and asserts the route now refuses. **🔥 Found 2026-08-01:** `POST /api/movie-sessions/[id]/match` authorizes purely off `session_members`, which `leaveGroup` deliberately preserves — so an ex-member keeps generating fresh taste maps from the remaining members' current profiles.
+- [ ] **Read access and write/spend access are tested separately after revocation.** Preserving history for a departed member is often intended; letting them trigger new work on the account owner's budget is not. Assert the two independently — a single "can they still see it?" test conflates them.
+- [ ] **Every reader keyed on a surviving key is asserted after a mutation deletes or anonymizes rows.** For each row a mutation removes or rewrites, grep for every query that still joins, counts, or renders on the surviving key, and assert the post-mutation read — not just the mutation's own effect. **🔥 Found 2026-08-01, three times over:** account deletion anonymizes `session_members.user_id` but leaves the deleted user's real name in `recommendations.ai_response`, which the session GET re-serves verbatim; the same anonymized rows keep inflating `getSessionForMember`'s `member_count`, so a session reports `solo: false` while one member reaches the prompt; and the `groups` row itself is never removed, leaving a still-joinable ownerless group. All three mutations had passing, complete unit tests.
 
 ---
 
