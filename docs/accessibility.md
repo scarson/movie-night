@@ -8,7 +8,7 @@ This doc is the audit state and the remediation queue. `DESIGN.md` holds the des
 
 | | Count | |
 |---|---|---|
-| ❌ Open — must fix for AA | 0 | the 1.4.11 / 2.4.2 / 2.4.1 queue was closed on 2026-07-27 |
+| ❌ Open — must fix for AA | 2 | 1.4.10 content clipped at 320px on `/groups` and `/tonight`; see Not yet verified. The 1.4.11 / 2.4.2 / 2.4.1 queue was closed on 2026-07-27 |
 | ✅ Verified passing | see below | measured or exercised, not assumed |
 | ➖ Not applicable | 3 | no drag, no help mechanism, no cognitive-function auth test |
 | ❓ Not yet audited | — | full AT/screen-reader pass; see Not yet verified |
@@ -116,8 +116,15 @@ Measured or exercised during Phases 6–8, not assumed:
 
 Be honest about the boundary of what's been checked:
 
-- **No screen-reader pass has been run.** All ARIA work to date was verified structurally (roles, names, live regions in the DOM) — not by listening to VoiceOver/NVDA actually announce a flow. Worth doing once against the deployed app, especially the results page, where the taste map's meaning depends on reading order.
-- **1.4.10 Reflow / 1.4.4 Resize Text — half done.** 320 CSS px (the 400%-zoom equivalent against a 1280px reference) was tested in a real browser on 2026-08-01: `/`, `/privacy`, and the signed-out branch of `/groups/join/[code]` all pass with **zero** horizontally-overflowing elements, measured by walking every node under `body` with `getBoundingClientRect()` rather than judged by eye. **The six auth-gated routes were not exercised.** Under `next dev` there are no Cloudflare bindings, so `/api/auth/me` 500s, every gated page takes its signed-out `router.replace("/")` branch, and none of `/quick`, `/ritual`, `/tonight`, `/profile`, `/groups` or `/results/[sessionId]` renders at all. That is where the layout-dense UI lives — the ~18-pill genre chip grid, the results tablist, the taste map — so the parts most likely to break at 320px are precisely the parts still unverified. Finishing it needs a signed-in session against `npm run preview` (wrangler dev, which does have bindings) or the deployed app — the same blocker as the screen-reader pass, so both are worth doing in one visit. Methodology and per-route results: `dev/reports/2026-08-01-reflow-400pct.md`.
+- **No screen-reader pass has been run.** All ARIA work to date was verified structurally (roles, names, live regions in the DOM) — not by listening to VoiceOver/NVDA actually announce a flow. Worth doing once, especially the results page, where the taste map's meaning depends on reading order. The *environment* blocker is gone: `dev/reports/2026-08-01-authenticated-a11y-verification.md` is a runbook for a locally signed-in session against `wrangler dev`, so the authenticated flows are now reachable without deploying. What remains is that judging an announcement needs a human at the keyboard, not an agent.
+- **1.4.10 Reflow — no horizontal scrolling anywhere; two content truncations open.** 320 CSS px (the 400%-zoom equivalent against a 1280px reference) has now been measured on every route, signed-out (2026-08-01, `dev/reports/2026-08-01-reflow-400pct.md`) and signed-in (2026-08-01, `dev/reports/2026-08-01-authenticated-a11y-verification.md`). Every route reports `scrollWidth === clientWidth === 320` with **zero** overflowing elements and **zero** horizontally-scrollable subregions, measured by walking every node under `body` with `getBoundingClientRect()`. The three surfaces flagged as highest risk are clean: the 30-chip mood/genre grid wraps to 2–3 per row with its rightmost edge at 292.5px (unchanged when chips are selected, despite the heavier font weight); the results tablist fits one row; the taste map has no SVG or canvas, so 1.4.10's 2-D-layout exception never applies anywhere in the app.
+
+  **Not closed, because information is still lost at 320px.** Two elements are legible at 1280px and clipped at 320px with no way to reveal them — no scrollbar, no `title`, so a `scrollWidth`-only check misses both:
+  - `/groups` invite link (`src/app/groups/page.tsx`, the `truncate` span) — **79px, ~25% of the URL, clipped** at 320px and still 23px clipped at 375px. This one has teeth: the `copyInvite` fallback comment reasons that a failed clipboard write is safe *because the link is rendered in full*, and at narrow widths it isn't. A production origin longer than the test one makes it worse.
+  - `/tonight` group member list (`src/components/group-picker.tsx`) — 43px clipped at 320px only. Lower severity: descriptive context, not a unique unrecoverable value.
+  - Marginal, listed for completeness: the `/ritual` current-step label clips 28px at 320px with a 27-character display name. The full string stays in the accessibility tree, and the stepper's `sr-only`-below-`sm:` treatment of the *other* labels is the correct pattern, not a defect.
+
+  **1.4.4 Resize Text** is carried on the 320px result as its conventional proxy; browser text-only zoom has not been exercised separately.
 
 ---
 
