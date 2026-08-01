@@ -398,7 +398,83 @@ describe("/api/user/profile", () => {
     expect(Math.max(...reads.map((s) => s.boundParams))).toBeLessThanOrEqual(D1_IN_CHUNK_SIZE);
   });
 
-  it("PUT returns 400 listing failed ids when a TMDB fetch fails, and saves nothing", async () => {
+  it("PUT keeps the titles that enriched when one of them is a dud", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+      const id = Number(String(input).match(/\/movie\/(\d+)/)![1]);
+      if (id === 202) return new Response("not found", { status: 404 });
+      return new Response(JSON.stringify(tmdbDetail(id, `Movie ${id}`)), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      await authedPut(
+        "u1",
+        validBody({ comfortTitles: [201, 202], watchlist: [203], vibes: ["Cozy"] })
+      )
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json<Record<string, unknown>>();
+    // The saved profile must not reference an id `titles` has no row for —
+    // candidates and posters both resolve out of D1.
+    expect(body.profile).toEqual({
+      comfortTitles: [201],
+      watchlist: [203],
+      vibes: ["Cozy"],
+      dealbreakers: [],
+      streamingServices: [],
+    });
+    expect(body.skippedTitles).toEqual([{ tmdbId: 202, reason: "not-found" }]);
+
+    const { results } = await db
+      .prepare("SELECT tmdb_id FROM titles WHERE content_type = 'movie'")
+      .all<{ tmdb_id: number }>();
+    expect(results.map((r) => r.tmdb_id).sort((a, b) => a - b)).toEqual([201, 203]);
+
+    const row = await db
+      .prepare("SELECT * FROM profiles WHERE user_id = 'u1'")
+      .first<Record<string, unknown>>();
+    expect(row?.comfort_titles).toBe("[201]");
+    expect(row?.watchlist).toBe("[203]");
+    // The tag half of the edit has nothing to do with TMDB and must survive.
+    expect(row?.vibes).toBe('["Cozy"]');
+  });
+
+  it("PUT tells a deleted id apart from a TMDB that is merely down", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+      const id = Number(String(input).match(/\/movie\/(\d+)/)![1]);
+      if (id === 301) return new Response("not found", { status: 404 });
+      if (id === 302) return new Response("upstream broke", { status: 503 });
+      return new Response(JSON.stringify(tmdbDetail(id, `Movie ${id}`)), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      await authedPut("u1", validBody({ comfortTitles: [301, 302, 303] }))
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json<Record<string, unknown>>();
+    // The two need different remedies — one is "pick something else", the other
+    // is "try again later" — so the reason has to travel with the id.
+    expect(body.skippedTitles).toEqual([
+      { tmdbId: 301, reason: "not-found" },
+      { tmdbId: 302, reason: "unavailable" },
+    ]);
+    expect(body.profile).toMatchObject({ comfortTitles: [303] });
+  });
+
+  it("PUT still saves the rest of the profile when every unknown id fails", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
     await seedUser(db, "u1", "Sam");
@@ -407,13 +483,45 @@ describe("/api/user/profile", () => {
     vi.stubGlobal("fetch", fetchStub);
 
     const { PUT } = await import("./route");
-    const response = await PUT(await authedPut("u1", validBody({ watchlist: [777] })));
+    const response = await PUT(
+      await authedPut(
+        "u1",
+        validBody({ watchlist: [777], vibes: ["Cozy"], dealbreakers: ["Gore"] })
+      )
+    );
 
-    expect(response.status).toBe(400);
+    // Refusing the save here would throw away the tag edits over a title the
+    // user can no longer add at all — and "every unknown id failed" is the
+    // one-dud case whenever there is exactly one unknown id.
+    expect(response.status).toBe(200);
     const body = await response.json<Record<string, unknown>>();
-    expect(body.failedIds).toEqual([777]);
+    expect(body.skippedTitles).toEqual([{ tmdbId: 777, reason: "not-found" }]);
 
-    const row = await db.prepare("SELECT * FROM profiles WHERE user_id = 'u1'").first();
-    expect(row).toBeNull();
+    const row = await db
+      .prepare("SELECT * FROM profiles WHERE user_id = 'u1'")
+      .first<Record<string, unknown>>();
+    expect(row?.watchlist).toBe("[]");
+    expect(row?.vibes).toBe('["Cozy"]');
+    expect(row?.dealbreakers).toBe('["Gore"]');
+  });
+
+  it("PUT leaves the response untouched when nothing needed enriching", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+    await seedTitle(db, 27205, "Inception");
+
+    const fetchStub = vi.fn();
+    vi.stubGlobal("fetch", fetchStub);
+
+    const { PUT } = await import("./route");
+    const sent = validBody({ comfortTitles: [27205], vibes: ["Cozy"] });
+    const response = await PUT(await authedPut("u1", sent));
+
+    expect(response.status).toBe(200);
+    // No `skippedTitles` key at all, so a save with nothing to report reads
+    // exactly as it did before partial tolerance existed.
+    expect(await response.json()).toEqual({ profile: sent });
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 });
