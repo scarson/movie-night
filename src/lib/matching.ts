@@ -448,7 +448,17 @@ export interface MatchingClient {
 
 export type MatchingClientFactory = (apiKey: string) => MatchingClient;
 
-const defaultClientFactory: MatchingClientFactory = (apiKey) => new Anthropic({ apiKey, maxRetries: 1 });
+/**
+ * The SDK's default request timeout is 10 minutes, it scales that up for large
+ * max_tokens on non-streaming calls, and it retries timeouts — so an unbounded
+ * call can hold a request for tens of minutes. Cloudflare will not save us:
+ * HTTP Workers have no wall-clock limit while the client stays connected, and
+ * time awaiting a subrequest costs no CPU. 45 s is three times the top of the
+ * 5-15 s budget the loading narrative is built for, so it fires on a genuine
+ * hang and never on a slow-but-working call.
+ */
+export const defaultClientFactory: MatchingClientFactory = (apiKey) =>
+  new Anthropic({ apiKey, maxRetries: 1, timeout: 45_000 });
 
 interface ClaudeCallResult {
   /** null when stop_reason indicates a bad turn or no text block exists. */

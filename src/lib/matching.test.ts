@@ -2,7 +2,7 @@
 // ABOUTME: construction (guardrail, clamps, rough-day privacy), parsing, and the Claude call loop.
 
 import { describe, it, expect, vi } from "vitest";
-import { APIError, APIConnectionError } from "@anthropic-ai/sdk";
+import { APIError, APIConnectionError, APIConnectionTimeoutError } from "@anthropic-ai/sdk";
 import type { Message, MessageCreateParamsNonStreaming } from "@anthropic-ai/sdk/resources/messages";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
 import { MATCHING_RESPONSE_SCHEMA, type MatchingResponse } from "@/types/matching";
@@ -11,6 +11,7 @@ import {
   buildMatchingPrompt,
   parseMatchingResponse,
   isMatchingResponse,
+  defaultClientFactory,
   runMatching,
   MatchingError,
   MATCHING_MODEL,
@@ -893,6 +894,29 @@ describe("runMatching", () => {
     await expect(
       runMatching({ env: ENV, input: promptInput(), context: CONTEXT, clientFactory: factory500, log: vi.fn() })
     ).rejects.toMatchObject({ kind: "overloaded" });
+  });
+
+  it("builds its default client with an explicit request timeout", () => {
+    // The SDK default is 10 minutes and it scales that up for large max_tokens,
+    // and it retries timeouts — so an unbounded call can hold a request for tens
+    // of minutes. Cloudflare imposes no backstop: HTTP Workers have no wall-clock
+    // limit while the client stays connected, and awaiting a subrequest costs no
+    // CPU. This constructor option is the only bound there is.
+    const client = defaultClientFactory("test-key") as unknown as { timeout: number; maxRetries: number };
+
+    expect(client.timeout).toBe(45_000);
+    expect(client.maxRetries).toBe(1);
+  });
+
+  it("maps APIConnectionTimeoutError to timeout, pinning the subclass the design rests on", async () => {
+    // APIConnectionTimeoutError extends APIConnectionError, which is why setting
+    // a timeout needs no new error kind. An SDK upgrade that breaks that should
+    // fail here rather than in production.
+    const { factory } = fakeClientFactory([new APIConnectionTimeoutError({ message: "timed out" })]);
+
+    await expect(
+      runMatching({ env: ENV, input: promptInput(), context: CONTEXT, clientFactory: factory, log: vi.fn() })
+    ).rejects.toMatchObject({ kind: "timeout" });
   });
 
   it("MatchingError carries its kind and a message", () => {
