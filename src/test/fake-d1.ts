@@ -1,12 +1,20 @@
 // ABOUTME: In-memory D1Database implementation backed by node:sqlite (DatabaseSync).
 // ABOUTME: Real SQL semantics (FK cascades, RETURNING) with zero new test dependencies.
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** Reads the Phase 1 initial schema migration from disk. */
+/**
+ * Concatenates every migration in migrations/, in filename order, so the fake's
+ * schema always matches what a fresh remote database would have.
+ */
 export function loadMigration(): string {
-  return readFileSync(join(process.cwd(), "migrations/0001_initial_schema.sql"), "utf-8");
+  const dir = join(process.cwd(), "migrations");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(dir, f), "utf-8"))
+    .join("\n");
 }
 
 /**
@@ -117,4 +125,159 @@ export function createFakeD1(migrationSql: string): D1Database {
   };
 
   return fakeDb as unknown as D1Database;
+}
+
+export interface FailureInjection {
+  /**
+   * Fail when the statement's SQL matches. Substring for a literal, RegExp for a
+   * pattern. Substrings match anywhere, so `"sessions"` also matches
+   * `movie_sessions` — match on enough of the statement to be unambiguous.
+   */
+  match: string | RegExp;
+  /**
+   * Fail only the Nth matching execution (1-based). Defaults to every match.
+   * `exec()` counts as an execution, so fixture setup run through the wrapper
+   * advances this too.
+   */
+  onCall?: number;
+  /** The error thrown. Defaults to `new Error("D1_ERROR: injected failure")`. */
+  error?: Error;
+}
+
+/** Key under which a wrapper stashes the reader for its own firing count. */
+const INJECTED_FAILURES = Symbol("injectedFailures");
+
+/**
+ * Delegates to a real fake-D1 statement, throwing at execution time when the
+ * gate says this SQL is the one that should fail. bind() rewraps so the
+ * injection survives the new instance FakeD1PreparedStatement.bind() returns.
+ */
+class FailingPreparedStatement {
+  constructor(
+    private readonly inner: D1PreparedStatement,
+    private readonly sql: string,
+    private readonly gate: (sql: string) => void
+  ) {}
+
+  bind(...values: unknown[]): D1PreparedStatement {
+    return new FailingPreparedStatement(
+      this.inner.bind(...values),
+      this.sql,
+      this.gate
+    ) as unknown as D1PreparedStatement;
+  }
+
+  isGatedBy(gate: (sql: string) => void): boolean {
+    return this.gate === gate;
+  }
+
+  async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
+    this.gate(this.sql);
+    return colName === undefined ? this.inner.first<T>() : this.inner.first<T>(colName);
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    this.gate(this.sql);
+    return this.inner.all<T>();
+  }
+
+  async run<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    this.gate(this.sql);
+    return this.inner.run<T>();
+  }
+
+  async raw<T = unknown[]>(): Promise<T[]> {
+    this.gate(this.sql);
+    return this.inner.raw<T>();
+  }
+}
+
+/**
+ * Wraps a fake D1 so a chosen statement throws, leaving every other statement
+ * working. Interrupted-success paths (a write that fails after earlier writes
+ * committed) are otherwise unreachable in this suite — see
+ * docs/pitfalls/testing-pitfalls.md §3.
+ *
+ * Interception rides on the statements this handle prepares, so the code under
+ * test must receive the handle this returns — wrap the db before handing it to
+ * a route's mocked `getCloudflareContext`, not after. A statement prepared from
+ * the unwrapped db runs ungated.
+ *
+ * A `match` that never matches fires nothing and the test passes against
+ * unfixed code. Assert `injectedFailureCount(db)` to prove the failure happened.
+ */
+export function withFailingStatement(db: D1Database, injection: FailureInjection): D1Database {
+  if (injection.onCall !== undefined && injection.onCall < 1) {
+    throw new Error("withFailingStatement: onCall is 1-based, so it can never fire below 1");
+  }
+  let matchedExecutions = 0;
+  let firedFailures = 0;
+
+  const gate = (sql: string): void => {
+    const { match, onCall } = injection;
+    // String.prototype.search leaves a global RegExp's lastIndex alone, so a /g
+    // pattern cannot go stale between statements.
+    const matched = typeof match === "string" ? sql.includes(match) : sql.search(match) !== -1;
+    if (!matched) return;
+    matchedExecutions += 1;
+    if (onCall !== undefined && matchedExecutions !== onCall) return;
+    firedFailures += 1;
+    // Built per throw, so a caller that annotates the error it catches cannot
+    // leak that mutation into the next injected failure.
+    throw injection.error ?? new Error("D1_ERROR: injected failure");
+  };
+
+  const wrappedDb = {
+    [INJECTED_FAILURES]: (): number => firedFailures,
+
+    prepare(sql: string): D1PreparedStatement {
+      return new FailingPreparedStatement(db.prepare(sql), sql, gate) as unknown as D1PreparedStatement;
+    },
+
+    // The wrapped statements carry this handle's gate, so the underlying batch's
+    // BEGIN/ROLLBACK still sees the injected throw and rolls the transaction back.
+    // A statement from any other handle answers to a different gate or none at
+    // all, so refuse it rather than run it under the wrong injection.
+    async batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+      for (const statement of statements) {
+        const owned =
+          statement instanceof FailingPreparedStatement && statement.isGatedBy(gate);
+        if (!owned) {
+          throw new Error(
+            "withFailingStatement: batch() received a statement not prepared from this handle"
+          );
+        }
+      }
+      return db.batch<T>(statements);
+    },
+
+    async exec(sql: string): Promise<D1ExecResult> {
+      gate(sql);
+      return db.exec(sql);
+    },
+
+    withSession(): never {
+      throw new Error("withSession is not implemented in the fake D1");
+    },
+
+    dump(): Promise<ArrayBuffer> {
+      return db.dump();
+    },
+  };
+
+  return wrappedDb as unknown as D1Database;
+}
+
+/**
+ * How many times the wrapper's injected failure has actually been thrown.
+ * A `match` that never matches, or an `onCall` past the number of matching
+ * executions, injects nothing and leaves the code under test on its happy
+ * path — assert this to prove the failure the test claims to exercise occurred.
+ */
+export function injectedFailureCount(db: D1Database): number {
+  const read = (db as unknown as Record<symbol, unknown>)[INJECTED_FAILURES];
+  if (typeof read !== "function") {
+    throw new Error("injectedFailureCount: db was not built by withFailingStatement");
+  }
+  return (read as () => number)();
 }

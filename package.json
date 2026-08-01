@@ -12,7 +12,8 @@
     "preview": "opennextjs-cloudflare build && wrangler dev",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",
     "seed:local": "npx tsx scripts/seed.ts --local",
-    "migrate:local": "npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql"
+    "//migrate:local": "Targets a FRESH local D1. Against a database that already has 0001 applied, the first file fails on 'table users already exists' and the run stops there. Reset the local state first — see docs/deploy.md section 2.",
+    "migrate:local": "for f in migrations/*.sql; do npx wrangler d1 execute movie-night-db --local --file=\"$f\" || exit 1; done"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",
