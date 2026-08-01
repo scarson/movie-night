@@ -159,6 +159,26 @@ export async function getAccumulatedRemovedIds(db: D1Database, sessionId: string
   return [...ids];
 }
 
+/**
+ * Every tmdb id this session has actually recommended, across all prior rounds.
+ * A client may only keep or reject a film the session showed it, so this is the
+ * provenance set the match route intersects its kept/removed lists against.
+ */
+export async function getRecommendedTmdbIds(db: D1Database, sessionId: string): Promise<Set<number>> {
+  const { results } = await db
+    .prepare("SELECT ai_response FROM recommendations WHERE session_id = ?")
+    .bind(sessionId)
+    .all<{ ai_response: string }>();
+  const ids = new Set<number>();
+  for (const row of results) {
+    const parsed = parseJsonColumn<MatchingResponse | null>(row.ai_response, null);
+    for (const rec of parsed?.recommendations ?? []) {
+      if (Number.isInteger(rec?.tmdbId)) ids.add(rec.tmdbId);
+    }
+  }
+  return ids;
+}
+
 /** Count of matching calls made this calendar month (UTC), across all sessions. */
 export async function countMatchesThisMonth(db: D1Database): Promise<number> {
   const row = await db

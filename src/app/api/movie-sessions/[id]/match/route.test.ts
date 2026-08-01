@@ -279,9 +279,11 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 603, 550])))]);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
+    // 603 and 27205 both appeared in round 1's recommendations, so they are ids
+    // this client could really have kept or rejected.
     const response = await postMatch(sessionId, "u1", {
       keptTmdbIds: [27205],
-      removedTmdbIds: [680],
+      removedTmdbIds: [603],
       steeringFeedback: "less gloomy",
     });
     logSpy.mockRestore();
@@ -292,16 +294,16 @@ describe("POST /api/movie-sessions/[id]/match", () => {
 
     const params = create.mock.calls[0][0] as { system: string };
     expect(params.system).toContain("Inception (tmdbId 27205)");
-    // Removed list = prior round's 155 plus this round's 680, by title.
+    // Removed list = prior round's 155 plus this round's 603, by title.
     expect(params.system).toContain("The Dark Knight (tmdbId 155)");
-    expect(params.system).toContain("Pulp Fiction (tmdbId 680)");
+    expect(params.system).toContain("The Matrix (tmdbId 603)");
     expect(params.system).toContain('"less gloomy"');
 
     const row = await db
       .prepare("SELECT removed_tmdb_ids, kept_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 2")
       .bind(sessionId)
       .first<{ removed_tmdb_ids: string; kept_tmdb_ids: string }>();
-    expect(JSON.parse(row!.removed_tmdb_ids)).toEqual([680]);
+    expect(JSON.parse(row!.removed_tmdb_ids)).toEqual([603]);
     expect(JSON.parse(row!.kept_tmdb_ids)).toEqual([27205]);
   });
 
@@ -442,6 +444,141 @@ describe("POST /api/movie-sessions/[id]/match", () => {
       .bind(sessionId)
       .all();
     expect(results).toHaveLength(0);
+  });
+
+  describe("removed/kept id provenance", () => {
+    it("drops removed ids this session never recommended", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: 1,
+        aiResponse: validResponse([27205, 155, 603]),
+        keptTmdbIds: [],
+        removedTmdbIds: [],
+        steeringFeedback: "",
+        candidateSnapshot: [27205, 155, 603],
+      });
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 603, 550])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1", { removedTmdbIds: [155, 999] });
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      const row = await db
+        .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 2")
+        .bind(sessionId)
+        .first<{ removed_tmdb_ids: string }>();
+      expect(JSON.parse(row!.removed_tmdb_ids)).toEqual([155]);
+    });
+
+    it("accepts no removals on round 1 — nothing has been shown yet", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1", { removedTmdbIds: [27205, 155] });
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      const row = await db
+        .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 1")
+        .bind(sessionId)
+        .first<{ removed_tmdb_ids: string }>();
+      expect(JSON.parse(row!.removed_tmdb_ids)).toEqual([]);
+    });
+
+    it("keeps removals of ids the session did recommend", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: 1,
+        aiResponse: validResponse([27205, 155, 603]),
+        keptTmdbIds: [],
+        removedTmdbIds: [],
+        steeringFeedback: "",
+        candidateSnapshot: [27205, 155, 603],
+      });
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([550, 680, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await postMatch(sessionId, "u1", { removedTmdbIds: [27205, 155] });
+      logSpy.mockRestore();
+
+      const row = await db
+        .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 2")
+        .bind(sessionId)
+        .first<{ removed_tmdb_ids: string }>();
+      expect(JSON.parse(row!.removed_tmdb_ids)).toEqual([27205, 155]);
+    });
+
+    it("filters keptTmdbIds the same way, so only shown titles reach the prompt", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: 1,
+        aiResponse: validResponse([27205]),
+        keptTmdbIds: [],
+        removedTmdbIds: [],
+        steeringFeedback: "",
+        candidateSnapshot: [27205],
+      });
+      const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await postMatch(sessionId, "u1", { keptTmdbIds: [27205, 680] });
+      logSpy.mockRestore();
+
+      const params = create.mock.calls[0][0] as { system: string };
+      expect(params.system).toContain("Inception (tmdbId 27205)");
+      expect(params.system).not.toContain("Pulp Fiction (tmdbId 680)");
+      const row = await db
+        .prepare("SELECT kept_tmdb_ids FROM recommendations WHERE session_id = ? AND round_number = 2")
+        .bind(sessionId)
+        .first<{ kept_tmdb_ids: string }>();
+      expect(JSON.parse(row!.kept_tmdb_ids)).toEqual([27205]);
+    });
+
+    it("logs a structured line naming how many ids were dropped", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      await insertRecommendation(db, {
+        sessionId,
+        roundNumber: 1,
+        aiResponse: validResponse([27205, 155, 603]),
+        keptTmdbIds: [],
+        removedTmdbIds: [],
+        steeringFeedback: "",
+        candidateSnapshot: [27205, 155, 603],
+      });
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([550, 680, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await postMatch(sessionId, "u1", { removedTmdbIds: [155, 999] });
+
+      const filtered = logSpy.mock.calls
+        .map(([line]) => line)
+        .filter((line): line is string => typeof line === "string" && line.includes("removed_ids_filtered"))
+        .map((line) => JSON.parse(line));
+      logSpy.mockRestore();
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0]).toMatchObject({
+        event: "removed_ids_filtered",
+        session_id: sessionId,
+        submitted: 2,
+        accepted: 1,
+      });
+    });
   });
 
   it("never leaks any member's rough-day flag in the match response", async () => {

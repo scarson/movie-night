@@ -15,6 +15,7 @@ import {
   getSessionMembersWithProfiles,
   getRoundNumber,
   getAccumulatedRemovedIds,
+  getRecommendedTmdbIds,
   countMatchesThisMonth,
   formatTitleRefs,
   getTitlesMap,
@@ -113,9 +114,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
+    // A client may only keep or reject a film this session actually showed it.
+    // Unrecognised ids are dropped rather than rejected: a stale second tab
+    // holding an older round's ids must not hard-fail the app's costliest path.
+    const recommendedIds = await getRecommendedTmdbIds(db, id);
+    const acceptedKeptIds = keptTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
+    const acceptedRemovedIds = removedTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
+    if (acceptedRemovedIds.length !== removedTmdbIds.length) {
+      console.log(
+        JSON.stringify({
+          event: "removed_ids_filtered",
+          session_id: id,
+          submitted: removedTmdbIds.length,
+          accepted: acceptedRemovedIds.length,
+        })
+      );
+    }
+
     const members = await getSessionMembersWithProfiles(db, id);
     const allRemovedIds = [
-      ...new Set([...(await getAccumulatedRemovedIds(db, id)), ...removedTmdbIds]),
+      ...new Set([...(await getAccumulatedRemovedIds(db, id)), ...acceptedRemovedIds]),
     ];
 
     const candidates = await selectCandidates(db, members, session.discoverNew);
@@ -142,7 +160,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         moodVibes: session.moodVibes,
         moodText: session.moodText,
         discoverNew: session.discoverNew,
-        keptTitles: await formatTitleRefs(db, keptTmdbIds),
+        keptTitles: await formatTitleRefs(db, acceptedKeptIds),
         removedTitles: await formatTitleRefs(db, allRemovedIds),
         steeringFeedback,
         candidates,
@@ -155,8 +173,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       sessionId: id,
       roundNumber: round,
       aiResponse: response,
-      keptTmdbIds,
-      removedTmdbIds,
+      keptTmdbIds: acceptedKeptIds,
+      removedTmdbIds: acceptedRemovedIds,
       steeringFeedback,
       candidateSnapshot: candidates.map((c) => c.tmdbId),
     });
