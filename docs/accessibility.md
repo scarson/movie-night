@@ -117,7 +117,7 @@ Measured or exercised during Phases 6–8, not assumed:
 Be honest about the boundary of what's been checked:
 
 - **No screen-reader pass has been run.** All ARIA work to date was verified structurally (roles, names, live regions in the DOM) — not by listening to VoiceOver/NVDA actually announce a flow. Worth doing once against the deployed app, especially the results page, where the taste map's meaning depends on reading order.
-- **1.4.10 Reflow / 1.4.4 Resize Text** — no-horizontal-scroll was verified at 375px and 1280px, but 400% zoom (the actual 1.4.10 condition) was not tested.
+- **1.4.10 Reflow / 1.4.4 Resize Text — half done.** 320 CSS px (the 400%-zoom equivalent against a 1280px reference) was tested in a real browser on 2026-08-01: `/`, `/privacy`, and the signed-out branch of `/groups/join/[code]` all pass with **zero** horizontally-overflowing elements, measured by walking every node under `body` with `getBoundingClientRect()` rather than judged by eye. **The six auth-gated routes were not exercised.** Under `next dev` there are no Cloudflare bindings, so `/api/auth/me` 500s, every gated page takes its signed-out `router.replace("/")` branch, and none of `/quick`, `/ritual`, `/tonight`, `/profile`, `/groups` or `/results/[sessionId]` renders at all. That is where the layout-dense UI lives — the ~18-pill genre chip grid, the results tablist, the taste map — so the parts most likely to break at 320px are precisely the parts still unverified. Finishing it needs a signed-in session against `npm run preview` (wrangler dev, which does have bindings) or the deployed app — the same blocker as the screen-reader pass, so both are worth doing in one visit. Methodology and per-route results: `dev/reports/2026-08-01-reflow-400pct.md`.
 
 ---
 

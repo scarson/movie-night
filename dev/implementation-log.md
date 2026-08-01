@@ -999,3 +999,16 @@ to be shared rather than copied.
 **Honest boundary, recorded in the doc:** in-progress mood answers are React state only, so a
 reload mid-ritual starts the mood step blank. Read as a restarted process rather than a redundant
 step within one — but that is a judgment about where a process begins, not a measurement.
+
+## 1.4.10 Reflow — partial verification recorded (2026-08-01)
+
+Browser pass at 320 CSS px (the 400%-zoom equivalent), report in
+`dev/reports/2026-08-01-reflow-400pct.md`. Signed-out surfaces pass with zero overflowing
+elements, measured by a full-DOM `getBoundingClientRect()` sweep rather than by eye.
+
+**Recorded as half done, not closed.** `next dev` has no Cloudflare bindings, so `/api/auth/me`
+500s and all six auth-gated routes take their signed-out redirect before rendering anything. The
+chip grid, results tablist and taste map — the densest layouts in the app, and the ones most
+likely to overflow at 320px — were never on screen. Finishing it needs a signed-in session under
+`npm run preview` or the deployed app, which is the same blocker the screen-reader pass has;
+the doc now says so in one place.
