@@ -182,10 +182,14 @@ class FailingPreparedStatement {
  * working. Interrupted-success paths (a write that fails after earlier writes
  * committed) are otherwise unreachable in this suite — see
  * docs/pitfalls/testing-pitfalls.md §3.
+ *
+ * Interception rides on the statements this handle prepares, so statements
+ * passed to its `batch()` must have been prepared from the returned handle too.
+ * Statements prepared from the unwrapped db and batched through this one run
+ * ungated, and the test goes silently green.
  */
 export function withFailingStatement(db: D1Database, injection: FailureInjection): D1Database {
   const { match, onCall } = injection;
-  const error = injection.error ?? new Error("D1_ERROR: injected failure");
   let matchedExecutions = 0;
 
   const gate = (sql: string): void => {
@@ -194,7 +198,10 @@ export function withFailingStatement(db: D1Database, injection: FailureInjection
     const matched = typeof match === "string" ? sql.includes(match) : sql.search(match) !== -1;
     if (!matched) return;
     matchedExecutions += 1;
-    if (onCall === undefined || matchedExecutions === onCall) throw error;
+    if (onCall !== undefined && matchedExecutions !== onCall) return;
+    // Built per throw, so a caller that annotates the error it catches cannot
+    // leak that mutation into the next injected failure.
+    throw injection.error ?? new Error("D1_ERROR: injected failure");
   };
 
   const wrappedDb = {
@@ -208,7 +215,8 @@ export function withFailingStatement(db: D1Database, injection: FailureInjection
       return db.batch<T>(statements);
     },
 
-    exec(sql: string): Promise<D1ExecResult> {
+    async exec(sql: string): Promise<D1ExecResult> {
+      gate(sql);
       return db.exec(sql);
     },
 

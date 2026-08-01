@@ -1,6 +1,9 @@
 // ABOUTME: Self-test for the in-memory D1 fake — verifies insert/select round-trip,
 // ABOUTME: DELETE ... RETURNING, FK cascade delete, and statement failure injection.
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { D1_MAX_BOUND_PARAMS, createFakeD1, loadMigration, withFailingStatement } from "./fake-d1";
 
 describe("createFakeD1", () => {
@@ -140,16 +143,19 @@ describe("withFailingStatement", () => {
     expect(row).toEqual({ id: "u1" });
   });
 
-  it("rejects the matching statement with the injected error", async () => {
+  it("rejects the matching statement with the injected error and writes no row", async () => {
+    const injected = new Error("D1_ERROR: network connection lost");
     const db = withFailingStatement(createFakeD1(loadMigration()), {
       match: "INSERT INTO sessions",
-      error: new Error("D1_ERROR: network connection lost"),
+      error: injected,
     });
     await seedUser(db, "u1");
 
-    await expect(db.prepare(insertSession("hash1")).run()).rejects.toThrow(
-      "D1_ERROR: network connection lost"
-    );
+    await expect(db.prepare(insertSession("hash1")).run()).rejects.toBe(injected);
+
+    // The statement must fail instead of running, not run and then fail.
+    const { results } = await db.prepare("SELECT token_hash FROM sessions").all();
+    expect(results).toEqual([]);
   });
 
   it("leaves non-matching statements working while one statement fails", async () => {
@@ -191,9 +197,11 @@ describe("withFailingStatement", () => {
     await expect(db.prepare(insertSession("hash2")).run()).rejects.toThrow(
       "D1_ERROR: injected failure"
     );
+    // The third execution must land: onCall names one execution, not a threshold.
+    await db.prepare(insertSession("hash3")).run();
 
     const { results } = await db.prepare("SELECT token_hash FROM sessions ORDER BY token_hash").all();
-    expect(results).toEqual([{ token_hash: "hash1" }]);
+    expect(results).toEqual([{ token_hash: "hash1" }, { token_hash: "hash3" }]);
   });
 
   it("counts onCall per wrapper rather than globally", async () => {
@@ -203,8 +211,16 @@ describe("withFailingStatement", () => {
     const second = withFailingStatement(base, { match: "INSERT INTO sessions", onCall: 2 });
 
     await first.prepare(insertSession("hash1")).run();
-    // A shared counter would make this the second matching execution and fail it.
+    // A counter shared across wrappers would make this the second match and fail it.
     await second.prepare(insertSession("hash2")).run();
+
+    // Each wrapper reaches its own second match independently.
+    await expect(first.prepare(insertSession("hash3")).run()).rejects.toThrow(
+      "D1_ERROR: injected failure"
+    );
+    await expect(second.prepare(insertSession("hash4")).run()).rejects.toThrow(
+      "D1_ERROR: injected failure"
+    );
 
     const { results } = await base.prepare("SELECT token_hash FROM sessions ORDER BY token_hash").all();
     expect(results).toEqual([{ token_hash: "hash1" }, { token_hash: "hash2" }]);
@@ -245,6 +261,10 @@ describe("withFailingStatement", () => {
 
     const group = await db.prepare("SELECT id FROM groups WHERE id = ?").bind("grp1").first();
     expect(group).toBeNull();
+
+    // The rollback must stop at the batch's BEGIN, not unwind earlier writes.
+    const user = await db.prepare("SELECT id FROM users WHERE id = ?").bind("u1").first();
+    expect(user).toEqual({ id: "u1" });
   });
 
   it("keeps injecting through bind(), which returns a fresh statement instance", async () => {
@@ -256,6 +276,9 @@ describe("withFailingStatement", () => {
     await expect(
       db.prepare(INSERT_SESSION_BOUND).bind("hash1", "u1", EXPIRES, NOW).run()
     ).rejects.toThrow("D1_ERROR: injected failure");
+
+    const { results } = await db.prepare("SELECT token_hash FROM sessions").all();
+    expect(results).toEqual([]);
   });
 
   it("counts onCall across separate prepare().bind() chains", async () => {
@@ -269,9 +292,22 @@ describe("withFailingStatement", () => {
     await expect(
       db.prepare(INSERT_SESSION_BOUND).bind("hash2", "u1", EXPIRES, NOW).run()
     ).rejects.toThrow("D1_ERROR: injected failure");
+    await db.prepare(INSERT_SESSION_BOUND).bind("hash3", "u1", EXPIRES, NOW).run();
 
     const { results } = await db.prepare("SELECT token_hash FROM sessions ORDER BY token_hash").all();
-    expect(results).toEqual([{ token_hash: "hash1" }]);
+    expect(results).toEqual([{ token_hash: "hash1" }, { token_hash: "hash3" }]);
+  });
+
+  it("gates exec() as well as prepared statements", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), { match: "DROP TABLE sessions" });
+
+    await expect(db.exec("DROP TABLE sessions")).rejects.toThrow("D1_ERROR: injected failure");
+
+    const table = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+      .bind("sessions")
+      .first();
+    expect(table).toEqual({ name: "sessions" });
   });
 
   it("still enforces the D1 bound-parameter ceiling", () => {
@@ -290,6 +326,39 @@ describe("loadMigration", () => {
     const sql = loadMigration();
     expect(sql).toContain("CREATE TABLE users");
     expect(sql).toContain("CREATE TABLE titles");
+  });
+
+  // migrations/ holds a single file today, so the assertions below are the only
+  // thing separating "reads the whole directory, in order" from "reads 0001".
+  // loadMigration resolves its directory from process.cwd(), so a temporary cwd
+  // is the injection point; vitest's forks pool makes process.chdir available.
+  it("concatenates every migration in filename order and ignores non-SQL files", () => {
+    const root = mkdtempSync(join(tmpdir(), "movie-night-migrations-"));
+    mkdirSync(join(root, "migrations"));
+    // Written out of filename order. How much that discriminates depends on the
+    // filesystem — APFS hands back readdir results already ordered, so the sort
+    // is only provably load-bearing where readdir is hash-ordered, as on ext4.
+    // The ordering assertion states the property on either.
+    for (const name of ["0003_third", "0001_first", "0004_fourth", "0002_second"]) {
+      writeFileSync(join(root, "migrations", `${name}.sql`), `CREATE TABLE ${name} (id TEXT);\n`);
+    }
+    writeFileSync(join(root, "migrations", "notes.txt"), "CREATE TABLE not_a_migration (id TEXT);\n");
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      const sql = loadMigration();
+
+      expect(sql).not.toContain("not_a_migration");
+      const positions = ["0001_first", "0002_second", "0003_third", "0004_fourth"].map((name) =>
+        sql.indexOf(`CREATE TABLE ${name}`)
+      );
+      expect(positions.every((p) => p !== -1)).toBe(true);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("builds a database carrying every table the deployed schema has", async () => {
