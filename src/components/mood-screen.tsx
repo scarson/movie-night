@@ -8,6 +8,8 @@ import { ToggleRow } from "@/components/toggle-row";
 import { RoughDayToggle } from "@/components/rough-day-toggle";
 
 const MAX_MOOD_TEXT = 200;
+/** The ceiling POST /api/movie-sessions enforces on moodVibes. */
+const MAX_MOOD_VIBES = 30;
 
 export interface MoodScreenProps {
   moodVibes: string[];
@@ -55,6 +57,7 @@ export function MoodScreen({
           selected={moodVibes}
           onChange={onMoodVibesChange}
           customPlaceholder="Add your own, e.g. rainy Sunday"
+          max={MAX_MOOD_VIBES}
         />
       </section>
 

@@ -177,3 +177,77 @@ describe("TitleSearch", () => {
     expect(onChange).toHaveBeenCalledWith([ARRIVAL, KNIVES]);
   });
 });
+
+/** Fills the list with distinct titles that are none of the fixtures above. */
+function filler(count: number): TitleRef[] {
+  return Array.from({ length: count }, (_, i) => ({
+    tmdbId: 1000 + i,
+    title: `Filler ${i}`,
+    year: 2000 + i,
+    posterPath: null,
+  }));
+}
+
+describe("TitleSearch entry limit", () => {
+  it("refuses a 51st title from the results list and says why", async () => {
+    const fetchStub = vi.fn(async () => searchResponse([ARRIVAL]));
+    vi.stubGlobal("fetch", fetchStub);
+    const onChange = vi.fn();
+    render(<TitleSearch selected={filler(50)} onChange={onChange} />);
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "arri" } });
+    await advance(250);
+    fireEvent.click(screen.getByRole("button", { name: "Arrival (2016)" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("50 is the limit — remove one first.")).toBeTruthy();
+  });
+
+  it("refuses a quick-pick chip past the limit", () => {
+    const onChange = vi.fn();
+    render(
+      <TitleSearch selected={filler(50)} onChange={onChange} quickPicks={[KNIVES]} />
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Knives Out" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("50 is the limit — remove one first.")).toBeTruthy();
+  });
+
+  it("removing past the limit works and clears the message", () => {
+    const onChange = vi.fn();
+    const selected = filler(50);
+    render(
+      <TitleSearch selected={selected} onChange={onChange} quickPicks={[KNIVES]} />
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Knives Out" }));
+    expect(screen.getByText(/is the limit/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Filler 0" }));
+
+    expect(onChange).toHaveBeenCalledWith(selected.slice(1));
+    expect(onChange.mock.calls[0][0]).toHaveLength(49);
+    // Controlled component: `selected` is still 50 on this render, so the count
+    // form is what the refusal message reverts to.
+    expect(screen.queryByText(/is the limit/)).toBeNull();
+    expect(screen.getByText("50 of 50 chosen")).toBeTruthy();
+  });
+
+  it("honours an explicit max below the default", () => {
+    const onChange = vi.fn();
+    render(
+      <TitleSearch
+        selected={[ARRIVAL]}
+        onChange={onChange}
+        quickPicks={[KNIVES]}
+        max={1}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Knives Out" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("1 is the limit — remove one first.")).toBeTruthy();
+  });
+});

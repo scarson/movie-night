@@ -8,6 +8,8 @@ import { Poster } from "@/components/poster";
 
 const DEBOUNCE_MS = 250;
 const MIN_QUERY_LENGTH = 2;
+/** Matches the server's per-list ceiling for a title list. */
+const MAX_TITLES = 50;
 
 export interface TitleRef {
   tmdbId: number;
@@ -21,6 +23,8 @@ export interface TitleSearchProps {
   onChange: (titles: TitleRef[]) => void;
   quickPicks?: TitleRef[];
   placeholder?: string;
+  /** How many entries the receiving endpoint accepts. */
+  max?: number;
 }
 
 export function TitleSearch({
@@ -28,10 +32,12 @@ export function TitleSearch({
   onChange,
   quickPicks = [],
   placeholder = "Search for a title…",
+  max = MAX_TITLES,
 }: TitleSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TitleRef[]>([]);
   const [failed, setFailed] = useState(false);
+  const [limitHit, setLimitHit] = useState(false);
   const requestSeq = useRef(0);
 
   useEffect(() => {
@@ -78,6 +84,12 @@ export function TitleSearch({
 
   const add = (title: TitleRef) => {
     if (!isSelected(title.tmdbId)) {
+      // A tap that does nothing and says nothing reads as a broken control. The
+      // query stays put so the refusal sits beside what it refused.
+      if (selected.length >= max) {
+        setLimitHit(true);
+        return;
+      }
       onChange([...selected, title]);
     }
     setQuery("");
@@ -86,6 +98,7 @@ export function TitleSearch({
 
   const remove = (tmdbId: number) => {
     onChange(selected.filter((t) => t.tmdbId !== tmdbId));
+    setLimitHit(false);
   };
 
   const unselectedQuickPicks = quickPicks.filter((t) => !isSelected(t.tmdbId));
@@ -127,6 +140,17 @@ export function TitleSearch({
       {failed && (
         <p className="mt-sm text-sm text-ash">Couldn&apos;t search right now.</p>
       )}
+
+      <p
+        aria-live="polite"
+        className={`mt-sm text-sm tabular-nums ${limitHit ? "text-ember" : "text-ash"}`}
+      >
+        {limitHit
+          ? `${max} is the limit — remove one first.`
+          : selected.length > 0
+            ? `${selected.length} of ${max} chosen`
+            : ""}
+      </p>
 
       {visibleResults.length > 0 && (
         <ul className="mt-sm overflow-hidden rounded-control border border-slate bg-charcoal">
