@@ -1152,3 +1152,57 @@ the Browser pane — an unnamespaced log and the default 8787 got clobbered mid-
 tab stole the viewport size, so ports and log names need namespacing and `tabId` needs passing
 explicitly. And chip screenshots were captured with `playwright-core` installed into a scratch
 directory against the already-cached Chromium, so nothing was added to the project's dependencies.
+
+## 2026-08-01 — Phase 1 bug-hunt remediation plan (docs only, no code)
+
+Turned the consolidated bug hunt (B1-B15, D1-D7), two independent Opus sanity reviews, the
+performance audit and the authenticated-a11y verification into one subagent-proof implementation
+plan plus a durable decision record. **35 tasks across a prep group and seven execution groups**,
+merge order `PREP → G1 → G4 → G7 → G6 → G2 → G3 → G5`. No source files were changed.
+
+**Platform facts checked against the live Cloudflare docs and the installed SDK, not memory**, and
+they overturned one decision outright. The 1,000-subrequest limit was removed on 2026-02-11: Paid
+now defaults to 10,000, and the Free plan's 50 applies to *external* subrequests only, with a
+separate 1,000-call budget that D1 draws on. Every argument for dropping `STALE_TITLES_LIMIT` to 40
+rested on the obsolete numbers, and the real Free-plan blocker is 10 ms CPU, which this app cannot
+fit under at any limit. It stays at 200; the stale comment and `docs/deploy.md` get corrected
+instead. Also verified: `db.batch()` is a real transaction (load-bearing for B1/B4 and for keeping
+D4's prune *out* of a batch), D1 enforces foreign keys by default (load-bearing for B15's
+statement sequencing), and the Anthropic SDK's default timeout is 10 minutes which it *scales up*
+for large `max_tokens` and *retries* — so D3's tail today is tens of minutes, not the 20 the report
+estimated, and the fix is one constructor option because `APIConnectionTimeoutError` already
+extends the class `callClaude` maps.
+
+**Three adversarial review rounds** — one self-review, two by fresh agents with no conversation
+history who verified every citation against source. They found four blockers that were substance,
+not wording, and all four are the same shape: a fix that is correct about the bug and quietly wrong
+about something else. B1's grace check would have read `rotated_at` from *before* the claim, which
+is `NULL` in the real race, so the loser still 401s — and the only test the synchronous fake D1
+permits passes either way. B1's two claim statements had mismatched predicates, so an expiring row
+could mint a cookie for a session that was never inserted. B5's scrub, as the security review
+specified it, ran a literal replacement over the *serialized* JSON: it matches JSON keys (a user
+named `name` or `summary` corrupts the document), every member's name rather than the deleted one's,
+and film titles inside the survivor's prose — now scoped to four named parsed fields with a
+same-name suppression rule. And B6's failure-path attempt stamp would have ridden D6's `refreshed`
+counter, making a run where every fetch failed log `refreshed: 200` — the exact lie D6 exists to
+remove, in the same commit that removes it.
+
+**One deliberate deviation from the reconciled decisions, flagged for override.** B8 was to show
+the weighting note "only when weighting actually applied". That cannot be done without a leak: the
+toggler knows their own flag, so a note whose presence tracks "weighting applied" is a direct
+readout of whether their partner also toggled. Truthfulness-about-the-engine and the privacy
+invariant are in genuine conflict. Rather than suppress the note, the plan removes the *claim* —
+rewording it to describe the user's own choice, which is what `DESIGN.md:124` says the note should
+have been all along. No `SessionView` change, no leak, no falsity.
+
+**Two premises corrected.** `migrations/` holds only `0001`; the `0002_auth_schema.sql` both
+reviews assumed was stale `CLAUDE.md` boilerplate. Since B1 needs a migration too, the allocation
+is `0002`→B1, `0003`→B6, `0004`→the audit's indexes — so B6 still lands on the number the reviews
+named, for a different reason. And `docs/deploy.md` §2 is headed "✅ DONE", so three pending
+migrations appended under it would be skipped by a deployer; the first group to touch the file now
+creates an explicit *Pending migrations* subsection. Production without `sessions.rotated_at` would
+turn every token refresh into a 500.
+
+Artifacts: `dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md` (the what),
+`dev/research/2026-08-01-remediation-decisions.md` (the why, including where the two reviewers
+disagreed and how it was resolved), and the two sanity reviews they were reconciled from.
