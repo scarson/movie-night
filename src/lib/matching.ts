@@ -347,6 +347,53 @@ function sanitizeStrings<T>(value: T): T {
   return value;
 }
 
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Structural validation of a MatchingResponse, derived from
+ * MATCHING_RESPONSE_SCHEMA rather than from any one consumer's dereferences.
+ * Shared by the write path (parseMatchingResponse) and the read path (the
+ * session GET), so a blob that was persisted before a validator existed cannot
+ * reach the renderer either.
+ */
+export function isMatchingResponse(value: unknown): value is MatchingResponse {
+  if (!isRecord(value)) return false;
+  if (typeof value.conversational !== "string") return false;
+  if (!Array.isArray(value.recommendations)) return false;
+  if (!isRecord(value.tasteMap)) return false;
+
+  const { members, overlap } = value.tasteMap;
+  if (!Array.isArray(members)) return false;
+  for (const entry of members) {
+    if (!isRecord(entry)) return false;
+    if (typeof entry.userId !== "string") return false;
+    if (typeof entry.name !== "string") return false;
+    if (typeof entry.summary !== "string") return false;
+    if (!isStringArray(entry.primaryVibes)) return false;
+    if (!isStringArray(entry.genreAffinities)) return false;
+  }
+
+  if (!isRecord(overlap)) return false;
+  if (typeof overlap.summary !== "string") return false;
+  if (!isStringArray(overlap.sharedVibes)) return false;
+  if (!isStringArray(overlap.tensionPoints)) return false;
+
+  for (const rec of value.recommendations) {
+    if (!isRecord(rec)) return false;
+    if (typeof rec.tmdbId !== "number") return false;
+    if (typeof rec.matchScore !== "number") return false;
+    if (typeof rec.explanation !== "string") return false;
+  }
+
+  return true;
+}
+
 export interface ParsedMatching {
   response: MatchingResponse;
   droppedIds: number[];
@@ -367,18 +414,8 @@ export function parseMatchingResponse(text: string, validTmdbIds: Set<number>): 
   }
 
   // Structured outputs guarantee the schema, but parse defensively anyway.
-  const shaped = raw as MatchingResponse;
-  if (
-    shaped === null ||
-    typeof shaped !== "object" ||
-    typeof shaped.conversational !== "string" ||
-    !Array.isArray(shaped.recommendations) ||
-    shaped.tasteMap === null ||
-    typeof shaped.tasteMap !== "object" ||
-    !Array.isArray(shaped.tasteMap.members)
-  ) {
-    throw new MatchingError("malformed");
-  }
+  if (!isMatchingResponse(raw)) throw new MatchingError("malformed");
+  const shaped = raw;
 
   const droppedIds: number[] = [];
   const recommendations: Recommendation[] = [];

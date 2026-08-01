@@ -10,6 +10,7 @@ import {
   selectCandidates,
   buildMatchingPrompt,
   parseMatchingResponse,
+  isMatchingResponse,
   runMatching,
   MatchingError,
   MATCHING_MODEL,
@@ -613,6 +614,58 @@ describe("parseMatchingResponse", () => {
     expect(() => parseMatchingResponse(JSON.stringify({ hello: "world" }), validIds)).toThrowError(
       expect.objectContaining({ kind: "malformed" })
     );
+  });
+
+  describe("structural validation, enumerated from MATCHING_RESPONSE_SCHEMA", () => {
+    // Each case removes or mistypes one field the schema marks required. The
+    // fixtures are derived from the schema rather than from the validator's own
+    // condition list — a negative test written against that list can only ever
+    // confirm the list, which is how the overlap gap survived.
+    const cases: Array<[string, (r: MatchingResponse) => void]> = [
+      ["tasteMap.overlap missing", (r) => delete (r.tasteMap as Partial<typeof r.tasteMap>).overlap],
+      ["overlap.summary not a string", (r) => ((r.tasteMap.overlap.summary as unknown) = 7)],
+      ["overlap.sharedVibes a string", (r) => ((r.tasteMap.overlap.sharedVibes as unknown) = "Cozy")],
+      [
+        "overlap.tensionPoints missing",
+        (r) => delete (r.tasteMap.overlap as Partial<typeof r.tasteMap.overlap>).tensionPoints,
+      ],
+      [
+        "a member missing primaryVibes",
+        (r) => delete (r.tasteMap.members[0] as Partial<(typeof r.tasteMap.members)[number]>).primaryVibes,
+      ],
+      [
+        "a member's genreAffinities a string",
+        (r) => ((r.tasteMap.members[0].genreAffinities as unknown) = "action"),
+      ],
+      ["a member's userId not a string", (r) => ((r.tasteMap.members[0].userId as unknown) = 12)],
+      ["a member entry null", (r) => ((r.tasteMap.members[0] as unknown) = null)],
+      ["a recommendation's tmdbId a string", (r) => ((r.recommendations[0].tmdbId as unknown) = "12")],
+      ["a recommendation's matchScore a string", (r) => ((r.recommendations[0].matchScore as unknown) = "90")],
+      [
+        "a recommendation's explanation missing",
+        (r) => delete (r.recommendations[0] as Partial<(typeof r.recommendations)[number]>).explanation,
+      ],
+    ];
+
+    for (const [label, mutate] of cases) {
+      it(`throws malformed when ${label}`, () => {
+        const response = validResponse([1, 2, 3, 4, 5]);
+        mutate(response);
+
+        expect(() => parseMatchingResponse(JSON.stringify(response), validIds)).toThrowError(
+          expect.objectContaining({ kind: "malformed" })
+        );
+      });
+    }
+
+    it("isMatchingResponse accepts a complete response and narrows its type", () => {
+      const response: unknown = validResponse([1, 2, 3]);
+
+      expect(isMatchingResponse(response)).toBe(true);
+      expect(isMatchingResponse(null)).toBe(false);
+      expect(isMatchingResponse("a string")).toBe(false);
+      expect(isMatchingResponse({ hello: "world" })).toBe(false);
+    });
   });
 
   it("clamps matchScore into 0-100", () => {

@@ -6,6 +6,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
 import { parseJsonColumn } from "@/lib/db";
 import { getSessionForMember, getTitlesMap } from "@/lib/movie-sessions";
+import { isMatchingResponse } from "@/lib/matching";
 import type { MatchingResponse } from "@/types/matching";
 import type { RecommendationRow } from "@/types/db";
 
@@ -35,7 +36,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .bind(id)
       .first<RecommendationRow>();
 
-    const response = latest ? parseJsonColumn<MatchingResponse | null>(latest.ai_response, null) : null;
+    let response: MatchingResponse | null = null;
+    if (latest) {
+      // The guard runs against `parsed` including when it is null, so a blob
+      // that is not JSON at all is logged too — that is the commonest
+      // corruption, and the renderer dereferences this value immediately.
+      const parsed = parseJsonColumn<unknown>(latest.ai_response, null);
+      if (isMatchingResponse(parsed)) {
+        response = parsed;
+      } else {
+        console.error(
+          JSON.stringify({ event: "corrupt_ai_response", session_id: id, round: latest.round_number })
+        );
+      }
+    }
+
     const titles = response
       ? await getTitlesMap(db, response.recommendations.map((rec) => rec.tmdbId))
       : {};

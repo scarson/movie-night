@@ -195,6 +195,62 @@ describe("GET /api/movie-sessions/[id]", () => {
     });
   });
 
+  describe("a stored ai_response that is not a MatchingResponse", () => {
+    function seedRawRound(db: D1Database, sessionId: string, aiResponse: string) {
+      return db
+        .prepare(
+          `INSERT INTO recommendations (id, session_id, round_number, ai_response, kept_tmdb_ids, removed_tmdb_ids,
+             steering_feedback, model, prompt_version, candidate_snapshot, created_at)
+           VALUES (?, ?, 3, ?, '[]', '[]', '', 'm', 'p', '[]', ?)`
+        )
+        .bind(crypto.randomUUID(), sessionId, aiResponse, "2026-01-01T00:00:00.000Z")
+        .run();
+    }
+
+    it("degrades to response: null and logs, rather than serving a shape the renderer dereferences", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setupSession(db);
+      const stored = sampleResponse([27205]) as Partial<MatchingResponse>;
+      delete (stored.tasteMap as Partial<MatchingResponse["tasteMap"]>).overlap;
+      await seedRawRound(db, sessionId, JSON.stringify(stored));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await get(sessionId, "u1");
+      const logged = errorSpy.mock.calls
+        .map(([line]) => line)
+        .filter((line): line is string => typeof line === "string")
+        .map((line) => JSON.parse(line));
+      errorSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      const body = await response.json<Record<string, any>>();
+      expect(body.response).toBeNull();
+      expect(body.round).toBe(3);
+      expect(body.titles).toEqual({});
+      expect(logged).toEqual([{ event: "corrupt_ai_response", session_id: sessionId, round: 3 }]);
+    });
+
+    it("logs a blob that is not JSON at all — the commonest corruption", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setupSession(db);
+      await seedRawRound(db, sessionId, "not json");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await get(sessionId, "u1");
+      const logged = errorSpy.mock.calls
+        .map(([line]) => line)
+        .filter((line): line is string => typeof line === "string")
+        .map((line) => JSON.parse(line));
+      errorSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      expect((await response.json<Record<string, any>>()).response).toBeNull();
+      expect(logged).toEqual([{ event: "corrupt_ai_response", session_id: sessionId, round: 3 }]);
+    });
+  });
+
   it("still serves the stored round to someone who has left the group", async () => {
     // Read access to history is deliberately preserved when write/spend access
     // is revoked — POST .../match gates on group_members, this GET does not.
