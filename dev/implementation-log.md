@@ -1573,3 +1573,7 @@ that assert the token's *absence*. ~80 bytes of dead CSS that no element referen
 Also confirmed: no new test asserts a derived value passed straight back as its own input — the
 rendered assertions run against `RefinePanel`, a real call site, and the class constants are
 asserted as constants in `control-classes.test.ts`, not laundered through a render.
+
+An independent reviewer was dispatched to run the three rounds in parallel with the self-review and
+stalled without reporting; the rounds above are the author's own, and the two findings they produced
+were both fixed before the PR opened. A fresh pair of eyes on the diff is still worth having.
