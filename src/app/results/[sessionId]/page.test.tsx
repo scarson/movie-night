@@ -613,6 +613,26 @@ describe("results page", () => {
     expect(screen.getByTestId("refine-error-heading").tagName).toBe("H2");
   });
 
+  it("frames a provider_auth failure as a lie-down, not as the unknown-kind fallback", async () => {
+    vi.useFakeTimers();
+    stubApi({
+      match: {
+        status: 503,
+        body: { error: "Our movie brain is taking a nap — try again in a moment", kind: "provider_auth" },
+      },
+    });
+    await renderResults();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("refine-error-heading").textContent).toBe(
+      "Our movie brain is having a lie-down"
+    );
+    expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
+  });
+
   it("frames a left_group refusal without a retry button", async () => {
     // A retry can only ever fail again — the membership is gone — and it would
     // sit next to a stored round the ex-member can still read.

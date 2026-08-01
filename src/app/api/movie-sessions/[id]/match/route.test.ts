@@ -470,6 +470,28 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect((await response.json<Record<string, string>>()).kind).toBe("overloaded");
   });
 
+  it("maps an Anthropic 401 to 503 provider_auth without naming the credential", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setup(db);
+    stubAnthropic([new APIError(401, { type: "error" }, "invalid x-api-key", new Headers())]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const response = await postMatch(sessionId, "u1");
+    errorSpy.mockRestore();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Our movie brain is taking a nap — try again in a moment",
+      kind: "provider_auth",
+    });
+    const { results } = await db
+      .prepare("SELECT * FROM recommendations WHERE session_id = ?")
+      .bind(sessionId)
+      .all();
+    expect(results).toHaveLength(0);
+  });
+
   it("maps Anthropic 429 to 429 rate_limited with the locked message", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

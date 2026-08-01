@@ -781,6 +781,43 @@ describe("runMatching", () => {
     expect(created).toHaveLength(1);
   });
 
+  it("maps HTTP 401 and 403 to provider_auth", async () => {
+    // A rejected credential is an operator condition, not a user one. It used to
+    // fall past the taxonomy into a generic 500, indistinguishable from a
+    // database failure or a bug in the route.
+    for (const status of [401, 403]) {
+      const err = new APIError(status, { type: "error" }, "authentication_error", new Headers());
+      const { factory, created } = fakeClientFactory([err]);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await expect(
+        runMatching({ env: ENV, input: promptInput(), context: CONTEXT, clientFactory: factory, log: vi.fn() })
+      ).rejects.toMatchObject({ kind: "provider_auth" });
+      errorSpy.mockRestore();
+
+      // Retrying a rejected credential is pure waste.
+      expect(created).toHaveLength(1);
+    }
+  });
+
+  it("logs a structured provider_auth_failed line naming the status", async () => {
+    const err = new APIError(401, { type: "error" }, "authentication_error", new Headers());
+    const { factory } = fakeClientFactory([err]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      runMatching({ env: ENV, input: promptInput(), context: CONTEXT, clientFactory: factory, log: vi.fn() })
+    ).rejects.toMatchObject({ kind: "provider_auth" });
+
+    const lines = errorSpy.mock.calls
+      .map(([line]) => line)
+      .filter((line): line is string => typeof line === "string")
+      .map((line) => JSON.parse(line));
+    errorSpy.mockRestore();
+
+    expect(lines).toEqual([{ event: "provider_auth_failed", status: 401 }]);
+  });
+
   it("maps HTTP 429 to rate_limited", async () => {
     const err = new APIError(429, { type: "error" }, "rate limited", new Headers());
     const { factory } = fakeClientFactory([err]);

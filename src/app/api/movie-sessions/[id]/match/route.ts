@@ -35,6 +35,9 @@ const MATCHING_ERROR_HTTP: Record<MatchingErrorKind, { status: number; error: st
   timeout: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
   overloaded: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
   rate_limited: { status: 429, error: "We're getting a lot of requests right now, try again in a moment" },
+  // Deliberately the same copy as timeout/overloaded: the user cannot act on
+  // our credentials and must not be told about them.
+  provider_auth: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
 };
 
 function withAuthHeaders(response: NextResponse, headers: Headers): NextResponse {

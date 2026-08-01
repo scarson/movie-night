@@ -51,6 +51,9 @@ interface ErrorFraming {
 const ERROR_FRAMING = new Map<string, ErrorFraming>([
   ["timeout", { heading: "Our movie brain is having a lie-down", retry: true }],
   ["overloaded", { heading: "Our movie brain is having a lie-down", retry: true }],
+  // Indistinguishable from a transient outage on this side, and an operator
+  // rotating a key back is the far commoner case than one that stays revoked.
+  ["provider_auth", { heading: "Our movie brain is having a lie-down", retry: true }],
   ["rate_limited", { heading: "Everyone picked tonight", retry: true }],
   ["monthly_cap", { heading: "Everyone picked tonight", retry: true }],
   ["malformed", { heading: "That came back garbled", retry: true }],

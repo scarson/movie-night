@@ -32,7 +32,13 @@ const MIN_SURVIVING_RECOMMENDATIONS = 3;
 
 // ── Error taxonomy ───────────────────────────────────────────
 
-export type MatchingErrorKind = "malformed" | "timeout" | "overloaded" | "rate_limited" | "thin_results";
+export type MatchingErrorKind =
+  | "malformed"
+  | "timeout"
+  | "overloaded"
+  | "rate_limited"
+  | "thin_results"
+  | "provider_auth";
 
 const KIND_MESSAGES: Record<MatchingErrorKind, string> = {
   malformed: "The model response could not be parsed into a MatchingResponse",
@@ -40,6 +46,7 @@ const KIND_MESSAGES: Record<MatchingErrorKind, string> = {
   overloaded: "The Anthropic API is overloaded",
   rate_limited: "The Anthropic API rate limit was hit",
   thin_results: "Fewer than 3 recommendations survived validation",
+  provider_auth: "The Anthropic API rejected our credentials",
 };
 
 export class MatchingError extends Error {
@@ -442,6 +449,12 @@ export async function callClaude(
     // Order matters: APIConnectionError extends APIError with status undefined.
     if (err instanceof APIConnectionError) throw new MatchingError("timeout");
     if (err instanceof APIError) {
+      if (err.status === 401 || err.status === 403) {
+        // A revoked or rotated key is an operator condition. This line is the
+        // only signal that distinguishes it from any other server-side failure.
+        console.error(JSON.stringify({ event: "provider_auth_failed", status: err.status }));
+        throw new MatchingError("provider_auth");
+      }
       if (err.status === 429) throw new MatchingError("rate_limited");
       if (err.status === 529 || (typeof err.status === "number" && err.status >= 500)) {
         throw new MatchingError("overloaded");
