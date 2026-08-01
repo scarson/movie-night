@@ -2014,3 +2014,67 @@ npx @opennextjs/cloudflare build   clean
 
 645 = the PREP tip's 634 plus G4's 11 new cron cases (8 → 19 in `cron-handler.test.ts`). Still
 exactly 2 skips, still only the three baseline `vite:dynamic-import-vars` warnings.
+
+---
+
+## 2026-08-01 - G2: matching engine + match route (10 tasks)
+
+Branch `claude/rem-g2-matching`, stacked on `claude/rem-prep` (G2-6's failure-injection test needs
+PREP-1). Nine commits, one per task. Gates green before each: `npx tsc --noEmit`, `npm run lint`,
+`npm test`, plus `npx @opennextjs/cloudflare build` (exit 0) because `src/app/` changed.
+**59 files / 699 passed / 2 skipped**, up from the 634 this branch inherited from PREP. Still
+exactly the two `RUN_LIVE_EVALS`-gated skips, and only the three known
+`vite:dynamic-import-vars` baseline warnings.
+
+**What changed.** `removedTmdbIds`/`keptTmdbIds` are intersected against `getRecommendedTmdbIds` --
+the ids this session actually recommended -- before they reach anything, because the next task
+turns them into a pool primitive. `selectCandidates` takes a required `removedIds` set and filters
+the whole pool before the referenced/fill split, so a rejected film cannot walk back in as a
+member's own watchlist entry; no floor, an over-constrained brief fails honestly as
+`thin_results`. The exclusion list is now built newest-first (`ORDER BY round_number DESC` plus a
+flipped union order) and capped at 100 entries of its own rather than sharing the 50-entry title
+cap. `POST .../match` gates on live `group_members`; the GET stays `session_members`-based on
+purpose. `MONTHLY_MATCH_LIMIT=0` arms the kill switch. A 401/403 from Anthropic becomes
+`MatchingError("provider_auth")` -> 503 with a `provider_auth_failed` log line. A titles-hydration
+failure degrades to `{}` instead of throwing away a billed round. One `isMatchingResponse`
+predicate guards both the write and the read path. The Anthropic client carries a 45 s request
+timeout. Every user-derived string entering the prompt goes through one sanitizer, the two
+free-text fields lost their surrounding quotes, and the guardrail now covers the system prompt --
+where `steeringNote` and `refinementNote` actually live.
+
+**Decisions taken.**
+
+- *Exclusion cap 100.* ~10 tokens per `Title (tmdbId 12345)` entry against a 7-9K-token CANDIDATES
+  block, so ~1,000 tokens, ~11-14% of it. The reachable legitimate ceiling is 10 rounds x 7 picks
+  = 70, so every honest list fits under the cap with headroom.
+- *Timeout 45 s.* Three times the top of the design doc's 5-15 s budget. The SDK retries timeouts,
+  so worst case is 90 s per attempt; `runMatching` retries only on `malformed`, which is a fast
+  failure, so the pathological ceiling is 180 s -- down from a ~20-minute tail.
+- *`provider_auth` is a new kind, not a reused one.* `MATCHING_ERROR_HTTP` is a
+  `Record<MatchingErrorKind, ...>` so `tsc` forces the entry; `ERROR_FRAMING` is a `Map` with a
+  fallback that already carries non-`MatchingErrorKind` keys, so the UI absorbs an addition. No
+  existing kind is honest for a revoked credential -- `overloaded` and `timeout` both promise a
+  retry that can never work.
+
+**Gotchas found.**
+
+- Writing `sanitizePromptText`'s control-character class with explicit `\u` escapes matters, and
+  the plan says so for a reason: the first attempt landed *literal* control characters in the
+  source, which are invisible in review.
+- Two route-test fixtures removed a tmdb id the session had never recommended -- a state the real
+  client cannot produce once provenance is enforced. Updated rather than worked around
+  (testing-pitfalls section 7).
+- Filtering the pool exposed a third fixture whose stubbed model response named a removed title;
+  that one is the fix working, and the fixture now names only surviving candidates.
+- `src/app/results/[sessionId]/page.test.tsx`'s 60-item removed-id test times out under parallel
+  load. It fails on the untouched baseline too -- environmental, not this branch.
+
+**Plan defect.** G2-9's prescribed assertion for the quoted free-text fields -- "the total count of
+double-quote characters is exactly one more than for a benign value" -- passes against the
+*unfixed* code: two wrapping quotes plus one injected is also "benign plus one". Both tests were
+strengthened to assert the new unquoted labelled line, and to pin the benign quote count at zero.
+
+**Cross-group note.** G2-4's membership gate makes G3-5's `__solo__` guard in `leaveGroup` load
+bearing: `leaveGroup` currently accepts any group id, so leaving your own `__solo__` group would
+now revoke matching on your own solo sessions. G3-5 is marked droppable in the plan; it should not
+be dropped while this gate is in place.
