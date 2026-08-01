@@ -2372,3 +2372,67 @@ them — an ascending fixture would agree with index-ordered D1 results and prov
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 833 passed
 / 2 skipped (baseline 832), only the pre-existing `vite:dynamic-import-vars` warnings,
 `npx @opennextjs/cloudflare build` clean.
+
+---
+
+## Partial-tolerant profile enrichment (`claude/enrichment-partial-failure`)
+
+**The dead end.** `PUT /api/user/profile` enriched every referenced tmdb id the catalog didn't have
+by fetching it from TMDB. A single failure — a deleted id that 404s, a transient 5xx, a network blip
+— returned a 400 and wrote *nothing*: the titles that resolved perfectly well, and every tag
+selection, which never touches TMDB. Reachable in ordinary use, because `/api/titles/search` merges
+live TMDB search hits into the local catalog, so a user can pick an id that later 404s. In the
+ritual it dead-ended "Continue →" at step 0 with an error naming no remedy. Raising
+`MAX_UNKNOWN_IDS_PER_PUT` from 10 to 50 (PR #28) multiplied the chances of one dud id by five.
+
+**The fix.** Enrichment is now partial-tolerant. Ids that fail are dropped from `comfortTitles` and
+`watchlist` *before* the profile row is written — so `profiles` still never references a tmdb id
+with no `titles` row, which is the invariant enrichment exists to hold — and come back in the
+response as `skippedTitles: [{ tmdbId, reason }]`. `reason` is `"not-found"` for a TMDB 404 and
+`"unavailable"` for everything else (5xx, network, a refused D1 write), distinguished off
+`TmdbError.status`. The two need different remedies, so the reason has to travel with the id. When
+nothing was skipped the key is absent and the body is byte-identical to before.
+
+**All unknown ids failing is deliberately not an error.** The tempting rule — "if none of what you
+added landed, refuse" — fires hardest in exactly the case being fixed: with one unknown id, one
+failure *is* 100%, so a single dud would still take the whole save down and lose the tag edits with
+it. "All failed" is not a distinct kind of failure, it is the same per-title failure N times. The
+route therefore always persists and always reports; the *message* carries the distinction the user
+actually needs (permanent vs. transient).
+
+**Surfacing.** `saveProfile` returns `{ error, notice }` — a save can land and still have dropped a
+title, so the two are separate fields, not alternatives. `notice` is phrased in `session-flow.ts`
+next to the existing `GENERIC_ERROR` copy: one clause per reason present, naming up to three titles
+then counting the rest ("Whiplash, Amelie, Moonlight and 2 more aren't in TMDB anymore…"). Both the
+profile editor and the ritual render it in an **always-mounted** `aria-live="polite"` paragraph,
+copying the picker-cap regions in `quick/page.tsx` and `TitleSearch` — a polite region added to the
+page at the same moment as its text announces inconsistently. The ritual advances as normal; the
+notice sits beside the step content and travels with the user. The profile editor suppresses its
+bare "Saved" while the notice is up, since the notice says "Saved" itself and two polite regions
+would talk over each other, and clears it on the next edit.
+
+`text-amber` for the notice: DESIGN.md's semantic table maps `--warning` to amber, and it reads
+9.04:1 on midnight. Every other `text-amber` in the app is a link, so this is the one non-link use
+outside `rough-day-toggle`; flagged for Sam rather than assumed.
+
+**Not done, deliberately:** the enrichment loop stays sequential (out of scope, and the separate
+latency change the cap only bounds), and the client does *not* strip skipped titles from the
+editor's draft — keeping the chip means one tap to retry a transient failure or to remove a
+permanent one, and the notice already names it, so nothing is silent.
+
+**Tests.** Three drove the route change and failed on the pre-change code with
+`AssertionError: expected 400 to be 200`: one dud among good ids (good titles land, tags survive,
+dud reported, `profiles` has no dangling reference), a 404 and a 503 in the same save yielding
+different reasons, and every unknown id failing still persisting the tags. A fourth pins that a save
+with no unknown ids returns exactly `{ profile }` and calls TMDB zero times. The old
+"returns 400 listing failed ids … and saves nothing" test was rewritten rather than deleted — it
+encoded the behaviour being changed. Three UI tests (profile editor: naming and remedy, and the
+notice clearing on the next edit; ritual: advancing while naming the dropped title in a polite
+region) failed with `Unable to find an element with the text: /^Saved\./`. Six new `session-flow`
+tests cover the phrasing: each reason alone, both together, pass-through of a real error, and the
+three-name cap — whose fixture is deliberately non-alphabetical so "the first three survive" cannot
+look self-evidently right (testing-pitfalls §4, truncation direction).
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 848 passed
+/ 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean.
