@@ -938,3 +938,77 @@ string, and the `bg-amber … hover:bg-warm-white` pair that catches a near-copy
 size), plus four assertions pinning the split. The four filter blocks across the outlined and
 primary guards now share one `callSitesSpelling(pattern)` helper rather than being copy-pasted
 a third and fourth time.
+
+---
+
+## Person-color contrast sweep — the taste-map colors closed out (2026-08-01)
+
+Branch `claude/a11y-verification`. **607 tests passing** (was 569).
+
+Closes the "spot-measured, not swept" item in `docs/accessibility.md` §Not yet verified. Test
+first: `src/components/person-color-contrast.test.tsx` enumerates every real (foreground,
+composited background) pair for `person-a`…`person-d` and `overlap`, each asserted at the
+threshold its role carries — 4.5:1 for the 12px tag labels, 20px member headings and 16px
+landing copy, 3:1 for the legend swatches and section rules.
+
+**Everything passes.** All five land on exactly one opaque backdrop, `midnight`, because every
+surface that uses them renders in a bare `<main>` with no panel between it and `body`: 5.59 /
+6.10 / 7.34 / 7.27 / 5.54. The one composited pair is the selected dealbreaker chip, whose
+`#ce7b8c20` fill flattens to `#271f27` — label 5.21:1, border 6.10:1 against the page.
+
+**`composite()` added to `src/test/contrast.ts`**, since the compositing trap from the
+2026-07-27 pass had no code behind it. Source-over flattening of `#rrggbbaa` over an opaque
+backdrop, with a test that reproduces the trap itself (amber against raw `amber-glow` measures
+<1.05:1; against the flattened panel, >3:1).
+
+**The sweep is only a sweep if the enumeration is complete**, so the test pins the files allowed
+to paint a person color to an allowlist (the slate-allowlist pattern from `control-contrast`),
+counting Tailwind utilities, `var(--token)` reads *and* raw hex — the chip fill is written
+`bg-[#ce7b8c20]`. A second guard asserts nothing outside `taste-map.tsx` imports `personColor` /
+`PERSON_COLORS`, which would otherwise paint these hues on an unmeasured surface without moving
+any count.
+
+**Two near-misses found, both pinned as constraints rather than fixed** (nothing violates them
+today): the rose chip on `charcoal` would be 4.45:1, and `overlap` on an `amber-glow` wash is
+4.49:1. Both are in DESIGN.md §Accessibility beside the `ember`/`slate` rules.
+
+**The amber-wash one was checked in a browser, not argued.** The landing hero paints an
+`amber-glow` ellipse anchored at the top edge; whether it reaches the person-colored vignette is
+a layout question jsdom cannot answer. Measured the real gradient box and span rects at 375px and
+1280px: the ellipse fades out at y≈263 / y≈235 while the colored spans start at y≈434 / y≈432, so
+the alpha under them is zero at both widths.
+
+## 3.3.7 Redundant Entry audited in code (2026-08-01)
+
+Branch `claude/a11y-verification`. **609 tests passing.**
+
+The last un-audited "believed to pass" item. It does pass, and for the assumed reason: the ritual
+loads the saved profile into step 0 (`ritual/page.tsx:75`, `:91`, `:251`) with tmdb ids resolved
+back into named title chips (`session-flow.ts:65-90`), writes it back on Continue (`:132`), and
+asks the other members for nothing at all (`:269`). Choices carry across steps rather than being
+re-asked: the group travels in the URL from `/tonight`, and an invite code survives the OAuth
+round trip (`groups/join/[code]/page.tsx:113`).
+
+**The failure paths were the part actually worth checking**, and they hold: the match-error screen
+keeps the mood you entered rather than resetting the step, and the results page clears the steering
+box only on a successful round (`results/[sessionId]/page.tsx:130-137`). Both are now regression
+guards in `ritual/page.test.tsx` — stepping back and forward, and returning from a failed match —
+because they are behaviors nothing else would notice losing. `advanceToMood` moved to module scope
+to be shared rather than copied.
+
+**Honest boundary, recorded in the doc:** in-progress mood answers are React state only, so a
+reload mid-ritual starts the mood step blank. Read as a restarted process rather than a redundant
+step within one — but that is a judgment about where a process begins, not a measurement.
+
+## 1.4.10 Reflow — partial verification recorded (2026-08-01)
+
+Browser pass at 320 CSS px (the 400%-zoom equivalent), report in
+`dev/reports/2026-08-01-reflow-400pct.md`. Signed-out surfaces pass with zero overflowing
+elements, measured by a full-DOM `getBoundingClientRect()` sweep rather than by eye.
+
+**Recorded as half done, not closed.** `next dev` has no Cloudflare bindings, so `/api/auth/me`
+500s and all six auth-gated routes take their signed-out redirect before rendering anything. The
+chip grid, results tablist and taste map — the densest layouts in the app, and the ones most
+likely to overflow at 320px — were never on screen. Finishing it needs a signed-in session under
+`npm run preview` or the deployed app, which is the same blocker the screen-reader pass has;
+the doc now says so in one place.

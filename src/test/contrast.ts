@@ -25,17 +25,41 @@ function readTokens(): Record<string, string> {
  */
 export const TOKENS: Record<string, string> = readTokens();
 
+/** Expands `#abc` to `aabbcc` and `#abcd` to `aabbccdd`, keeping any alpha. */
+function expandHex(hex: string): string {
+  const body = hex.replace("#", "");
+  return body.length === 3 || body.length === 4
+    ? body
+        .split("")
+        .map((c) => c + c)
+        .join("")
+    : body;
+}
+
 /** Expands `#abc` to `#aabbcc` and drops any alpha channel. */
 function normalizeHex(hex: string): string {
-  const body = hex.replace("#", "");
-  const expanded =
-    body.length === 3 || body.length === 4
-      ? body
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : body;
-  return expanded.slice(0, 6);
+  return expandHex(hex).slice(0, 6);
+}
+
+/**
+ * Flattens a translucent color over an opaque backdrop (source-over), returning
+ * an opaque `#rrggbb`. Contrast is only meaningful between opaque colors: a
+ * ratio taken against a raw `#rrggbbaa` value ignores the alpha and reports
+ * near-1:1 for a tint of the foreground itself.
+ */
+export function composite(color: string, backdrop: string): string {
+  const body = expandHex(color);
+  if (body.length <= 6) return color;
+  const alpha = parseInt(body.slice(6, 8), 16) / 255;
+  const base = expandHex(backdrop);
+  const mixed = [0, 2, 4].map((i) => {
+    const fg = parseInt(body.slice(i, i + 2), 16);
+    const bg = parseInt(base.slice(i, i + 2), 16);
+    return Math.round(alpha * fg + (1 - alpha) * bg)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${mixed.join("")}`;
 }
 
 /** Relative luminance per WCAG 2.x §relative luminance. */

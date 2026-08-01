@@ -209,17 +209,17 @@ describe("ritual stepper", () => {
   });
 });
 
-describe("ritual submit", () => {
-  async function advanceToMood(calls: { url: string; method: string }[], steps: number) {
-    await screen.findByRole("checkbox", { name: /Arrival/ });
-    for (let i = 0; i < steps; i++) {
-      fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-      // The profile PUT gates the first advance.
-      if (i === 0) await waitFor(() => expect(calls).toHaveLength(1));
-    }
-    await screen.findByRole("group", { name: /session summary/i });
+async function advanceToMood(calls: { url: string; method: string }[], steps: number) {
+  await screen.findByRole("checkbox", { name: /Arrival/ });
+  for (let i = 0; i < steps; i++) {
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    // The profile PUT gates the first advance.
+    if (i === 0) await waitFor(() => expect(calls).toHaveLength(1));
   }
+  await screen.findByRole("group", { name: /session summary/i });
+}
 
+describe("ritual submit", () => {
   it("creates the session then requests the match, then lands on results", async () => {
     search = "group=g1";
     const calls = stubApi();
@@ -297,5 +297,59 @@ describe("ritual submit", () => {
     await waitFor(() => expect(calls).toHaveLength(4));
     expect(calls[3].url).toBe("/api/movie-sessions/s1/match");
     expect(calls.filter((c) => c.url === "/api/movie-sessions")).toHaveLength(1);
+  });
+});
+
+describe("3.3.7 Redundant Entry — nothing is asked for twice", () => {
+  it("keeps every answer when the stepper moves backwards and forwards again", async () => {
+    const calls = stubApi();
+    await renderRitual();
+    await advanceToMood(calls, 1);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Slow-Burn" }));
+    fireEvent.change(screen.getByLabelText(/anything else/i), {
+      target: { value: "Long week — something light." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    // The profile step is repopulated from the draft, not refetched blank.
+    expect(await screen.findByRole("checkbox", { name: /Arrival/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByRole("group", { name: /session summary/i });
+
+    expect(
+      screen.getByRole("checkbox", { name: "Slow-Burn" }).getAttribute("aria-checked")
+    ).toBe("true");
+    expect(screen.getByLabelText(/anything else/i)).toHaveProperty(
+      "value",
+      "Long week — something light."
+    );
+  });
+
+  it("keeps the mood through a failed match, so the retry re-asks nothing", async () => {
+    const calls = stubApi({
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderRitual();
+    await advanceToMood(calls, 1);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Quirky" }));
+    fireEvent.change(screen.getByLabelText(/anything else/i), {
+      target: { value: "Nothing sad." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /back to the mood/i }));
+
+    expect(
+      (await screen.findByRole("checkbox", { name: "Quirky" })).getAttribute("aria-checked")
+    ).toBe("true");
+    expect(screen.getByLabelText(/anything else/i)).toHaveProperty("value", "Nothing sad.");
   });
 });
