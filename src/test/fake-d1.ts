@@ -118,3 +118,100 @@ export function createFakeD1(migrationSql: string): D1Database {
 
   return fakeDb as unknown as D1Database;
 }
+
+export interface FailureInjection {
+  /** Fail when the statement's SQL matches. Substring for a literal, RegExp for a pattern. */
+  match: string | RegExp;
+  /** Fail only the Nth matching execution (1-based). Defaults to every match. */
+  onCall?: number;
+  /** The error thrown. Defaults to `new Error("D1_ERROR: injected failure")`. */
+  error?: Error;
+}
+
+/**
+ * Delegates to a real fake-D1 statement, throwing at execution time when the
+ * gate says this SQL is the one that should fail. bind() rewraps so the
+ * injection survives the new instance FakeD1PreparedStatement.bind() returns.
+ */
+class FailingPreparedStatement {
+  constructor(
+    private readonly inner: D1PreparedStatement,
+    private readonly sql: string,
+    private readonly gate: (sql: string) => void
+  ) {}
+
+  bind(...values: unknown[]): D1PreparedStatement {
+    return new FailingPreparedStatement(
+      this.inner.bind(...values),
+      this.sql,
+      this.gate
+    ) as unknown as D1PreparedStatement;
+  }
+
+  async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
+    this.gate(this.sql);
+    return colName === undefined ? this.inner.first<T>() : this.inner.first<T>(colName);
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    this.gate(this.sql);
+    return this.inner.all<T>();
+  }
+
+  async run<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    this.gate(this.sql);
+    return this.inner.run<T>();
+  }
+
+  async raw<T = unknown[]>(): Promise<T[]> {
+    this.gate(this.sql);
+    return this.inner.raw<T>();
+  }
+}
+
+/**
+ * Wraps a fake D1 so a chosen statement throws, leaving every other statement
+ * working. Interrupted-success paths (a write that fails after earlier writes
+ * committed) are otherwise unreachable in this suite — see
+ * docs/pitfalls/testing-pitfalls.md §3.
+ */
+export function withFailingStatement(db: D1Database, injection: FailureInjection): D1Database {
+  const { match, onCall } = injection;
+  const error = injection.error ?? new Error("D1_ERROR: injected failure");
+  let matchedExecutions = 0;
+
+  const gate = (sql: string): void => {
+    // String.prototype.search leaves a global RegExp's lastIndex alone, so a /g
+    // pattern cannot go stale between statements.
+    const matched = typeof match === "string" ? sql.includes(match) : sql.search(match) !== -1;
+    if (!matched) return;
+    matchedExecutions += 1;
+    if (onCall === undefined || matchedExecutions === onCall) throw error;
+  };
+
+  const wrappedDb = {
+    prepare(sql: string): D1PreparedStatement {
+      return new FailingPreparedStatement(db.prepare(sql), sql, gate) as unknown as D1PreparedStatement;
+    },
+
+    // The wrapped statements handed in carry the gate, so the underlying batch's
+    // BEGIN/ROLLBACK still sees the injected throw and rolls the transaction back.
+    batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+      return db.batch<T>(statements);
+    },
+
+    exec(sql: string): Promise<D1ExecResult> {
+      return db.exec(sql);
+    },
+
+    withSession(): never {
+      throw new Error("withSession is not implemented in the fake D1");
+    },
+
+    dump(): Promise<ArrayBuffer> {
+      return db.dump();
+    },
+  };
+
+  return wrappedDb as unknown as D1Database;
+}
