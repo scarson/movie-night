@@ -8,6 +8,15 @@ const COOKIE_SESSION = "mn-session";
 const COOKIE_REFRESH = "mn-refresh";
 export const REFRESH_EXPIRY_DAYS = 90;
 
+/**
+ * How long a rotated refresh token still authenticates its bearer, without
+ * issuing cookies. A client fans several authenticated requests out at once
+ * (/ritual sends three), so all but one arrive holding a token another request
+ * has already spent; they cannot be handed the replacement, because it exists
+ * only as a hash here and as plaintext in the winner's Set-Cookie.
+ */
+const ROTATION_GRACE_MS = 30_000;
+
 // ── Pure helpers ──────────────────────────────────────────────
 
 /** SHA-256 hash a string, return hex. Used to hash refresh tokens before storing in D1. */
@@ -110,64 +119,104 @@ export async function authenticateRequest(
 
   const tokenHash = await sha256(refreshCookie);
 
-  // Atomically claim the session — only one concurrent request can succeed.
-  // DELETE RETURNING prevents race conditions where two requests both try to rotate.
-  const claimed = await db
-    .prepare("DELETE FROM sessions WHERE token_hash = ? RETURNING user_id, expires_at")
+  // Everything that can fail is read before anything is written. A throw
+  // between destroying the session and re-creating it would leave the caller
+  // holding a token with no row, and this function runs before every route's
+  // own try block, so nothing downstream could clear the dead cookies.
+  const session = await db
+    .prepare(
+      "SELECT s.user_id, s.expires_at, s.rotated_at, u.email " +
+        "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?"
+    )
     .bind(tokenHash)
-    .first<{ user_id: string; expires_at: string }>();
+    .first<{ user_id: string; expires_at: string; rotated_at: string | null; email: string }>();
 
-  if (!claimed) {
-    // Session not found — either already claimed by a concurrent request,
-    // or the token was never valid. Don't clear cookies: if another request
-    // just rotated successfully, it already set new cookies.
+  if (!session) {
+    // The token was never valid, or its session is long gone. Don't clear
+    // cookies: a concurrent request that just rotated has already set new ones.
     return { user: null, headers };
   }
 
-  if (new Date(claimed.expires_at) < new Date()) {
-    // Session was expired — already deleted above. Clear cookies.
+  const user = { userId: session.user_id, email: session.email };
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+
+  if (new Date(session.expires_at).getTime() < nowMs) {
+    await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run();
     clearAuthCookies(headers, isSecure);
     return { user: null, headers };
   }
 
-  // Refresh token valid — rotate tokens
-  const userId = claimed.user_id;
-  const userRow = await db
-    .prepare("SELECT email FROM users WHERE id = ?")
-    .bind(userId)
-    .first<{ email: string }>();
-
-  if (!userRow) {
-    // User was deleted — session already deleted above. Clear cookies.
-    clearAuthCookies(headers, isSecure);
-    return { user: null, headers };
-  }
-
-  // Create new session
   const newRefreshToken = crypto.randomUUID();
   const newTokenHash = await sha256(newRefreshToken);
   const expiresAt = new Date(
-    Date.now() + REFRESH_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+    nowMs + REFRESH_EXPIRY_DAYS * 24 * 60 * 60 * 1000
   ).toISOString();
-  const now = new Date().toISOString();
 
-  await db
-    .prepare(
-      "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)"
-    )
-    .bind(newTokenHash, userId, expiresAt, now)
-    .run();
+  // One transaction, so the replacement and the mark that spends the old token
+  // either both land or neither does. The INSERT sources user_id from the row
+  // itself rather than from a RETURNING clause, which a later statement in a
+  // batch cannot read. Both predicates are identical: were they to differ, a
+  // row expiring between the read above and this batch could mark a rotation
+  // that inserted nothing, minting a cookie for a session that does not exist.
+  const claim = await db.batch<Record<string, unknown>>([
+    db
+      .prepare(
+        "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) " +
+          "SELECT ?, user_id, ?, ? FROM sessions " +
+          "WHERE token_hash = ? AND rotated_at IS NULL AND expires_at > ?"
+      )
+      .bind(newTokenHash, expiresAt, now, tokenHash, now),
+    db
+      .prepare(
+        "UPDATE sessions SET rotated_at = ? " +
+          "WHERE token_hash = ? AND rotated_at IS NULL AND expires_at > ?"
+      )
+      .bind(now, tokenHash, now),
+  ]);
 
-  // Sign new JWT
-  const newJwt = await createJWT(
-    { userId, email: userRow.email },
-    jwtSecret
-  );
+  const issued = claim[0].meta.changes ?? 0;
+  const spent = claim[1].meta.changes ?? 0;
+  if (issued !== spent) {
+    throw new Error("Session rotation claim was inconsistent");
+  }
 
-  // Set new cookies
+  if (issued === 0) {
+    // Another request spent this token. It cannot be handed the replacement —
+    // the plaintext exists only in that request's Set-Cookie — so it
+    // authenticates on the strength of the token it presented and sends no
+    // cookies of its own, leaving the winner's in place. Re-read rather than
+    // trusting the rotated_at from the read above: that read happened before
+    // the winning UPDATE, so it says NULL in exactly the case this branch is for.
+    const rotated = await db
+      .prepare("SELECT rotated_at, expires_at FROM sessions WHERE token_hash = ?")
+      .bind(tokenHash)
+      .first<{ rotated_at: string | null; expires_at: string }>();
+
+    const withinGrace =
+      rotated?.rotated_at != null &&
+      new Date(rotated.expires_at).getTime() > nowMs &&
+      nowMs - new Date(rotated.rotated_at).getTime() < ROTATION_GRACE_MS;
+
+    return { user: withinGrace ? user : null, headers };
+  }
+
+  // Spent tokens outlive their grace window by nothing. Scoped to this user so
+  // it rides idx_sessions_user, and kept out of the batch so that failing to
+  // tidy up never rolls back the rotation it follows.
+  try {
+    await db
+      .prepare("DELETE FROM sessions WHERE user_id = ? AND rotated_at IS NOT NULL AND rotated_at < ?")
+      .bind(session.user_id, new Date(nowMs - ROTATION_GRACE_MS).toISOString())
+      .run();
+  } catch {
+    // Nothing to do: the rows are spent either way.
+  }
+
+  const newJwt = await createJWT(user, jwtSecret);
   setAuthCookies(headers, newJwt, newRefreshToken, isSecure);
 
-  return { user: { userId, email: userRow.email }, headers };
+  return { user, headers };
 }
 
 // ── Cookie helpers ───────────────────────────────────────────
