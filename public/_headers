@@ -1,0 +1,9 @@
+# ABOUTME: Cache-Control rules for Workers static assets, copied to .open-next/assets at build.
+# ABOUTME: Content-hashed /_next/static/* filenames are immutable, so they never need revalidating.
+#
+# Without this, the ASSETS binding serves them with the Workers Assets default of
+# `public, max-age=0, must-revalidate`, so every repeat visit spends ~14 conditional
+# round trips to receive 14 304s. Measured under `wrangler dev` — confirm against a
+# real deploy with the `curl -I` step in docs/deploy.md §Post-deploy verification.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

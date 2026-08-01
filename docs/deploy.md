@@ -128,6 +128,14 @@ Run these against the live site in order; each depends on the previous:
 6. Create a group, open the invite link in a second browser with a second Google
    account, join, then run a two-person match and confirm the taste map names
    both people.
+7. `curl -I https://<host>/_next/static/chunks/<any-hashed-chunk>.js` and confirm
+   `Cache-Control: public, max-age=31536000, immutable`. `public/_headers`
+   sets this so content-hashed assets stop being revalidated on every repeat
+   visit, but the `max-age=0, must-revalidate` default it corrects was only ever
+   observed under `wrangler dev` — this is the step that confirms it in
+   production. If production was already sending `immutable` before
+   `public/_headers` existed, the finding evaporates and the file can be
+   removed. Record which it was.
 
 ## Known deferrals
 
