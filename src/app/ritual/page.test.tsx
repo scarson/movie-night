@@ -30,6 +30,7 @@ const ARRIVAL = { tmdbId: 1, title: "Arrival", year: 2016, posterPath: "/a.jpg" 
 
 interface StubOptions {
   profile?: { status: number; body: unknown };
+  put?: { status: number; body: unknown };
   group?: { status: number; body: unknown };
   session?: { status: number; body: unknown };
   match?: { status: number; body: unknown };
@@ -52,7 +53,8 @@ function stubApi(options: StubOptions = {}) {
         return new Response(JSON.stringify(p.body), { status: p.status });
       }
       if (url === "/api/user/profile" && method === "PUT") {
-        return new Response(JSON.stringify({ profile: SAVED_PROFILE }), { status: 200 });
+        const p = options.put ?? { status: 200, body: { profile: SAVED_PROFILE } };
+        return new Response(JSON.stringify(p.body), { status: p.status });
       }
       if (url.startsWith("/api/titles/search?ids=")) {
         return new Response(JSON.stringify({ results: [ARRIVAL] }), { status: 200 });
@@ -178,6 +180,33 @@ describe("ritual stepper", () => {
       expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }))
     );
     expect(document.activeElement?.textContent).toContain("Bob Reyes");
+  });
+
+  it("moves on from a save that dropped a title, naming it in a live region", async () => {
+    search = "group=g1";
+    const calls = stubApi({
+      put: {
+        status: 200,
+        body: {
+          profile: { ...SAVED_PROFILE, comfortTitles: [] },
+          skippedTitles: [{ tmdbId: 1, reason: "unavailable" }],
+        },
+      },
+    });
+    await renderRitual();
+    await screen.findByRole("checkbox", { name: /Arrival/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    // The save landed, so the step advances — the dropped title is news, not a
+    // dead end.
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bob Reyes"));
+    const notice = await screen.findByText(/^Saved\./);
+    expect(notice.getAttribute("aria-live")).toBe("polite");
+    expect(notice.textContent).toContain("Arrival");
+    expect(notice.textContent).toContain("try again in a little while");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("refuses to render the editor when the saved profile could not be loaded", async () => {

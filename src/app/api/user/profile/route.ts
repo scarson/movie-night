@@ -5,8 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
 import { chunk, D1_IN_CHUNK_SIZE, parseJsonColumn } from "@/lib/db";
-import { fetchMovieDetail, detailToTitle, detailToEnrichment } from "@/lib/tmdb";
+import { fetchMovieDetail, detailToTitle, detailToEnrichment, TmdbError } from "@/lib/tmdb";
 import type { ProfileRow } from "@/types/db";
+import type { SkippedTitle } from "@/types/profile";
 
 const MAX_TITLE_LIST_ENTRIES = 50;
 const MAX_TAG_LIST_ENTRIES = 30;
@@ -132,7 +133,7 @@ export async function PUT(request: NextRequest) {
       for (const row of results) known.add(row.tmdb_id);
     }
     // Filtered against `referenced`, not built from query results: the unknownIds
-    // and failedIds response bodies are order-visible to the client.
+    // and skippedTitles response bodies are order-visible to the client.
     const unknownIds = referenced.filter((id) => !known.has(id));
 
     if (unknownIds.length > MAX_UNKNOWN_IDS_PER_PUT) {
@@ -148,7 +149,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const failedIds: number[] = [];
+    const skippedTitles: SkippedTitle[] = [];
     for (const id of unknownIds) {
       try {
         const detail = await fetchMovieDetail(id, env.TMDB_API_TOKEN);
@@ -184,16 +185,27 @@ export async function PUT(request: NextRequest) {
             now
           )
           .run();
-      } catch {
-        failedIds.push(id);
+      } catch (err) {
+        const gone = err instanceof TmdbError && err.status === 404;
+        skippedTitles.push({ tmdbId: id, reason: gone ? "not-found" : "unavailable" });
       }
     }
-    if (failedIds.length > 0) {
-      return withAuthHeaders(
-        NextResponse.json({ error: "Some titles could not be fetched from TMDB", failedIds }, { status: 400 }),
-        headers
-      );
-    }
+
+    // A title we couldn't enrich is dropped rather than refusing the save: the
+    // rest of the edit — the titles that resolved, and every tag, which has
+    // nothing to do with TMDB — is not the bad id's to lose. The dropped ids
+    // come back in the response so the outcome is never silent. They must not
+    // reach `profiles` either, or the saved list would reference a tmdb id with
+    // no `titles` row, which is what enrichment exists to prevent.
+    const skippedIds = new Set(skippedTitles.map((skipped) => skipped.tmdbId));
+    const saved: ProfileBody =
+      skippedIds.size === 0
+        ? profile
+        : {
+            ...profile,
+            comfortTitles: profile.comfortTitles.filter((id) => !skippedIds.has(id)),
+            watchlist: profile.watchlist.filter((id) => !skippedIds.has(id)),
+          };
 
     await db
       .prepare(
@@ -209,16 +221,21 @@ export async function PUT(request: NextRequest) {
       )
       .bind(
         user.userId,
-        JSON.stringify(profile.comfortTitles),
-        JSON.stringify(profile.watchlist),
-        JSON.stringify(profile.vibes),
-        JSON.stringify(profile.dealbreakers),
-        JSON.stringify(profile.streamingServices),
+        JSON.stringify(saved.comfortTitles),
+        JSON.stringify(saved.watchlist),
+        JSON.stringify(saved.vibes),
+        JSON.stringify(saved.dealbreakers),
+        JSON.stringify(saved.streamingServices),
         new Date().toISOString()
       )
       .run();
 
-    return withAuthHeaders(NextResponse.json({ profile }), headers);
+    return withAuthHeaders(
+      NextResponse.json(
+        skippedTitles.length === 0 ? { profile: saved } : { profile: saved, skippedTitles }
+      ),
+      headers
+    );
   } catch (err) {
     console.error("PUT /api/user/profile:", err);
     return withAuthHeaders(NextResponse.json({ error: "Failed to save profile" }, { status: 500 }), headers);
