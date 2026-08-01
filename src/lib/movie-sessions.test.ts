@@ -862,7 +862,7 @@ describe("recommended id provenance", () => {
     await seedRawRound(db, sessionId, 1, JSON.stringify({ recommendations: 5 }));
     await seedRawRound(db, sessionId, 2, roundWithRecommendations([7, 8]));
 
-    const ids = await getRecommendedTmdbIds(db, sessionId);
+    const ids = (await getMatchRoundContext(db, sessionId)).recommendedTmdbIds;
 
     expect([...ids].sort((a, b) => a - b)).toEqual([7, 8]);
   });

@@ -2607,3 +2607,16 @@ for its owner.
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 845 passed
 / 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
 `npx @opennextjs/cloudflare build` clean.
+
+**Post-merge addendum (`claude/e2e-smoke`).** `dev` advanced to `a40ddae` while this branch was
+open. PR #31 (`claude/match-read-batching`) folded the offending read into `getMatchRoundContext`'s
+`db.batch` and renamed it `toRecommendedTmdbIds` — carrying the unguarded
+`for (const rec of parsed?.recommendations ?? [])` through **verbatim**, so the crash was live on
+current `dev`, not only on the `a60483f` this branch was cut from. After merging `dev` in, the guard
+was re-verified against the refactored code by temporarily reverting it: same
+`TypeError: number 5 is not iterable`, passing again with it restored. The new regression test now
+asserts through `getMatchRoundContext(...).recommendedTmdbIds`. Gates after the merge:
+`npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 862 passed / 2 skipped.
+**Scope caveat:** every measurement in the report was taken against `a60483f`; the three PRs `dev`
+gained mid-pass (#29 enrichment partial-failure, #30 poster srcset, #31 match-read batching) were
+not re-verified against a running Worker, and #31 changes how the match route reads D1.

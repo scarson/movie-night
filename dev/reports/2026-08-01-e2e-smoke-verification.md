@@ -426,6 +426,15 @@ salvage, not all-or-nothing. Applying the strict predicate here would discard an
 over an unrelated field — silently dropping the user's keep/remove intent — which is a worse
 behaviour than the one being fixed.
 
+**It survived a refactor while this branch was open.** `dev` moved to `a40ddae` mid-pass, and PR #31
+(`claude/match-read-batching`) folded this read into `getMatchRoundContext`'s `db.batch`, renaming
+the function to `toRecommendedTmdbIds`. The unguarded loop was carried through **verbatim** —
+`git show origin/dev:src/lib/movie-sessions.ts` still has
+`for (const rec of parsed?.recommendations ?? [])`. So the defect is live on current `dev`, not only
+on the `a60483f` this branch was cut from. After merging `dev` in, the guard was re-verified by
+temporarily reverting it against the refactored code: the test fails with the identical
+`TypeError: number 5 is not iterable`, and passes with it restored.
+
 **TDD, in order.** Test added to `src/lib/movie-sessions.test.ts` first, run first, and it failed
 with the same `TypeError` at the same line the Worker had thrown at:
 
@@ -530,5 +539,14 @@ predicted, and fixed here. One documented disagreement between this pass's brief
 about `provider_auth`'s UI framing, left for Sam. Everything else is clean, and the blind spots
 above are all credential-shaped rather than code-shaped.
 
-**Gates:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / **837 passed** / 2
-skipped (baseline 836, +1 for the new regression test).
+**Gates:** at the point the verification was done, on `a60483f`: `npx tsc --noEmit` clean,
+`npm run lint` clean, `npm test` 61 files / **837 passed** / 2 skipped (baseline 836, +1 for the new
+regression test). After merging `dev` (which had advanced to `a40ddae`) into this branch and
+re-pointing the new test at `getMatchRoundContext`: `npx tsc --noEmit` clean, `npm run lint` clean,
+`npm test` **63 files / 862 passed / 2 skipped**.
+
+**One caveat on scope after that merge.** Everything measured in Parts 1–2 was measured against
+`a60483f`. The three PRs `dev` gained mid-pass — enrichment partial-failure (#29), poster srcset
+(#30) and match-read batching (#31) — were **not** re-verified against a running Worker. #31 in
+particular changes how the match route reads D1 (five sequential reads become one `db.batch`), which
+is exactly the kind of change this pass exists to check and is now unexercised end to end.
