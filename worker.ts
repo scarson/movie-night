@@ -12,8 +12,17 @@ const worker = {
     });
   },
 
-  async scheduled(event: any, env: any, ctx: any) {
-    ctx.waitUntil(runWeeklyRefresh(env));
+  // Awaiting and rethrowing marks the Cron Trigger invocation failed in
+  // Cloudflare's metrics, which a rejection handed to waitUntil does not — that
+  // still reports success. Cron invocations get a 15-minute budget, so awaiting
+  // the whole refresh is safe.
+  async scheduled(event: any, env: any) {
+    try {
+      await runWeeklyRefresh(env);
+    } catch (err) {
+      console.log(JSON.stringify({ event: "cron_failed", message: String(err) }));
+      throw err;
+    }
   },
 };
 

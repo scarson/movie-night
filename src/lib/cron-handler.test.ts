@@ -169,7 +169,7 @@ describe("runWeeklyRefresh", () => {
     expect(failed!.last_refreshed_at).toBeNull();
 
     const summary = JSON.parse(log.mock.calls[0][0]);
-    expect(summary).toEqual({ event: "cron_refresh", refreshed: 1, errors: 1 });
+    expect(summary).toEqual({ event: "cron_refresh", refreshed: 1, fetch_errors: 1, write_errors: 0 });
   });
 
   it("logs a structured cron_refresh summary line with refreshed/error counts, even when nothing is stale", async () => {
@@ -179,7 +179,38 @@ describe("runWeeklyRefresh", () => {
     await runWeeklyRefresh(fakeEnv(db), vi.fn() as unknown as typeof fetch, log);
 
     expect(log).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(log.mock.calls[0][0])).toEqual({ event: "cron_refresh", refreshed: 0, errors: 0 });
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: "cron_refresh",
+      refreshed: 0,
+      fetch_errors: 0,
+      write_errors: 0,
+    });
+  });
+
+  it("counts rows written, not statements queued", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitle(db, { tmdbId: 1, title: "Deleted Mid-Run", popularity: 99, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 2, title: "Survivor", popularity: 10, lastRefreshedAt: null });
+
+    // Removing the row between the stale SELECT and the flush is the only way a
+    // queued UPDATE can legitimately match zero rows: the statement binds
+    // row.content_type straight from the SELECT that produced it, so the bound
+    // value can never disagree with the stored one.
+    const fetchStub = vi.fn(async (url: string | URL) => {
+      const id = Number(new URL(String(url)).pathname.split("/").pop());
+      if (id === 2) await db.prepare("DELETE FROM titles WHERE tmdb_id = 1").run();
+      return jsonResponse(detailFixture(id));
+    });
+    const log = vi.fn();
+
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, log);
+
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: "cron_refresh",
+      refreshed: 1,
+      fetch_errors: 0,
+      write_errors: 0,
+    });
   });
 
   it("batches D1 updates in chunks of 25", async () => {
@@ -203,7 +234,7 @@ describe("runWeeklyRefresh", () => {
     expect((batchSpy.mock.calls[1][0] as unknown[]).length).toBe(5);
   });
 
-  it("counts a failed batch as errors (not refreshed) and does not throw or resubmit it", async () => {
+  it("counts a failed batch as write errors (not refreshed) and does not throw or resubmit it", async () => {
     const db = createFakeD1(loadMigration());
     await seedTitle(db, { tmdbId: 1, title: "A", popularity: 10, lastRefreshedAt: null });
     await seedTitle(db, { tmdbId: 2, title: "B", popularity: 20, lastRefreshedAt: null });
@@ -224,7 +255,12 @@ describe("runWeeklyRefresh", () => {
       runWeeklyRefresh(fakeEnv(failingDb), fetchStub as unknown as typeof fetch, log)
     ).resolves.toBeUndefined();
 
-    expect(JSON.parse(log.mock.calls[0][0])).toEqual({ event: "cron_refresh", refreshed: 0, errors: 2 });
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: "cron_refresh",
+      refreshed: 0,
+      fetch_errors: 0,
+      write_errors: 2,
+    });
     // One flush attempt for the two-statement batch — never resubmitted.
     expect(batchSpy).toHaveBeenCalledTimes(1);
   });

@@ -35,22 +35,24 @@ export async function runWeeklyRefresh(
 
   const now = new Date().toISOString();
   let refreshed = 0;
-  let errors = 0;
+  let fetchErrors = 0;
+  let writeErrors = 0;
   let pending: D1PreparedStatement[] = [];
 
   // Commit the queued chunk. Clear `pending` before awaiting so a failed batch
-  // isn't re-submitted (and grown) on the next chunk boundary, count titles
-  // only once the write commits, and swallow the failure so one bad chunk
-  // neither aborts the run nor propagates out of the final flush.
+  // isn't re-submitted (and grown) on the next chunk boundary, count the rows
+  // the batch actually changed rather than the statements queued, and swallow
+  // the failure so one bad chunk neither aborts the run nor propagates out of
+  // the final flush.
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     const batch = pending;
     pending = [];
     try {
-      await db.batch(batch);
-      refreshed += batch.length;
+      const results = await db.batch(batch);
+      refreshed += results.reduce((rows, result) => rows + (result.meta?.changes ?? 0), 0);
     } catch {
-      errors += batch.length;
+      writeErrors += batch.length;
     }
   };
 
@@ -78,11 +80,18 @@ export async function runWeeklyRefresh(
         await flush();
       }
     } catch {
-      errors++;
+      fetchErrors++;
     }
   }
 
   await flush();
 
-  log(JSON.stringify({ event: "cron_refresh", refreshed, errors }));
+  log(
+    JSON.stringify({
+      event: "cron_refresh",
+      refreshed,
+      fetch_errors: fetchErrors,
+      write_errors: writeErrors,
+    })
+  );
 }

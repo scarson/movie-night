@@ -1843,3 +1843,32 @@ table, and no longer carries the "drop it to ~40" advice.
 
 Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` all pristine — 59 files / 615 passed /
 2 skipped, unchanged from the baseline as expected for a comment-and-docs change.
+
+### G4-2 — D6: rows not statements, split counters, and a named cron crash line
+
+Three changes to the cron's observability, all in `src/lib/cron-handler.ts` and `worker.ts`:
+
+- `flush()` now sums `meta.changes` across the `db.batch` results instead of adding
+  `batch.length`. The old count was statements *queued*; an `UPDATE ... WHERE tmdb_id = ? AND
+  content_type = ?` that matches zero rows counted as a refresh.
+- The single `errors` counter split into `fetch_errors` (per-title TMDB failures) and
+  `write_errors` (a failed batch). One number could not distinguish a TMDB outage from a D1 write
+  failure, which is the first thing you need to know from the summary line.
+- `worker.ts` awaits `runWeeklyRefresh` inside `try/catch`, logs a `cron_failed` line, and
+  rethrows. A rejection handed to `ctx.waitUntil` still reports the invocation as *successful* to
+  Cloudflare's cron metrics; awaiting and rethrowing marks it failed. `ctx` is now unused and was
+  dropped from the signature rather than suppressed.
+
+**The row-vs-statement test needed care.** The obvious fixture — bind a mismatched `content_type`
+— cannot be built honestly: the `UPDATE` binds `row.content_type` straight from the `SELECT` that
+produced the row, so the bound value can never disagree with the stored one. The test instead
+deletes the first title's row from inside the injected `fetchImpl` while it handles the second id,
+which is the only way production code can emit a statement matching zero rows. Writing a statement
+the production code never emits would have been testing the test.
+
+`worker.ts` has no test file (it is excluded from `tsconfig.json` because it imports build-time
+OpenNext artifacts); the change was verified by reading and by `npx @opennextjs/cloudflare build`,
+which completed clean.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` (59 files / 616 passed / 2 skipped — baseline
+615 plus the one new row-counting test), and the OpenNext build.
