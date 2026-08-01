@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createFakeD1, loadMigration, withFailingStatement } from "@/test/fake-d1";
 import { runWeeklyRefresh } from "./cron-handler";
 
+const OLD_TIMESTAMP = "2020-01-01T00:00:00.000Z"; // > 7 days stale under any reasonable "now"
+const RECENT_TIMESTAMP = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago: fresh
+
 function fakeEnv(db: D1Database, overrides: Partial<CloudflareEnv> = {}): CloudflareEnv {
   return {
     DB: db,
@@ -47,14 +50,37 @@ function fetchedIds(stub: { mock: { calls: unknown[][] } }): number[] {
   return stub.mock.calls.map(([url]) => Number(new URL(String(url)).pathname.split("/").pop()));
 }
 
+/**
+ * Seeds a catalog whose rows all carry the same long-past refresh history —
+ * the shape a seeded catalog has once the migration's backfill has run. Every
+ * writer of a titles row sets last_refreshed_at, so a NULL there is not a state
+ * production can reach (testing-pitfalls §7). Popularity equals the id, so the
+ * most popular title is the highest-numbered one.
+ */
 function seedTitles(db: D1Database, count: number): Promise<unknown> {
   const rows: string[] = [];
   for (let i = 1; i <= count; i++) {
-    rows.push(`(${i}, 'Title ${i}', ${i}, NULL, NULL, '2020-01-01T00:00:00.000Z')`);
+    rows.push(`(${i}, 'Title ${i}', ${i}, '${OLD_TIMESTAMP}', '${OLD_TIMESTAMP}', '2020-01-01T00:00:00.000Z')`);
   }
   return db.exec(
     `INSERT INTO titles (tmdb_id, title, popularity, last_refreshed_at, last_refresh_attempt_at, created_at) VALUES ${rows.join(",")}`
   );
+}
+
+/**
+ * Rewinds every stored refresh timestamp by 8 days, so the next run sees the
+ * catalog as a week older. The fake D1's clock is SQLite's own `now`, which the
+ * suite cannot move; moving the data is equivalent for a predicate and an
+ * ORDER BY that only ever compare stored timestamps against it.
+ */
+function rewindOneWeek(db: D1Database): Promise<unknown> {
+  return db
+    .prepare(
+      `UPDATE titles SET
+         last_refreshed_at = strftime('%Y-%m-%dT%H:%M:%fZ', last_refreshed_at, '-8 days'),
+         last_refresh_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', last_refresh_attempt_at, '-8 days')`
+    )
+    .run();
 }
 
 function detailFixture(id: number, overrides: Record<string, unknown> = {}) {
@@ -84,13 +110,12 @@ function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-const OLD_TIMESTAMP = "2020-01-01T00:00:00.000Z"; // > 7 days stale under any reasonable "now"
-const RECENT_TIMESTAMP = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago: fresh
-
 describe("runWeeklyRefresh", () => {
   it("refreshes only titles unattempted for 7 days, skipping recently attempted ones", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Never Attempted", popularity: 10, lastRefreshedAt: null });
+    // Inserted by the catalog seeder and never touched by the cron: refreshed
+    // at insert time, never attempted since.
+    await seedTitle(db, { tmdbId: 1, title: "Seeded, Never Attempted", popularity: 10, lastRefreshedAt: RECENT_TIMESTAMP });
     await seedTitle(db, {
       tmdbId: 2,
       title: "Stale Old",
@@ -110,9 +135,9 @@ describe("runWeeklyRefresh", () => {
     // 7 days like everything else rather than re-consuming a slot.
     await seedTitle(db, {
       tmdbId: 4,
-      title: "Recently Attempted, Never Refreshed",
+      title: "Recently Attempted, Long Stale",
       popularity: 40,
-      lastRefreshedAt: null,
+      lastRefreshedAt: OLD_TIMESTAMP,
       lastRefreshAttemptAt: RECENT_TIMESTAMP,
     });
 
@@ -125,19 +150,19 @@ describe("runWeeklyRefresh", () => {
     await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, log);
 
     const ids = fetchedIds(fetchStub);
-    expect(ids.sort()).toEqual([1, 2]);
+    expect(ids.sort((a, b) => a - b)).toEqual([1, 2]);
     expect(ids).not.toContain(3);
     expect(ids).not.toContain(4);
   });
 
   it("orders refresh candidates by popularity DESC among titles of equal refresh recency", async () => {
     const db = createFakeD1(loadMigration());
-    // Every title here has never been refreshed, so popularity is the only
-    // discriminator — it is the within-run tiebreaker under the composite
-    // ORDER BY last_refreshed_at ASC, popularity DESC.
-    await seedTitle(db, { tmdbId: 1, title: "Low", popularity: 10, lastRefreshedAt: null });
-    await seedTitle(db, { tmdbId: 2, title: "High", popularity: 99, lastRefreshedAt: null });
-    await seedTitle(db, { tmdbId: 3, title: "Mid", popularity: 50, lastRefreshedAt: null });
+    // Every title here was last refreshed at the same moment, so popularity is
+    // the only discriminator — it is the within-run tiebreaker under the
+    // composite ORDER BY last_refreshed_at ASC, popularity DESC.
+    await seedTitle(db, { tmdbId: 1, title: "Low", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
+    await seedTitle(db, { tmdbId: 2, title: "High", popularity: 99, lastRefreshedAt: OLD_TIMESTAMP });
+    await seedTitle(db, { tmdbId: 3, title: "Mid", popularity: 50, lastRefreshedAt: OLD_TIMESTAMP });
 
     const fetchStub = vi.fn((url: string | URL) => {
       const id = Number(new URL(String(url)).pathname.split("/").pop());
@@ -171,7 +196,7 @@ describe("runWeeklyRefresh", () => {
 
   it("updates streaming, popularity, vote_count, vote_average, and last_refreshed_at for each refreshed title", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 27205, title: "Inception", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 27205, title: "Inception", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
 
     const fetchStub = vi.fn(() => Promise.resolve(jsonResponse(detailFixture(27205))));
 
@@ -202,8 +227,8 @@ describe("runWeeklyRefresh", () => {
 
   it("continues past a per-title fetch failure, counting it as an error instead of throwing", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Will Fail", popularity: 10, lastRefreshedAt: null });
-    await seedTitle(db, { tmdbId: 2, title: "Will Succeed", popularity: 20, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Will Fail", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
+    await seedTitle(db, { tmdbId: 2, title: "Will Succeed", popularity: 20, lastRefreshedAt: OLD_TIMESTAMP });
 
     const fetchStub = vi.fn((url: string | URL) => {
       const id = Number(new URL(String(url)).pathname.split("/").pop());
@@ -221,8 +246,8 @@ describe("runWeeklyRefresh", () => {
       last_refreshed_at: string | null;
     }>();
 
-    expect(succeeded!.last_refreshed_at).not.toBeNull();
-    expect(failed!.last_refreshed_at).toBeNull();
+    expect(succeeded!.last_refreshed_at).not.toBe(OLD_TIMESTAMP);
+    expect(failed!.last_refreshed_at).toBe(OLD_TIMESTAMP);
 
     const summary = JSON.parse(log.mock.calls[0][0]);
     expect(summary).toEqual({ event: "cron_refresh", refreshed: 1, fetch_errors: 1, write_errors: 0 });
@@ -245,8 +270,8 @@ describe("runWeeklyRefresh", () => {
 
   it("counts rows written, not statements queued", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Deleted Mid-Run", popularity: 99, lastRefreshedAt: null });
-    await seedTitle(db, { tmdbId: 2, title: "Survivor", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Deleted Mid-Run", popularity: 99, lastRefreshedAt: OLD_TIMESTAMP });
+    await seedTitle(db, { tmdbId: 2, title: "Survivor", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
 
     // Removing the row between the stale SELECT and the flush is the only way a
     // queued UPDATE can legitimately match zero rows: the statement binds
@@ -288,8 +313,8 @@ describe("runWeeklyRefresh", () => {
 
   it("counts a failed batch as write errors (not refreshed) and does not throw or resubmit it", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "A", popularity: 10, lastRefreshedAt: null });
-    await seedTitle(db, { tmdbId: 2, title: "B", popularity: 20, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "A", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
+    await seedTitle(db, { tmdbId: 2, title: "B", popularity: 20, lastRefreshedAt: OLD_TIMESTAMP });
 
     // A batch write that always rejects: the summary must report the chunk as
     // errors (not queued-and-counted-as-refreshed), the function must resolve
@@ -317,7 +342,7 @@ describe("runWeeklyRefresh", () => {
     expect(batchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("sweeps forward across runs instead of re-selecting the same head of the catalog", async () => {
+  it("serves the tail of the catalog on the following week's run", async () => {
     const db = createFakeD1(loadMigration());
     await seedTitles(db, 400);
 
@@ -326,17 +351,38 @@ describe("runWeeklyRefresh", () => {
       return Promise.resolve(jsonResponse(detailFixture(id)));
     });
 
-    // The clock is deliberately not advanced between runs: back-to-back
-    // invocations must still make progress, because cron jitter alone used to
-    // re-qualify the whole popularity head.
     await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
     const firstRun = fetchedIds(fetchStub);
+    // A week passes, which re-qualifies all 400 titles for staleness. The
+    // second run must still reach the tail: what keeps the 200 already
+    // refreshed out of the window is that they now sort last, not that they
+    // are ineligible.
+    await rewindOneWeek(db);
     fetchStub.mockClear();
     await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
     const secondRun = fetchedIds(fetchStub);
 
     expect(firstRun).toHaveLength(200);
     expect(secondRun).toHaveLength(200);
+    expect(secondRun.filter((id) => firstRun.includes(id))).toEqual([]);
+    expect(new Set([...firstRun, ...secondRun]).size).toBe(400);
+  });
+
+  it("makes forward progress on a run that follows immediately, with no time elapsed", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitles(db, 400);
+
+    const fetchStub = vi.fn((url: string | URL) => {
+      const id = Number(new URL(String(url)).pathname.split("/").pop());
+      return Promise.resolve(jsonResponse(detailFixture(id)));
+    });
+
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
+    const firstRun = fetchedIds(fetchStub);
+    fetchStub.mockClear();
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
+    const secondRun = fetchedIds(fetchStub);
+
     expect(secondRun.filter((id) => firstRun.includes(id))).toEqual([]);
     expect(new Set([...firstRun, ...secondRun]).size).toBe(400);
   });
@@ -389,7 +435,7 @@ describe("runWeeklyRefresh", () => {
 
   it("stamps both the attempt and the refresh columns when the fetch succeeds", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Succeeds", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Succeeds", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
 
     const fetchStub = vi.fn(() => Promise.resolve(jsonResponse(detailFixture(1))));
 
@@ -403,11 +449,11 @@ describe("runWeeklyRefresh", () => {
     expect(row!.last_refresh_attempt_at).toBe(row!.last_refreshed_at);
   });
 
-  it("selects never-refreshed titles before stale ones, and stale before recent", async () => {
+  it("selects the least recently refreshed titles first, regardless of popularity", async () => {
     const db = createFakeD1(loadMigration());
     // Popularity is inverted against refresh recency, so an order matching the
     // recency sequence can only come from the last_refreshed_at leg.
-    await seedTitle(db, { tmdbId: 1, title: "Never", popularity: 1, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Oldest", popularity: 1, lastRefreshedAt: "2019-01-01T00:00:00.000Z" });
     await seedTitle(db, { tmdbId: 2, title: "Old", popularity: 50, lastRefreshedAt: OLD_TIMESTAMP });
     await seedTitle(db, { tmdbId: 3, title: "Recent", popularity: 99, lastRefreshedAt: RECENT_TIMESTAMP });
 
@@ -423,7 +469,7 @@ describe("runWeeklyRefresh", () => {
 
   it("counts a failed refresh write as a write error and keeps going", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Write Fails", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Write Fails", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
     const failingDb = withFailingStatement(db, { match: "UPDATE titles SET streaming" });
 
     const fetchStub = vi.fn(() => Promise.resolve(jsonResponse(detailFixture(1))));
@@ -443,13 +489,13 @@ describe("runWeeklyRefresh", () => {
     const row = await db
       .prepare("SELECT last_refreshed_at, last_refresh_attempt_at FROM titles WHERE tmdb_id = 1")
       .first<{ last_refreshed_at: string | null; last_refresh_attempt_at: string | null }>();
-    expect(row!.last_refreshed_at).toBeNull();
+    expect(row!.last_refreshed_at).toBe(OLD_TIMESTAMP);
     expect(row!.last_refresh_attempt_at).toBeNull();
   });
 
   it("counts a failed attempt stamp as a write error and keeps going", async () => {
     const db = createFakeD1(loadMigration());
-    await seedTitle(db, { tmdbId: 1, title: "Both Fail", popularity: 10, lastRefreshedAt: null });
+    await seedTitle(db, { tmdbId: 1, title: "Both Fail", popularity: 10, lastRefreshedAt: OLD_TIMESTAMP });
     const failingDb = withFailingStatement(db, { match: "UPDATE titles SET last_refresh_attempt_at" });
 
     const fetchStub = vi.fn(() => Promise.resolve(new Response("Server error", { status: 500 })));

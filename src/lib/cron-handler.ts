@@ -5,8 +5,9 @@ import { sqliteIsoNow } from "./db";
 
 // One external subrequest per title (fetchMovieDetail folds keywords, credits
 // and watch/providers into a single TMDB request). Workers Paid allows 10,000
-// external subrequests per invocation; Free allows 50 external plus 1,000 to
-// Cloudflare services, and D1 calls are internal so they never compete.
+// subrequests per invocation, external and internal together; Free allows 50
+// external plus a separate 1,000 to Cloudflare services, so there the run's D1
+// calls never compete with its TMDB fetches.
 // 200/week clears the ~1,000-title seed catalog in about five weeks.
 // Workers Paid is required — see docs/deploy.md §Plan-tier check.
 const STALE_TITLES_LIMIT = 200;
@@ -44,7 +45,8 @@ export async function runWeeklyRefresh(
   // isn't re-submitted (and grown) on the next chunk boundary, count the rows
   // the batch actually changed rather than the statements queued, and swallow
   // the failure so one bad chunk neither aborts the run nor propagates out of
-  // the final flush.
+  // the final flush. A failed chunk writes no stamp of either kind, so its
+  // titles stay candidates and the next run retries them.
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     const batch = pending;

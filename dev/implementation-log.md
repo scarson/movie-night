@@ -1841,8 +1841,9 @@ against the Cloudflare docs rather than the plan's summary of them:
 `docs/deploy.md` §Plan-tier check now states Workers Paid as a prerequisite with the numbers in a
 table, and no longer carries the "drop it to ~40" advice.
 
-Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` all pristine — 59 files / 615 passed /
-2 skipped, unchanged from the baseline as expected for a comment-and-docs change.
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` all pristine — 59 files / 627 passed /
+2 skipped, unchanged from this branch's base as expected for a comment-and-docs change. (627, not
+the plan's 615: G4 is stacked on PREP, whose `fake-d1.test.ts` adds 12 cases.)
 
 ### G4-2 — D6: rows not statements, split counters, and a named cron crash line
 
@@ -1870,8 +1871,8 @@ the production code never emits would have been testing the test.
 OpenNext artifacts); the change was verified by reading and by `npx @opennextjs/cloudflare build`,
 which completed clean.
 
-Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` (59 files / 616 passed / 2 skipped — baseline
-615 plus the one new row-counting test), and the OpenNext build.
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` (59 files / 628 passed / 2 skipped — the
+PREP-stacked base of 627 plus the one new row-counting test), and the OpenNext build.
 
 ### G4-1 — B6: the weekly refresh sweeps the whole catalog and never fakes freshness
 
@@ -1893,14 +1894,24 @@ reach `refreshed` — a run where all 200 fetches fail must report `refreshed: 0
 streaming line, so stamping it on a failed fetch would make the UI assert a freshness that never
 happened.
 
-**Honest reading of what the new tests prove.** Two of the six are guards rather than proofs: the
-400-title forward-progress test and the attempt-stamps-never-inflate-`refreshed` test both pass
-against the unfixed code, because with every fetch succeeding the old predicate also advances, and
-the old code wrote no attempt stamps at all. The starvation bug's live half is proved by the
-permanently-failing-title test, which fetched the same id twice before the fix and once after, and
-by the composite-ordering test. Mechanism B of the bug (cron jitter re-qualifying the popularity
-head) is not reproducible in the unit suite without clock control, and no test here claims to
-cover it.
+**What each new test actually discriminates.** Reverting only the query (predicate and ORDER BY)
+fails four of them: the predicate test, the week-elapsed sweep, the permanently-failing-title test,
+and the composite-ordering test. Two are guards that pass either way and are named to claim nothing
+more — the no-time-elapsed forward-progress test (with every fetch succeeding, a predicate on
+`last_refreshed_at` advances too) and the attempt-stamps-never-inflate-`refreshed` test (the
+unfixed code wrote no attempt stamps at all, so its counters happen to agree).
+
+Mechanism B — a week's jitter re-qualifying the whole popularity head — *is* provable here, and the
+first version of this work wrongly recorded that it was not. The fake D1's clock is SQLite's own
+`now` and cannot be moved, but rewinding the stored timestamps by 8 days is equivalent for a
+predicate and an ORDER BY that only ever compare stored values against `now`. `rewindOneWeek()` does
+that, and against the unfixed query the two runs come back identical instead of disjoint.
+
+Fixtures were rewritten to states production can actually reach: every writer of a `titles` row
+(`scripts/seed-lib.ts`, the profile-save enrichment insert, the cron's own success `UPDATE`) sets
+`last_refreshed_at`, so a NULL there is not a producible state and no fixture uses one any more
+(testing-pitfalls §7). A NULL `last_refresh_attempt_at` *is* producible — those two inserts do not
+set it — and is kept where it is the point of the test.
 
 Two write-error branches are now covered with PREP-1's `withFailingStatement`: a failed refresh
 write (`UPDATE titles SET streaming …`) and a failed attempt stamp. The second counts the title in
@@ -1914,7 +1925,7 @@ subsection with `0003` in it. The plan assigns creation of that subsection to G1
 `0002` and merges first); G1 was not present in the tree when this landed, so G4 created it rather
 than append a migration line under a heading marked ✅ DONE where a deployer would skip it.
 
-Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` — 59 files / 636 passed / 2 skipped, still
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` — 59 files / 637 passed / 2 skipped, still
 exactly 2 skips, no new warnings.
 
 ### G4 — query-plan note for whoever next touches `titles` indexing
@@ -1932,3 +1943,33 @@ USE TEMP B-TREE FOR ORDER BY
 Over a ~1,000-title catalog, once a week, that is negligible — it is not worth a covering index
 today, and the plan explicitly allocates only one migration to this group. Recorded here so a
 future catalog an order of magnitude larger has the starting point rather than a surprise.
+
+### G4 — findings from the independent review round, and what changed
+
+An adversarial review by a fresh agent with no session context found one blocker and three
+substantive issues. All are fixed above; recorded here because the blocker is the interesting one.
+
+**Blocker — the flagship forward-progress test proved nothing.** Seeding 400 titles, running twice
+with no time elapsed, and asserting disjoint windows passes against the *unfixed* query: with every
+fetch succeeding, a predicate on `last_refreshed_at` advances exactly as well as one on the attempt
+column. Its comment also claimed to model cron jitter, which a non-advancing clock does not do. The
+test is now split: one case models a real week passing (`rewindOneWeek()`) and fails against the
+unfixed query, and one keeps the immediate-rerun guard under a name that claims only that.
+
+**Two evidence lines were copied from the plan rather than observed.** The gate results recorded for
+G4-3 and G4-2 said 615 and 616 — the plan's `origin/dev` baseline. This branch is stacked on PREP,
+whose `fake-d1.test.ts` adds 12 cases, so the observed numbers were 627 and 628. Corrected. Writing
+down a number you expect rather than the one that printed defeats the point of the gate.
+
+**Fixture realism.** See the note above about NULL `last_refreshed_at`.
+
+**Two accuracy corrections to comments.** The subrequest comment said D1 calls "never compete" with
+TMDB fetches; that holds on Free, which has a separate 1,000-call internal budget, but on Paid
+internal and external subrequests share the single 10,000 limit. And `worker.ts`'s comment described
+`waitUntil`, which the file no longer contains — it now reads as a prohibition against reaching for
+it, which is the durable form of that warning.
+
+**Surfaced, not fixed:** `src/app/api/user/profile/route.ts`'s enrichment insert is an
+`INSERT OR REPLACE`, so re-saving a profile that references a known title wipes any
+`last_refresh_attempt_at` the cron wrote — making the seeder/profile-route gap an ongoing condition
+rather than a one-time one. Both files belong to other groups; filed as follow-up.
