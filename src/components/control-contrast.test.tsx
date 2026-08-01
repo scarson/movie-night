@@ -22,10 +22,9 @@ const CONTROL_BORDER = "border-ash";
 /**
  * A slate boundary in any state 1.4.11 governs. The criterion exempts inactive
  * components, and DESIGN.md §Accessibility sanctions slate for disabled controls,
- * so a `disabled:`-prefixed utility must not trip these assertions — every other
- * prefix still does, including `hover:` and a responsive variant. Carving out
- * only the sanctioned prefix keeps this as strict as a bare substring check
- * everywhere it was ever meaningful.
+ * so a `disabled:`-prefixed utility must not trip these assertions. Carving out
+ * that one prefix leaves every other inside the assertion — `hover:`, `focus:`,
+ * responsive and arbitrary variants all still fail, as does a bare token.
  */
 const UNSANCTIONED_SLATE_BORDER = /(^|\s)(?!disabled:)\S*border-slate\b/;
 
@@ -163,7 +162,7 @@ describe("1.4.11 — every remaining slate use is non-interactive", () => {
     "app/tonight/page.tsx": 1,
     "app/ritual/page.tsx": 1,
     "app/privacy/page.tsx": 3, // list bullet markers; list structure carries the meaning
-    "app/profile/page.tsx": 1, // section divider; the disabled treatment is central now
+    "app/profile/page.tsx": 1, // section divider
     "app/groups/page.tsx": 5, // 2 panel edges, code display, 2 dividers
     "app/groups/join/[code]/page.tsx": 1, // invite-code display, not a control
     "app/results/[sessionId]/page.tsx": 1, // rail under the tablist; tabs mark themselves in amber
@@ -171,7 +170,7 @@ describe("1.4.11 — every remaining slate use is non-interactive", () => {
     "components/taste-map.tsx": 1,
     "components/nav.tsx": 3, // menu panel edge + two hover washes
     "components/mood-screen.tsx": 2, // panel edge + divider
-    "components/refine-panel.tsx": 1, // panel edge; the disabled treatment is central now
+    "components/refine-panel.tsx": 1, // panel edge
     "components/title-search.tsx": 3, // results panel edge, option divider, hover wash
     "components/ranked-list.tsx": 2, // row divider + non-interactive genre tag
     "components/progress-steps.tsx": 2, // upcoming marker + connector, both aria-hidden

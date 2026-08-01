@@ -151,8 +151,10 @@ describe("disabled control classes", () => {
   });
 
   it("are never expressed as opacity, anywhere in the source", () => {
-    // Eight sites across five files carried five distinct strings, two of them
-    // different opacity values. Opacity is outside the token system entirely.
+    // Opacity is outside the token system: it compounds with whatever sits
+    // beneath the control, so the result cannot be read off the palette. The
+    // disabled treatment is stated in slate and ash, and this walk is what stops
+    // a call site reaching for opacity instead.
     const opacitySites = sourceFiles()
       .filter(([, src]) => /disabled:opacity-/.test(src))
       .map(([file]) => file);

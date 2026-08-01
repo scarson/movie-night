@@ -316,8 +316,9 @@ describe("/api/user/profile", () => {
   });
 
   it("PUT checks more referenced ids than a single D1 statement can bind", async () => {
-    // The existence check ran one statement per id, so a full profile meant 100 D1
-    // round-trips inside the request that blocks the ritual's "Continue" button.
+    // One statement per referenced id would put up to 100 D1 round-trips inside
+    // the request that blocks the ritual's "Continue" button, so the check is
+    // chunked. The statement count is what holds it there.
     const base = createFakeD1(loadMigration());
     const { db, statements } = recordStatements(base);
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
