@@ -217,6 +217,11 @@ function Ritual() {
             onClick={() => {
               setMatching(false);
               setMatchError(null);
+              // A new mood is a new brief. mood_vibes/mood_text/discover_new are
+              // written once at creation and never updated, so holding the id
+              // would match the abandoned mood. The zero-round session left
+              // behind is accepted debris.
+              setSessionId(null);
             }}
             className={secondaryButtonClasses}
           >

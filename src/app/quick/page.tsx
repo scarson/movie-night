@@ -183,6 +183,11 @@ function Quick() {
             onClick={() => {
               setMatching(false);
               setMatchError(null);
+              // A new vibe is a new brief. mood_vibes/mood_text/discover_new are
+              // written once at creation and never updated, so holding the id
+              // would match the abandoned vibe. The zero-round session left
+              // behind is accepted debris.
+              setSessionId(null);
             }}
             className={secondaryButtonClasses}
           >

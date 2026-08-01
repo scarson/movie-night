@@ -353,3 +353,91 @@ describe("3.3.7 Redundant Entry — nothing is asked for twice", () => {
     expect(screen.getByLabelText(/anything else/i)).toHaveProperty("value", "Nothing sad.");
   });
 });
+
+describe("the mood back-edge", () => {
+  it("going back to the mood and resubmitting starts exactly one new session", async () => {
+    const calls = stubApi({
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderRitual();
+    await advanceToMood(calls, 1);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Quirky" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /back to the mood/i }));
+
+    // A different mood: the second session must carry this one, not the first.
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Quirky" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Slow-Burn" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(5));
+    const sessionPosts = calls.filter((c) => c.url === "/api/movie-sessions");
+    expect(sessionPosts).toHaveLength(2);
+    expect(sessionPosts[0].body).toMatchObject({ moodVibes: ["Quirky"] });
+    expect(sessionPosts[1].body).toMatchObject({ moodVibes: ["Slow-Burn"] });
+  });
+
+  it("after going back to the mood, a failed session create leaves nothing to retry the old mood against", async () => {
+    // The discriminating case. With the session id left populated, the second
+    // submit's create failure falls back on the FIRST session, and "Try again"
+    // re-runs the mood the user just abandoned — the stored brief is written
+    // once at creation and never updated.
+    const options: StubOptions = {
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    };
+    const calls = stubApi(options);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderRitual();
+    await advanceToMood(calls, 1);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Quirky" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /back to the mood/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Quirky" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Slow-Burn" }));
+
+    options.session = { status: 500, body: { error: "Couldn't start that." } };
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(4));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    await waitFor(() => expect(calls).toHaveLength(5));
+
+    // Retrying must attempt a fresh session, never re-match the abandoned one.
+    expect(calls[4].url).toBe("/api/movie-sessions");
+    expect(calls[4].body).toMatchObject({ moodVibes: ["Slow-Burn"] });
+    expect(calls.filter((c) => c.url === "/api/movie-sessions/s1/match")).toHaveLength(1);
+  });
+
+  it("'Try again' still reuses the existing session", async () => {
+    const calls = stubApi({
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderRitual();
+    await advanceToMood(calls, 1);
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(4));
+    expect(calls[3].url).toBe("/api/movie-sessions/s1/match");
+    expect(calls.filter((c) => c.url === "/api/movie-sessions")).toHaveLength(1);
+  });
+});
