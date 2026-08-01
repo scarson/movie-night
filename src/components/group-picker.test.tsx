@@ -92,8 +92,9 @@ describe("1.4.10 Reflow — the member list", () => {
   };
 
   it("wraps the member list rather than clipping it", () => {
-    // `truncate` hid 43px of the names at 320px, with no scrollbar and no
-    // title, so a document-level `scrollWidth` sweep could not see it.
+    // 1.4.10 Reflow. At 320px these names need ~43px more than the row gives
+    // them, so `truncate` drops the tail silently — no scrollbar, no title, and
+    // nothing a document-level `scrollWidth` sweep can see.
     //
     // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
     // element, so this assertion is structural and CANNOT prove the visual fix.

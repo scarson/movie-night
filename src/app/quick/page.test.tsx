@@ -290,10 +290,10 @@ describe("quick match", () => {
   });
 
   it("after changing the vibe, a failed session create leaves nothing to retry the old vibe against", async () => {
-    // The discriminating case. With the session id left populated, the second
-    // submit's create failure falls back on the FIRST session, and "Try again"
-    // re-runs the vibe the user just abandoned — behind a button labelled
-    // "Change the vibe".
+    // The discriminating case for the back-edge. If the session id survives
+    // "Change the vibe", the resubmit's create failure falls back on the first
+    // session, and "Try again" re-runs the vibe the user just abandoned —
+    // behind a button whose label promises the opposite.
     const calls: { url: string; method: string; body: unknown }[] = [];
     const state = { createOk: true };
     vi.stubGlobal(

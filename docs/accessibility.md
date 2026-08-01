@@ -100,7 +100,7 @@ runbook, as `element.scrollWidth` vs `element.clientWidth` on the element's own 
 | Element | 320px before | 320px after | 375px after | 1280px after |
 |---|---|---|---|---|
 | `/groups` invite link | 236 / 315 — **79px lost** | 236 / 236 — 0 | 291 / 291 — 0 | 500 / 500 — 0 |
-| `/tonight` member list | **43px lost** | 190 / 190 — 0 | 233 / 233 — 0 | 0 |
+| `/tonight` member list | **43px lost** (the 2026-08-01 report records the delta only, not the pair) | 190 / 190 — 0 | 233 / 233 — 0 | not re-measured — it was never clipped at this width |
 
 - **The invite link takes `break-all`,** matching what `groups/join/[code]` already does with
   the raw code. A URL has no spaces, so ordinary wrapping has nowhere to break. Checked
@@ -115,8 +115,10 @@ runbook, as `element.scrollWidth` vs `element.clientWidth` on the element's own 
 - Neither change costs a touch target: the picker row measures 100px against the 44px
   minimum, and the `flex-col … sm:flex-row` invite row drops the Copy button below the link
   on mobile and keeps it alongside from `sm:` up, which is the intended responsive behaviour.
-- Page-wide after both: zero overflowing elements and zero remaining ellipsis-clipped
-  elements at 320px and 375px.
+- Page-wide on `/groups` and `/tonight` after both, at 320px and 375px: zero overflowing
+  elements and zero ellipsis-clipped elements. That sweep covers those two routes only —
+  `/ritual` still carries one `truncate`, on the current-step label, which is the marginal
+  item listed below and is deliberately left in place.
 
 **The methodological lesson is the durable part.** Three prior reflow passes reported these
 routes clean because they compared the *document's* `scrollWidth` to its `clientWidth`.

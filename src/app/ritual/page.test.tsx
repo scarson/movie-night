@@ -384,10 +384,10 @@ describe("the mood back-edge", () => {
   });
 
   it("after going back to the mood, a failed session create leaves nothing to retry the old mood against", async () => {
-    // The discriminating case. With the session id left populated, the second
-    // submit's create failure falls back on the FIRST session, and "Try again"
-    // re-runs the mood the user just abandoned — the stored brief is written
-    // once at creation and never updated.
+    // The discriminating case for the back-edge. If the session id survives
+    // "Back to the mood", the resubmit's create failure falls back on the first
+    // session, and "Try again" re-runs the mood the user just abandoned — the
+    // stored brief is written once at creation and never updated.
     const options: StubOptions = {
       match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
     };

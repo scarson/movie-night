@@ -119,9 +119,11 @@ describe("Groups page", () => {
   });
 
   it("renders the whole invite link, wrapped rather than clipped", async () => {
-    // 1.4.10 Reflow. `truncate` hid 79px (~25%) of the URL at 320px and 23px at
-    // 375px, with no scrollbar and no title — which is why three document-level
-    // `scrollWidth` sweeps walked straight past it.
+    // 1.4.10 Reflow. At 320px this element's box is 236px and the URL needs
+    // 315px, so `truncate` costs ~25% of it — silently, with no scrollbar and
+    // no title, which is invisible to a document-level `scrollWidth` check.
+    // The link must wrap instead; `copyInvite`'s clipboard-failure fallback
+    // depends on the whole link being readable and selectable by hand.
     //
     // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
     // element, so this assertion is structural and CANNOT prove the visual fix.
