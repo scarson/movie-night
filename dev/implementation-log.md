@@ -2207,3 +2207,18 @@ tests fail when `src/lib/auth.ts` alone is reverted to `origin/dev`** — measur
 suite that way, not reasoned about. A 5-mutant study over the fix kills all 5: the pre-claim
 `rotated_at`, the mark's dropped `expires_at`, the grace check's expiry bound, the prune's
 `try/catch`, and the prune itself.
+
+---
+
+## Session handoff — autonomous remediation session (2026-08-01)
+
+`dev/handoff-2026-08-01.md` supersedes the 2026-07-28 handoff for current state. Records the final
+gate run on `dev` @ 80acad9 (tsc clean, eslint clean, 832 passed / 2 skipped across 61 files,
+OpenNext build clean), the sixteen PRs this session merged, the outstanding queue, and the
+guardrails added along the way.
+
+The load-bearing lesson, recorded there in full: a class of plan defect survives adversarial plan
+review and surfaces only when an implementer runs the prescribed test or a reviewer checks a
+justification against reality. Every one of the eight remediation groups found at least one. In each
+case the code was correct and the *justification* was wrong — the failure mode that ossifies in a
+comment and outlives anyone who could question it.
