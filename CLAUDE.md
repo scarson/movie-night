@@ -214,7 +214,7 @@ npm run lint            # ESLint (eslint .)
 npx tsc --noEmit        # Type-check (excludes worker.ts — see tsconfig)
 npm run preview         # OpenNext build + wrangler dev (local CF preview)
 npm run deploy          # OpenNext build + wrangler deploy
-npm run migrate:local   # Apply migrations/0001_initial_schema.sql to local D1
+npm run migrate:local   # Apply migrations/0001_initial_schema.sql to local D1 (apply later migrations by hand — docs/deploy.md §2)
 npm run seed:local      # Seed titles catalog from TMDB into local D1 (tsx scripts/seed.ts --local)
 ```
 
@@ -258,7 +258,7 @@ In QA mode, flag any code that doesn't match DESIGN.md.
 
 ## Architecture (Key Points)
 
-**Data model** — 13 tables in D1, all from the single migration `migrations/0001_initial_schema.sql`: `users`, `sessions` (refresh-token hashes), `profiles`, `groups`, `group_members`, `movie_sessions`, `session_members`, `recommendations`, `titles`, `rate_limit_log`, plus Phase 2 tables created empty (`watch_history`, `watch_ratings`, `tension_axes`). Groups are the unit of matching — a couple is a group of 2, solo mode is a group of 1.
+**Data model** — 13 tables in D1, created by `migrations/0001_initial_schema.sql` and amended by the numbered migrations after it: `users`, `sessions` (refresh-token hashes), `profiles`, `groups`, `group_members`, `movie_sessions`, `session_members`, `recommendations`, `titles`, `rate_limit_log`, plus Phase 2 tables created empty (`watch_history`, `watch_ratings`, `tension_axes`). Groups are the unit of matching — a couple is a group of 2, solo mode is a group of 1.
 
 **Matching engine** — `src/lib/matching.ts`: `selectCandidates()` (deterministic candidate pull from `titles`) → `buildMatchingPrompt()` (initial/refinement modes, member-generic so solo falls out of member count) → `callClaude()` via `@anthropic-ai/sdk` → `parseMatchingResponse()` (JSON schema validation, `tmdb_id` resolution against the candidate set); `runMatching()` ties them together. Structured JSON logging on every call. Two limits, both enforced in `src/app/api/movie-sessions/[id]/match/route.ts`: 10 rounds per session (`MAX_ROUNDS_PER_SESSION`, counted via `round_number` in `recommendations`) and a monthly account-wide cap (`MONTHLY_MATCH_LIMIT`, default 2000).
 
@@ -329,7 +329,7 @@ src/
   test/              # Test helpers (fake-d1, contrast) + TMDB fixtures
   types/             # TypeScript interfaces (db.ts — D1 row types incl. auth sessions;
                      # matching.ts — matching request/response shapes)
-migrations/          # D1 SQL migrations (0001_initial_schema.sql)
+migrations/          # D1 SQL migrations, applied by hand in filename order
 scripts/             # TMDB seed script (seed.ts + seed-lib.ts)
 worker.ts            # Cloudflare Worker entry (HTTP via OpenNext + cron scheduled())
 wrangler.jsonc       # Cloudflare config (D1 binding, cron triggers, observability)

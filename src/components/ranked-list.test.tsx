@@ -203,9 +203,8 @@ describe("RankedList", () => {
   });
 
   it("prioritises the first pick's poster and only the first", () => {
-    // Pick #1 is the results page's LCP element. A second eager poster would
-    // compete for bandwidth with the one being sped up, so this asserts *which*
-    // image is eager, not merely that one of them is.
+    // A second eager poster would compete for bandwidth with the one being sped
+    // up, so this asserts *which* image is eager, not merely that one of them is.
     const five: Recommendation[] = [1, 2, 3, 4, 5].map((n) => ({
       tmdbId: n,
       matchScore: 100 - n,

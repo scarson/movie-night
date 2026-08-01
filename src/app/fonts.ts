@@ -11,11 +11,11 @@ export const fraunces = Fraunces({
   variable: "--font-fraunces",
 });
 
-// next/font preloads every declared face on every route. Satoshi italic is
-// 43,844 bytes — 18.6% of the app's font payload — and the whole app renders it
-// in one place, the echoed mood text. The upright face is declared alone so the
-// browser synthesises an oblique there instead of preloading a second file
-// everywhere. Fraunces keeps both faces: both are used on every page.
+// next/font preloads every declared face on each prerendered route. Satoshi
+// italic is 43,844 bytes — 18.6% of the font payload — and the whole app renders
+// it in one place, the echoed mood text. The upright face is declared alone so
+// the browser synthesises an oblique there rather than preloading a second file
+// across the app. Fraunces keeps both faces; both are in use throughout.
 export const satoshi = localFont({
   src: [
     {

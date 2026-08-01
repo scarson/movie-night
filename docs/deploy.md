@@ -24,9 +24,11 @@ those credentials. Steps 1–6 are one-time setup; step 7 is every subsequent de
 it. Nothing to do here unless you are standing up a second environment, in which
 case: `npx wrangler d1 create <name>` and copy the returned id into the config.
 
-## 2. Apply the schema — ✅ DONE
+## 2. Apply the schema — `0001` ✅ DONE
 
-The migration has been applied to the remote database (13 tables). Re-running is
+`migrations/` holds more than one file, and the ✅ covers
+`0001_initial_schema.sql` only — see **Pending migrations** below for the rest.
+`0001` has been applied to the remote database (13 tables). Re-running it is
 only needed for a fresh database:
 
 ```bash
@@ -60,6 +62,15 @@ is a no-op. Its two `DROP INDEX`es are irreversible; to roll them back:
 ```sql
 CREATE INDEX idx_recommendations_session ON recommendations(session_id);
 CREATE INDEX idx_movie_sessions_group ON movie_sessions(group_id);
+```
+
+**Local databases need the same treatment, by hand.** `npm run migrate:local`
+applies `0001` only, so a local D1 built with it — and anything layered on top,
+including `npm run seed:local` — carries the initial schema and nothing else.
+Until that script iterates the directory, apply each later migration yourself:
+
+```bash
+npx wrangler d1 execute movie-night-db --local --file=migrations/0004_recommendation_indexes.sql
 ```
 
 ## 3. Configure the Google OAuth client
@@ -149,10 +160,10 @@ Run these against the live site in order; each depends on the previous:
 7. `curl -I https://<host>/_next/static/chunks/<any-hashed-chunk>.js` and confirm
    `Cache-Control: public, max-age=31536000, immutable`. `public/_headers` sets
    this so content-hashed assets stop being revalidated on every repeat visit.
-   The rule is confirmed to parse and apply under `wrangler dev` (the chunk and
+   The rule was observed to parse and apply under `wrangler dev` (the chunk and
    the woff2 both flip to `immutable`, the HTML keeps its `s-maxage=31536000`),
-   so a miss here means a platform difference, not a syntax error. What is
-   **not** confirmed is production's *default*: the `max-age=0, must-revalidate`
+   so a miss here points at a platform difference rather than a syntax error.
+   What is unverified is production's *default*: the `max-age=0, must-revalidate`
    this corrects was only ever observed under `wrangler dev`. If production was
    already sending `immutable` before `public/_headers` existed, the finding
    evaporates and the file can be removed. Record which it was.

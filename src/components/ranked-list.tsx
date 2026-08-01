@@ -151,8 +151,14 @@ export function RankedList({
                 on a phone it takes most of the measure, with the rank and score
                 sitting in the air beside it. */}
             <div className="sm:row-span-2">
-              {/* Pick #1 is the LCP element on this screen. Only it is eager:
-                  a second eager poster competes for the same bandwidth. */}
+              {/* Pick #1 tops the ranking and is the first poster read, so it is
+                  fetched eagerly rather than queued behind the rest. Only it: a
+                  second eager poster competes for the same bandwidth.
+
+                  Not an LCP fix. The results page opens on the taste-map tab and
+                  mounts this list only once the picks tab is chosen, by which
+                  point LCP has stopped accepting candidates. The gain is how
+                  quickly the picks paint after that click. */}
               <Poster
                 title={name}
                 posterPath={title?.posterPath ?? null}

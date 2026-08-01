@@ -8,7 +8,11 @@ export interface PosterProps {
   posterPath: string | null;
   size?: "w92" | "w185" | "w342";
   className?: string;
-  /** The first poster on a screen is the LCP element; lazily loading it costs a round trip. */
+  /**
+   * Fetch eagerly at high priority rather than lazily. For the one image in a
+   * list that matters most: it is not queued behind its siblings and does not
+   * wait for layout to confirm it is in the viewport.
+   */
   priority?: boolean;
 }
 
