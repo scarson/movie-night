@@ -1422,3 +1422,237 @@ over the deduped union of both title lists against the local catalog. Since the 
 merges TMDB results, adding 11 catalog-new titles in one pass is an ordinary thing to do and takes
 the same unactionable 400 that B10 exists to prevent. Different axis (per-save, cross-list,
 catalog-relative), so `max` does not touch it. B10's discipline is not fully satisfied until it is.
+
+## G6 — Chunking discipline and the canonical disabled treatment (2026-08-01)
+
+Executes group G6 of `dev/plans/2026-08-01-phase1-bug-hunt-remediation-plan.md`: D2, D7, the
+canonical disabled-control treatment, and the two forbidden historical-context comments.
+
+### G6-1 — D2: `resolveIds` is chunked
+
+`resolveIds` in `src/app/api/titles/search/route.ts` bound `...ids` directly, and
+`MAX_RESOLVED_IDS` is 100 — exactly D1's hard ceiling, with zero headroom. It was the only
+`.bind(...spread)` in the codebase outside `chunk` / `D1_IN_CHUNK_SIZE`. Now loops
+`chunk(ids, D1_IN_CHUNK_SIZE)` accumulating into the existing `byId` map; the closing
+`ids.map((id) => byId.get(id))` still re-imposes the caller's order, so chunking cannot reorder.
+
+**The plan's two prescribed tests cannot fail before the fix.** Both are order assertions, and the
+old code preserved order too; the fake D1 rejects only *above* 100, so it cannot distinguish "at
+the ceiling" from "one over" — which is the plan's own stated reason the bug is invisible. Wrote
+both anyway (they pin behavior) plus a third that does fail first: `src/test/statement-recorder.ts`
+wraps a `D1Database` and records each bound statement's parameter count, and the test asserts the
+widest is `<= D1_IN_CHUNK_SIZE`. It failed with `expected 100 to be less than or equal to 90` —
+the headroom property PLAT-1 actually asks for, rather than "it happens to fit today".
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 618 passed / 2 skipped
+(615 baseline + 3), no new warnings.
+
+### G6-2 — D7: one chunked `IN()` for the profile PUT's existence check
+
+`PUT /api/user/profile` ran `SELECT 1 FROM titles WHERE tmdb_id = ?` once per referenced id in a
+sequential loop — up to 100 D1 round-trips inside the request the ritual's "Continue →" button
+blocks on. Replaced with one chunked `IN()` per `D1_IN_CHUNK_SIZE`, with `content_type = 'movie'`
+as a SQL literal so a 90-item chunk keeps full headroom.
+
+`unknownIds` is built by filtering `referenced` against the resulting `Set`, never from query
+results: it and `failedIds` are order-visible to the client, and `IN()` result order is not the
+caller's order.
+
+The failing test asserts round-trips, which is the actual defect — it failed at
+`expected 100 to be less than or equal to 2`. The order test passes before and after (the old loop
+preserved order too) and exists to pin the property the rewrite could have broken; its fixture
+interleaves known and unknown ids in non-ascending order, per testing-pitfalls §4.
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 620 passed / 2 skipped.
+
+### G6-3 — the canonical disabled-control treatment
+
+Eight sites across five files carried five distinct strings: `disabled:opacity-50` (four sites),
+`disabled:opacity-60` (one), and three different slate/ash spellings (`profile/page.tsx:27`,
+`profile/page.tsx:264`, `refine-panel.tsx:111`, no two alike). `DESIGN.md` could not say which was
+right, because it had never said anything.
+
+The rule, now in `DESIGN.md` §Accessibility beside the 2026-07-27 slate decision and in the
+Decisions Log: **a disabled control leaves the amber hierarchy.** Filled controls drop the amber
+fill to slate with an ash label; outlined controls drop the ash boundary to slate with an ash
+label; hover is neutralised; opacity is never used. Two new exports in `control-classes.ts`,
+folded into `primaryControlClasses` and `outlinedControlClasses` so every composed control
+inherits them. All eight bespoke strings deleted, plus `refine-panel.tsx`'s now-vestigial
+`border border-transparent` and `profile/page.tsx`'s `PRIMARY_BUTTON` alias, which had become a
+bare re-export of `primaryButtonClasses` with one use.
+
+The `disabled:hover:*` neutralisers are not decoration: `:hover` still matches a disabled button,
+and Tailwind resolves same-specificity variants by stylesheet order, not class-attribute order.
+
+**Two things the plan predicted wrongly, both caught by running the test rather than trusting the
+numbers** (the plan explicitly says reality wins):
+
+1. The plan predicted `components/control-classes.ts: 4` in the `ALLOWED` map. First run said 5 —
+   a doc comment of mine quoted a class token, and the walker's regex matches prose. Reworded the
+   comment; 4 is correct once no prose names a token.
+2. **The plan did not anticipate that folding the outlined treatment in breaks the existing 1.4.11
+   assertions.** Five of them assert `className` does `not.toContain("border-slate")` on resting
+   controls, and the sanctioned `disabled:border-slate` contains that substring. Only the
+   tag-picker's Add button actually failed (chips, toggles and group rows compose from
+   `outlinedBoundaryClasses`, which is untouched), but the assertion was wrong for all five.
+   Narrowed to `/(^|\s)border-slate\b/` — an unprefixed utility, which is exactly what 1.4.11
+   governs, since it exempts inactive components. Not a weakening: the count-based allowlist is
+   still the global guard, and it is now exact about resting state.
+
+`ALLOWED` changes: added `components/control-classes.ts: 4`; `app/profile/page.tsx` 3 → 1;
+`components/refine-panel.tsx` 2 → 1; `app/groups/page.tsx` unchanged at 5 (its treatments were
+opacity, not slate). Comments beside the two changed counts updated — at a count of 1 the old
+"+ disabled: boundary" text would have been false.
+
+The rendered assertion is on `RefinePanel`, a real call site, not on
+`<button className={primaryButtonClasses}>` — that render would only re-state its own input, the
+derived-prop-as-input anti-pattern the plan's §0.3 Round C names. `control-classes.test.ts` pins
+the constants directly, and a source walk now fails if any file reintroduces `disabled:opacity-`.
+
+**jsdom proves class strings and structure, not pixels.** No visual verification is claimed here:
+jsdom has no cascade, no layout, and no painted colour.
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 627 passed / 2 skipped.
+
+### G6-4 — the two forbidden historical-context comments
+
+CLAUDE.md forbids temporal and historical context in comments. `src/lib/db.ts:2` and
+`vitest.config.ts:2` both opened by naming the project they were ported from, which says nothing
+about what the file does. Both `ABOUTME:` lines now describe the file as it is. No behavioral
+change, so no new test — the existing suite passing unchanged is the whole verification.
+
+`migrations/0001_initial_schema.sql:1` carries a similar clause and was deliberately left alone:
+it has already been applied to the remote database, and the plan scopes this task to two lines in
+two files. The remaining references live in historical plan documents, where provenance is the
+point.
+
+### G6 review rounds (plan §0.3)
+
+**Round A — correctness.** Boundaries verified line by line against plan §1.3: `groups/page.tsx`
+line 288 and the `copyInvite` comment (G5's) untouched; `profile/page.tsx` lines 232-235 (G3's
+deletion copy) untouched; `ritual/page.tsx` limited to line 337. `outlinedBoundaryClasses` and
+`primaryFillClasses` are byte-identical — no resting or hover colour moved. No control gained a
+`disabled` attribute. All eight controls that carry one now get exactly one treatment matching
+their level, and none carries both.
+
+**One out-of-region edit, surfaced rather than hidden.** Deleting the bespoke string from
+`profile/page.tsx:27` left `const PRIMARY_BUTTON = primaryButtonClasses` — a bare alias with a
+single use. Inlining it touched line 180, outside G6's named region. No other group owns that line
+(G3 owns 232-235), so the rebase risk is nil, but the plan says to surface rather than edit across
+a boundary, so it is surfaced here and in the PR.
+
+**Round B — adversarial.** The plan asserts the disabled treatment wins over the resting fill and
+over hover. Verified against the *compiled stylesheet* rather than reasoned about: in
+`.next/static/chunks/*.css`, `.bg-amber` is at byte 15836, `.hover\:bg-warm-white` at 23699,
+`.disabled\:bg-slate` at 24554 and `.disabled\:hover\:bg-slate` at 24894. The disabled variant is
+both higher-specificity (`:disabled` adds a pseudo-class) and later in source order than hover, so
+it wins twice over; the border pair has the same shape. This is the one claim jsdom could not
+support, and it is now backed by the real build output.
+
+Chunking cannot change behavior for duplicates (`parseIds` and the profile's `referenced` both
+dedupe upstream) or for empty input (`chunk([])` yields no chunks and the route short-circuits at
+`ids.length === 0`).
+
+Tailwind's content scan reads markdown, so `disabled:opacity-50` and `-60` rules still appear in
+the bundle — emitted from the plan and research documents in `dev/` and from the two test files
+that assert the token's *absence*. ~80 bytes of dead CSS that no element references. Not worth
+"fixing": the fix would be to stop writing tests that name the banned token.
+
+**Round C — test quality.** Two findings, both fixed.
+
+1. **Vacuous-pass risk.** `Math.max(...reads.map(...))` returns `-Infinity` over an empty array,
+   which clears any ceiling, and a zero count clears any upper bound. If the SQL ever stopped
+   matching the filter, both chunking tests would have passed while measuring nothing. Both now
+   assert `reads.length > 0` first.
+2. **The narrowed boundary assertion was broader than intended.** The first cut,
+   `/(^|\s)border-slate\b/`, exempted *every* variant prefix — it would have let a real
+   `hover:border-slate` on a control through, and hover is a state 1.4.11 governs. Replaced with
+   `/(^|\s)(?!disabled:)\S*border-slate\b/`, which carves out only the sanctioned `disabled:`
+   prefix and still catches `hover:`, `focus:` and responsive variants. Checked against ten
+   hand-built class strings covering both directions before adopting it.
+
+Also confirmed: no new test asserts a derived value passed straight back as its own input — the
+rendered assertions run against `RefinePanel`, a real call site, and the class constants are
+asserted as constants in `control-classes.test.ts`, not laundered through a render.
+
+An independent reviewer ran the three rounds in parallel with the self-review. Its report reached the
+coordinator rather than this session, so the rounds above are the author's own and the two findings
+they produced were fixed before the PR opened; the reviewer's batch is recorded in the next section.
+
+### G6 — second review batch
+
+An independent reviewer confirmed the two self-caught fixes and found no remaining correctness
+defect. It also re-derived the narrowed 1.4.11 guard from scratch: `disabled:hover:border-slate` is
+killed by the lookahead, `md:` / `hover:` / `aria-checked:` / `focus-visible:` prefixes are all still
+caught, and `\S*` cannot cross whitespace, so `"hover:border-cream disabled:border-slate"` does not
+false-match. Its one false positive is the reversed `hover:disabled:border-slate`, which is
+harmless. Four items were actionable.
+
+**1. Asymmetric assertion.** `control-classes.test.ts` checked the filled string against the whole
+`border-slate` token but the outlined string against `disabled:bg-slate` only — so a bare or
+`hover:`-prefixed slate *fill* added to `disabledOutlinedClasses` would have passed, which is
+exactly the "never a fill change on an outlined control" half of the rule. Both sides now match the
+bare token.
+
+**2. "Six treatments" was wrong, and it was headed into a permanent design doc.** There are **five
+distinct strings** — `disabled:opacity-50`, `disabled:opacity-60`, and three different slate
+spellings (`profile/page.tsx:27`, `profile/page.tsx:264`, `refine-panel.tsx:111`, no two alike) —
+across eight sites in five files. The figure was inherited from the plan's header, which also said
+"six files". Corrected in `DESIGN.md`'s Decisions Log, in the test comment, and above.
+
+**3. `statement-recorder.ts` rests on an unstated assumption.** `Object.create(statement)` delegates
+`first`/`all`/`run`/`raw` to the real object, and those read `db`, `sql` and `params` through the
+prototype chain. That works only because `FakeD1PreparedStatement` uses TypeScript `private`, which
+erases to ordinary properties. ECMAScript `#private` fields would break every delegated call — and
+`fake-d1.ts` is PREP's file, so someone could make that change without ever opening this one. The
+dependency is now stated in the doc comment, along with the related trap that a fake method
+assigning to `this` would write to the wrapper rather than the real object.
+
+**4. Two boundary crossings, disclosed rather than reframed.**
+
+- **Rewriting the five pre-existing 1.4.11 assertions in `control-contrast.test.tsx` was an
+  ownership crossing, not a plan omission.** Plan §1.3 grants G6 "the `ALLOWED` map and its
+  comments" — not those assertions. The alternative the plan leaves open is to *not* fold
+  `disabledOutlinedClasses` into `outlinedControlClasses`, which was never surfaced before choosing.
+  The call stands: folding is plan step 2, and the assertions were imprecise about resting state
+  regardless. But it was a deliberate decision, and the earlier write-up framed it as the plan
+  failing to anticipate something, which understated it. For the record, only the tag-picker's Add
+  button actually broke — `Chip`, `ToggleRow`, `RoughDayToggle` and the `GroupPicker` row all
+  compose from the untouched `outlinedBoundaryClasses`.
+- **G6-3 says "do NOT add a disabled treatment to `<Link>` elements", and step 2's mandated fold
+  does exactly that.** Four anchors now carry `disabled:*` utilities:
+  `results/[sessionId]/page.tsx:156` and `:384`, and `tonight/page.tsx:85` and `:91`. Inert —
+  `:disabled` never matches an `<a>` — but a literal crossing of a stated boundary. (The reviewer
+  also cited `page.tsx:80` and `tonight/page.tsx:102`; both are false positives. The first is a
+  `<button>`, the second a text link with bespoke classes and no control string.)
+
+### G6 — third review batch
+
+A second independent reviewer returned approve-with-fixes. It attacked the 1.4.11 guard with 27
+strings — `hover:`, `focus-visible:`, `sm:`, `md:hover:`, `dark:`, `group-hover:`, `peer-checked:`,
+`aria-disabled:`, `data-[state=open]:`, `[&:hover]:`, `!border-slate`, `border-slate!`,
+`border-slate/50`, newline and tab separation, and `"disabled:border-slate border-slate"` — without
+defeating it, and confirmed against the generated stylesheet that every `disabled:`-initial token
+compiles to a selector requiring `:disabled`, so an exempt token can only ever paint an inactive
+component. It also counted all 21 allowlist entries as exact, proved both new tests fail against
+`origin/dev`'s route files, exercised `chunk()` at n=0/1/89/90/91/100/180/181 with no off-by-one and
+no empty chunk, and confirmed the refine-panel disabled state in a real browser: slate fill
+`rgb(45,53,72)`, ash label, border-width 0, no paint movement on hover across all three control
+shapes.
+
+**One must-fix: four newly-added comments narrated history.** An ironic defect in the change whose
+G6-4 task exists to delete exactly that. `control-classes.test.ts` counted what call sites used to
+carry; two allowlist entries said the treatment "is central now"; the profile test described the
+existence check's former shape. All four now state the present constraint and why it holds. A fifth
+of my own ("as strict as a bare substring check everywhere it was ever meaningful") was caught in
+the same sweep and rewritten to enumerate what the pattern still catches. The corrected count stays
+in `DESIGN.md`'s Decisions Log, which is explicitly a historical record.
+
+**Declined, with reasons.** The reviewer noted no render test exercises an actually-disabled
+*outlined* control: "Start over" is never disabled, and the three that can be disabled
+(`groups/page.tsx:325` and `:429`, `profile/page.tsx:264`) live inside page components that would
+need auth, router and fetch mocking to render. Such a test would exercise the mock harness, not the
+treatment, and a render of `<button className={secondaryButtonClasses} disabled>` would only
+re-state its own input — the anti-pattern already rejected for the filled case. The composition
+assertions in `control-classes.test.ts` prove every outlined variant carries the treatment, and the
+browser check above covers the paint. Left uncovered deliberately rather than covered dishonestly.

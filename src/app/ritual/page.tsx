@@ -339,7 +339,7 @@ function Ritual() {
             type="button"
             onClick={() => void advance()}
             disabled={saving}
-            className={`${primaryButtonClasses} disabled:opacity-60`}
+            className={primaryButtonClasses}
           >
             {saving ? "Saving…" : "Continue →"}
           </button>

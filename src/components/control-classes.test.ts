@@ -11,6 +11,8 @@ import {
   primaryFillClasses,
   primaryControlClasses,
   primaryButtonClasses,
+  disabledFillClasses,
+  disabledOutlinedClasses,
 } from "@/components/control-classes";
 
 const SRC = path.resolve(__dirname, "..");
@@ -101,6 +103,62 @@ describe("primary fill classes", () => {
   it("stand at the same height as the secondary button they pair with", () => {
     expect(primaryButtonClasses).toContain("min-h-12");
     expect(secondaryButtonClasses).toContain("min-h-12");
+  });
+});
+
+describe("disabled control classes", () => {
+  it("drop a filled control to the inactive fill, hover included", () => {
+    expect(disabledFillClasses).toContain("disabled:bg-slate");
+    expect(disabledFillClasses).toContain("disabled:text-ash");
+    // `:hover` still matches a disabled button, and Tailwind resolves
+    // `disabled:bg-slate` against `hover:bg-warm-white` by variant order rather
+    // than specificity. The neutraliser is what makes the outcome definite.
+    expect(disabledFillClasses).toContain("disabled:hover:bg-slate");
+  });
+
+  it("drop an outlined control's boundary to the inactive one, hover included", () => {
+    expect(disabledOutlinedClasses).toContain("disabled:border-slate");
+    expect(disabledOutlinedClasses).toContain("disabled:text-ash");
+    expect(disabledOutlinedClasses).toContain("disabled:hover:border-slate");
+    // The two bespoke ember buttons also set `hover:bg-ember hover:text-midnight`,
+    // so this string neutralises fill and label as well as the boundary.
+    expect(disabledOutlinedClasses).toContain("disabled:hover:bg-transparent");
+    expect(disabledOutlinedClasses).toContain("disabled:hover:text-ash");
+  });
+
+  it("state each level in its own vocabulary and never the other's", () => {
+    // DESIGN.md: filled controls drop the fill, outlined controls drop the
+    // boundary. One rule, expressed twice — not two rules.
+    //
+    // Both sides match the bare token, so any prefix is caught. Pinning the
+    // outlined side to a `disabled:`-prefixed pattern would let a bare or
+    // `hover:`-prefixed slate fill through, which is the same violation.
+    expect(disabledFillClasses).not.toMatch(/border-slate/);
+    expect(disabledOutlinedClasses).not.toMatch(/bg-slate/);
+  });
+
+  it("reach every composed control", () => {
+    for (const filled of [primaryControlClasses, primaryButtonClasses]) {
+      expect(filled).toContain(disabledFillClasses);
+    }
+    for (const outlined of [
+      outlinedControlClasses,
+      secondaryButtonClasses,
+      compactOutlinedButtonClasses,
+    ]) {
+      expect(outlined).toContain(disabledOutlinedClasses);
+    }
+  });
+
+  it("are never expressed as opacity, anywhere in the source", () => {
+    // Opacity is outside the token system: it compounds with whatever sits
+    // beneath the control, so the result cannot be read off the palette. The
+    // disabled treatment is stated in slate and ash, and this walk is what stops
+    // a call site reaching for opacity instead.
+    const opacitySites = sourceFiles()
+      .filter(([, src]) => /disabled:opacity-/.test(src))
+      .map(([file]) => file);
+    expect(opacitySites).toEqual([]);
   });
 });
 

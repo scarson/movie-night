@@ -5,6 +5,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
+import { recordStatements } from "@/test/statement-recorder";
+import { D1_IN_CHUNK_SIZE } from "@/lib/db";
 import { createJWT } from "@/lib/auth";
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -286,6 +288,60 @@ describe("/api/user/profile", () => {
 
     const row = await db.prepare("SELECT * FROM profiles WHERE user_id = 'u1'").first();
     expect(row).toBeNull();
+  });
+
+  it("PUT reports unknown ids in the order they were referenced", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+    for (const id of [300, 100, 500]) await seedTitle(db, id, `Known ${id}`);
+
+    const fetchStub = vi.fn();
+    vi.stubGlobal("fetch", fetchStub);
+
+    // Known and unknown ids interleaved, neither group ascending — an ascending
+    // fixture makes "the referenced order survived" look self-evidently true.
+    const referenced = [
+      9005, 300, 9001, 9009, 100, 9003, 9000, 9007, 500, 9002, 9008, 9004, 9006, 9010,
+    ];
+    const { PUT } = await import("./route");
+    const response = await PUT(await authedPut("u1", validBody({ comfortTitles: referenced })));
+
+    expect(response.status).toBe(400);
+    const body = await response.json<Record<string, unknown>>();
+    expect(body.unknownIds).toEqual([
+      9005, 9001, 9009, 9003, 9000, 9007, 9002, 9008, 9004, 9006, 9010,
+    ]);
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it("PUT checks more referenced ids than a single D1 statement can bind", async () => {
+    // One statement per referenced id would put up to 100 D1 round-trips inside
+    // the request that blocks the ritual's "Continue" button, so the check is
+    // chunked. The statement count is what holds it there.
+    const base = createFakeD1(loadMigration());
+    const { db, statements } = recordStatements(base);
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(base, "u1", "Sam");
+    for (let i = 1; i <= 100; i++) await seedTitle(base, i, `Title ${i}`);
+
+    const fetchStub = vi.fn();
+    vi.stubGlobal("fetch", fetchStub);
+
+    const comfortTitles = Array.from({ length: 50 }, (_, i) => i + 1);
+    const watchlist = Array.from({ length: 50 }, (_, i) => i + 51);
+    const { PUT } = await import("./route");
+    const response = await PUT(await authedPut("u1", validBody({ comfortTitles, watchlist })));
+
+    expect(response.status).toBe(200);
+    expect(fetchStub).not.toHaveBeenCalled();
+
+    const reads = statements.filter((s) => /SELECT[\s\S]*FROM titles/.test(s.sql));
+    // Guards the two assertions below against passing vacuously: with an empty
+    // filter, Math.max returns -Infinity and a zero count clears any ceiling.
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.length).toBeLessThanOrEqual(Math.ceil(100 / D1_IN_CHUNK_SIZE));
+    expect(Math.max(...reads.map((s) => s.boundParams))).toBeLessThanOrEqual(D1_IN_CHUNK_SIZE);
   });
 
   it("PUT returns 400 listing failed ids when a TMDB fetch fails, and saves nothing", async () => {
