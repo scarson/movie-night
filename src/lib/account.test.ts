@@ -251,6 +251,39 @@ describe("deleteAccount", () => {
   });
 });
 
+describe("deleteAccount — groups the user leaves behind", () => {
+  it("leaves a group intact when its last member deletes their account", async () => {
+    // Deliberately NOT cascaded. "Empty" is defined by group_members, but a
+    // member who left via leaveGroup keeps their session_members rows and a
+    // legitimate read of that history — so "A leaves, B deletes" would destroy
+    // every session A can still read. groups -> movie_sessions ->
+    // recommendations all CASCADE, and none of it is recoverable.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "u1@example.com");
+    await seedGroup(db, "grp1", "CODE0001");
+    await seedGroupMember(db, "gm1", "grp1", "u1");
+    await seedMovieSession(db, "sess1", "grp1", "u1");
+    await seedSessionMember(db, "sm1", "sess1", "u1");
+    await seedRecommendation(db, "rec1", "sess1", JSON.stringify(round()));
+
+    await deleteAccount(db, "u1", () => {});
+
+    expect(await db.prepare("SELECT id FROM groups WHERE id = ?").bind("grp1").first()).not.toBeNull();
+    expect(
+      await db.prepare("SELECT id FROM movie_sessions WHERE id = ?").bind("sess1").first()
+    ).not.toBeNull();
+    expect(
+      await db.prepare("SELECT id FROM recommendations WHERE id = ?").bind("rec1").first()
+    ).not.toBeNull();
+    // The membership itself is gone — that is what the copy now promises.
+    const { results: memberships } = await db
+      .prepare("SELECT * FROM group_members WHERE group_id = ?")
+      .bind("grp1")
+      .all();
+    expect(memberships).toHaveLength(0);
+  });
+});
+
 describe("deleteAccount — scrubbing the deleted name from persisted rounds", () => {
   it("replaces the deleted member's name in tasteMap.members and leaves the survivor's alone", async () => {
     const db = createFakeD1(loadMigration());

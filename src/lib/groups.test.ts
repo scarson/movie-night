@@ -245,6 +245,25 @@ describe("leaveGroup", () => {
 
     await expect(leaveGroup(db, "u1", "grp1")).resolves.toBeUndefined();
   });
+
+  it("refuses to remove a member from their own solo group", async () => {
+    // A personal group is not leavable: leaving it strands that group's session
+    // history behind a group the user is no longer in, while the next solo
+    // session silently creates a fresh one. Not reachable through the UI, which
+    // never lists __solo__ groups — but the API accepts any group id.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroup(db, "grp-solo", SOLO_GROUP_NAME, "solo-u1");
+    await seedGroupMember(db, "gm1", "grp-solo", "u1");
+
+    await expect(leaveGroup(db, "u1", "grp-solo")).resolves.toBeUndefined();
+
+    const membership = await db
+      .prepare("SELECT * FROM group_members WHERE group_id = ? AND user_id = ?")
+      .bind("grp-solo", "u1")
+      .first();
+    expect(membership).not.toBeNull();
+  });
 });
 
 describe("checkJoinRateLimit / logJoinAttempt", () => {

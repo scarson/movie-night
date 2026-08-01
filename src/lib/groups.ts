@@ -169,8 +169,20 @@ export async function getGroupsForUser(db: D1Database, userId: string): Promise<
   return groups;
 }
 
-/** Removes the user's membership only. Session history (session_members, movie_sessions) is preserved. */
+/**
+ * Removes the user's membership only. Session history (session_members,
+ * movie_sessions) is preserved. A "__solo__" group is a personal group and is
+ * not leavable: leaving one strands its session history and the next solo
+ * session silently creates another. Returning silently keeps the route's
+ * { ok: true } contract, and the group was never listed to begin with.
+ */
 export async function leaveGroup(db: D1Database, userId: string, groupId: string): Promise<void> {
+  const row = await db
+    .prepare("SELECT name FROM groups WHERE id = ?")
+    .bind(groupId)
+    .first<{ name: string }>();
+  if (row?.name === SOLO_GROUP_NAME) return;
+
   await db
     .prepare("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")
     .bind(groupId, userId)

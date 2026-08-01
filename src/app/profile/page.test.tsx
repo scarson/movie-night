@@ -230,6 +230,10 @@ describe("profile settings", () => {
     // The shared history survives, anonymized — that is the promise being made.
     expect(explanation).toMatch(/deleted user/i);
     expect(explanation).toMatch(/can't be undone|cannot be undone/i);
+    // Deletion removes the user from their groups; the groups themselves stay,
+    // because cascading them would destroy history other people can still read.
+    expect(explanation).toMatch(/removes you from your groups/i);
+    expect(explanation).not.toMatch(/your profile, your groups/i);
   });
 
   it("keeps deletion locked until the word is actually typed", async () => {
