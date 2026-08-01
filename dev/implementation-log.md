@@ -2731,3 +2731,66 @@ collision risk was nil; the footprint there is one import and one call.
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 866 passed
 / 2 skipped (baseline 862), only the pre-existing `vite:dynamic-import-vars` warnings,
 `npx @opennextjs/cloudflare build` clean.
+## 2026-08-01 — `claude/refine-after-leave`: close every refinement affordance after leaving a group
+
+**What was built.** O-1 from the e2e smoke report: a `left_group` refusal withheld the error
+panel's "Try again" but left `RefinePanel`'s CTA posting to the same route, so it 403'd forever.
+Reading the page turned up a **second control in the same class** — the `round === 0` branch's
+**Find our match →**, gated by nothing at all, reachable because an ex-member can still read a
+session that never matched.
+
+**The design decision.** Gated at the page, not at either button. `results/[sessionId]/page.tsx`
+derives `leftGroup = refineError?.kind === "left_group"` once, next to the existing `exhausted`,
+and that one value feeds all three affordances. `runMatchRound` has exactly one caller, so this
+is the whole surface. `RefinePanel` took a new `leftGroup` prop rather than reusing `exhausted`:
+they are different facts and the copy differs — leaving takes the authority, not the budget, and
+"that was the last round of the night" would be false. `leftGroup` wins when both hold.
+
+**Disabled rather than hidden**, so the user can see *why*: the panel carries its own note, and
+the no-round CTA sits directly under the `role="alert"` that names the reason. Both take the
+canonical treatment for free — `primaryButtonClasses` already composes `disabledFillClasses` —
+so nothing hand-spells a `disabled:` variant and `control-classes.test.ts` stays green. Confirmed
+in a real browser (jsdom has no cascade): computed `rgb(45,53,72)` = slate on `rgb(139,149,168)`
+= ash, `opacity: 1`. **Start over** stays live; it is the way out. Server gate, `left_group` kind
+and error-panel framing untouched.
+
+**The failing test.** Three tests first, all failing on the same claim —
+`expect(regenerate().hasAttribute("disabled")).toBe(true)` →
+`AssertionError: expected false to be true` (`refine-panel.test.tsx:130`). In the no-round test
+the assertion above it already passed, which pins the failure to the live button rather than to a
+broken error path.
+
+**Re-verification (Part 7 of `dev/reports/2026-08-01-e2e-smoke-verification.md`).** The three PRs
+the smoke pass could not cover were re-run against `wrangler dev` on port 8799 with real
+bindings. **#31** (match-route `db.batch`): all four responses byte-identical to `a60483f`, with
+`removed_ids_filtered` and a 10-round session used as external probes into the batch's
+`recommendedTmdbIds` and `round` slices; `members` and `accumulatedRemovedIds` have no observable
+short of a successful round and are recorded as unproven rather than assumed. **#29**: a mixed
+save persists the good ids, reports the skipped ones, and leaves **zero** dangling
+`profiles`→`titles` references across the whole DB. **#30**: full five-entry ladder in the served
+DOM, and the `sizes` declaration matches the measured box (208 px = 13rem, 224 px = 14rem) with
+`currentSrc` resolving to `w342` at DPR 1. No defect found in any of the three.
+
+**Gotcha worth keeping:** `left_group` is only discoverable from a refusal — the GET serves an
+ex-member `200` — so the affordance can only close *after* the first 403. Closing it earlier
+needs the session GET to report live membership, which is a server change and was not taken.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 865
+passed / 2 skipped (baseline 862), `npx @opennextjs/cloudflare build` clean.
+
+---
+
+## Next queue planned — items 6-10 (2026-08-01)
+
+`dev/plans/2026-08-01-next-queue.md` scopes the five items after the current wave. The shape of the
+argument: Phase 1 is feature-complete, remediated and verified end to end, but has never been
+*experienced* — every verification so far asked whether behaviour was correct, none asked whether the
+thing is good to use on a phone by someone who has never seen it. Items 6-8 (first-run and unpainted
+states, a design-system drift sweep, mobile/touch QA of the ritual) close that. Items 9-10 (dependency
+review, cost model) are pre-public hygiene and the input to the spend decision the abuse-surface review
+will surface.
+
+Recorded as a decision rather than left as an omission: **executing Phase 2 is deliberately not in the
+next five.** Building the rating loop before anyone has used the recommender would build on an
+unvalidated base, and the plan's hardest questions are product judgments that need Sam. It should
+follow his review of the design doc and the app actually shipping.

@@ -32,6 +32,12 @@ export interface RefinePanelProps {
    * only advances on success, so it cannot be inferred from the count alone.
    */
   exhausted?: boolean;
+  /**
+   * The viewer is no longer in this session's group. Reads survive, but the
+   * authority to spend the owner's budget does not, so a further round is a
+   * guaranteed refusal rather than a thing worth offering.
+   */
+  leftGroup?: boolean;
 }
 
 export function RefinePanel({
@@ -46,6 +52,7 @@ export function RefinePanel({
   onStartOver,
   busy = false,
   exhausted = false,
+  leftGroup = false,
 }: RefinePanelProps) {
   const headingId = useId();
   const noteId = useId();
@@ -53,6 +60,14 @@ export function RefinePanel({
   const hasRatings = keptCount > 0 || removedCount > 0;
   const hasFeedback = steering.trim() !== "";
   const spent = round >= maxRounds || exhausted;
+  const closed = spent || leftGroup;
+  // Leaving takes the authority, not the budget, so it gets its own sentence and
+  // wins the ordering: telling an ex-member their rounds ran out would be untrue.
+  const closedNote = leftGroup
+    ? "You've left this group. Tonight's picks stay readable, but the next round isn't yours to run. Start over for a session of your own."
+    : spent
+      ? "That was the last round of the night. Start over to begin a fresh session."
+      : null;
 
   return (
     <section
@@ -96,17 +111,15 @@ export function RefinePanel({
       />
       <p className="mt-2xs text-sm tabular-nums text-ash">{`${steering.length}/${MAX_STEERING}`}</p>
 
-      {spent && (
-        <p className="mt-md max-w-[62ch] text-sm text-ash">
-          That was the last round of the night. Start over to begin a fresh session.
-        </p>
+      {closedNote !== null && (
+        <p className="mt-md max-w-[62ch] text-sm text-ash">{closedNote}</p>
       )}
 
       <div className="mt-lg flex flex-col gap-sm sm:flex-row sm:items-center">
         <button
           type="button"
           data-testid="regenerate"
-          disabled={spent || busy}
+          disabled={closed || busy}
           onClick={onRegenerate}
           className={primaryButtonClasses}
         >

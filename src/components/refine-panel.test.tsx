@@ -121,6 +121,23 @@ describe("RefinePanel", () => {
     expect(onRegenerate).not.toHaveBeenCalled();
   });
 
+  it("closes refinement once the viewer has left the group and explains why", () => {
+    // Leaving revokes the authority to spend the owner's budget, so every further
+    // round is a guaranteed 403. The budget is untouched — say that, not "spent".
+    const onRegenerate = vi.fn();
+    render(<RefinePanel {...BASE} round={3} leftGroup onRegenerate={onRegenerate} />);
+
+    expect(regenerate().hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/left this group/i)).toBeTruthy();
+    expect(screen.queryByText(/last round of the night/i)).toBeNull();
+    fireEvent.click(regenerate());
+    expect(onRegenerate).not.toHaveBeenCalled();
+    // A session of their own is the way out, so starting over must stay live.
+    expect(screen.getByRole("button", { name: /start over/i }).hasAttribute("disabled")).toBe(
+      false
+    );
+  });
+
   it("stands down while a round is already running", () => {
     const onRegenerate = vi.fn();
     render(<RefinePanel {...BASE} busy onRegenerate={onRegenerate} />);

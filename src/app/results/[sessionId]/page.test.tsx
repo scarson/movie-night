@@ -665,6 +665,63 @@ describe("results page", () => {
     expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
   });
 
+  it("closes every refinement affordance after a left_group refusal, not just the retry", async () => {
+    // Withholding "Try again" while the refine panel's own CTA stays live just
+    // moves the guaranteed 403 one control to the left.
+    vi.useFakeTimers();
+    const calls = stubApi({
+      match: {
+        status: 403,
+        body: {
+          error: "You've left this group — you can still read this evening, but not run it again",
+          kind: "left_group",
+        },
+      },
+    });
+    await renderResults();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("regenerate").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/left this group\./i)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    expect(matchCalls(calls)).toHaveLength(1);
+  });
+
+  it("closes the un-matched session's CTA after a left_group refusal", async () => {
+    // The same class of affordance on the no-round branch: an ex-member can still
+    // read a session that never matched, and its one button posts to the same route.
+    vi.useFakeTimers();
+    const calls = stubApi({
+      get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
+      match: {
+        status: 403,
+        body: {
+          error: "You've left this group — you can still read this evening, but not run it again",
+          kind: "left_group",
+        },
+      },
+    });
+    await renderResults();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    });
+    await settleNarrative();
+
+    expect(screen.getByTestId("refine-error-heading").textContent).toBe("You've left this group");
+    const closed = screen.getByRole("button", { name: /find our match/i });
+    expect(closed.hasAttribute("disabled")).toBe(true);
+    await act(async () => {
+      fireEvent.click(closed);
+    });
+    expect(matchCalls(calls)).toHaveLength(1);
+  });
+
   it("falls back to the default framing for an error kind it does not know", async () => {
     vi.useFakeTimers();
     // "constructor" is an inherited key on any plain object, so a bare index

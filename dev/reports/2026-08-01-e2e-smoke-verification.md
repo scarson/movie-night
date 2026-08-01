@@ -550,3 +550,212 @@ re-pointing the new test at `getMatchRoundContext`: `npx tsc --noEmit` clean, `n
 (#30) and match-read batching (#31) — were **not** re-verified against a running Worker. #31 in
 particular changes how the match route reads D1 (five sequential reads become one `db.batch`), which
 is exactly the kind of change this pass exists to check and is now unexercised end to end.
+
+---
+
+# Follow-up pass — 2026-08-01, branch `claude/refine-after-leave`, cut from `dev` at `5d76a38`
+
+Everything above was measured against `a60483f` and is left exactly as it was written; that
+context matters. This section is a **separate, later pass** with two jobs: close O-1, and
+re-verify the three PRs the caveat at the end of Part 5 names as unexercised (#29, #30, #31).
+
+**Server:** `wrangler dev` on the OpenNext build, **port 8799**, `127.0.0.1`, real D1 + real
+secret bindings. **Baseline before any change:** `npm test` → 63 files / **862** passed / 2
+skipped. (A brief carried into this pass said 861; 862 is correct — PR #32 added the
+`getMatchRoundContext` regression test.)
+
+## Part 6 — O-1 closed: every refinement affordance now shuts, not just the retry
+
+O-1 above recorded that `framing.retry` gates only the "Try again" button *inside* the error
+panel, while `RefinePanel`'s "Show me different options" is governed by `exhausted`, which is
+set only for `round_limit` — so it stays live after a `left_group` failure and 403s every time.
+
+**Reading the page found a second instance of the same class.** The `response === null ||
+round === 0` branch ("Nothing picked yet") renders **Find our match →**, which posts to the
+same route and was gated by nothing at all. An ex-member can still *read* a session that never
+matched — the read path deliberately survives leaving — so that button is reachable, and it was
+a guaranteed 403 in exactly the same way. That is the affordance the report's own Part 3
+described as "a working-looking recovery affordance that can never succeed", arrived at from
+the other direction.
+
+**The fix, at the page rather than at either button.** Membership is only observable from a
+refusal (the GET still serves an ex-member 200), so `results/[sessionId]/page.tsx` derives
+`leftGroup = refineError?.kind === "left_group"` once, alongside the existing `exhausted`, and
+that one value gates all three affordances: the error panel's retry (already correct, via
+`framing.retry`), the no-round CTA, and `RefinePanel`. Nothing on the page posts to the match
+route without passing through it — `runMatchRound` has exactly one caller, confirmed by grep.
+
+`RefinePanel` gained a `leftGroup` prop rather than reusing `exhausted`, because they are
+different facts and the copy must not lie: leaving takes the *authority*, not the budget, and
+telling an ex-member their rounds ran out would be false. `leftGroup` wins the ordering when
+both hold. The panel's note reads:
+
+> You've left this group. Tonight's picks stay readable, but the next round isn't yours to run.
+> Start over for a session of your own.
+
+**Disabled, not hidden.** A vanished button is not an explanation. Both controls take the
+canonical treatment from `src/components/control-classes.ts` for free — `primaryButtonClasses`
+already composes `disabledFillClasses` — so nothing hand-spells a `disabled:` variant and the
+`control-classes.test.ts` guard is untouched. Measured in a real browser (not jsdom) on the
+running Worker, the disabled CTA computes to `background-color: rgb(45, 53, 72)` = `slate`,
+`color: rgb(139, 149, 168)` = `ash`, `opacity: 1` — DESIGN.md's rule, painted. **"Start over"
+stays live**, because starting a session of your own is the way out.
+
+**Server-side untouched:** the gate, the `left_group` kind and its error-panel framing are as
+merged. This is UI only.
+
+**TDD.** Three tests first, run first, all three failing on the same claim — the control is
+still live:
+
+```
+FAIL src/components/refine-panel.test.tsx > RefinePanel > closes refinement once the viewer
+     has left the group and explains why
+AssertionError: expected false to be true // Object.is equality
+ ❯ expect(regenerate().hasAttribute("disabled")).toBe(true);   refine-panel.test.tsx:130
+```
+
+The two page-level tests failed identically at `regenerate` and at the no-round CTA. In the
+third, the assertion *above* the failing one already passed (`refine-error-heading` reads
+"You've left this group"), which is what pins the failure to the live button rather than to a
+broken error path.
+
+**Verified end to end on the Worker, both paths**, as an ex-member of two groups:
+
+| Path | Result |
+|---|---|
+| `/results/sess-leave` (no round, group left) — click **Find our match →** | `403 left_group`, alert renders, CTA `disabled`, classes `disabled:bg-slate disabled:text-ash disabled:hover:bg-slate` |
+| `/results/sess-good` (round 1 stored, group left) — click **Show me different options** | `403 left_group`, error panel with **no** "Try again", panel note rendered, regenerate `disabled` and painted slate/ash, **Start over** enabled |
+| Reading either session afterwards | unchanged — picks, taste map and write-up all still render |
+
+## Part 7 — Re-verification of #29, #30 and #31 against a running Worker
+
+Same runbook as Part 1, with a fresh `.dev.vars` (`git check-ignore -v .dev.vars` →
+`.gitignore:94`), `rm -rf .wrangler/state/v3/d1 && npm run migrate:local`, fixture rows straight
+into local D1, and a JWT minted with the project's own `createJWT`. Proof of a signed-in app,
+taken before anything was measured:
+
+```
+$ curl -s -H "Cookie: mn-session=$JWT" http://127.0.0.1:8799/api/auth/me
+{"userId":"user-rv","email":"sam.reverify@example.test","name":"Sam Reverifier","avatarUrl":null}
+HTTP 200
+
+$ curl -s http://127.0.0.1:8799/api/auth/me          # negative control
+{"error":"Unauthorized"}
+HTTP 401
+```
+
+The dummy-key instrument works exactly as Part 1 describes it and is used the same way below:
+one `{"event":"provider_auth_failed","status":401}` line per request that actually reached
+`api.anthropic.com`, and its absence is the positive evidence that none did.
+
+### #31 — the match route's `db.batch` (13 → 7 round trips) — **PASS, no behaviour change**
+
+The four cases the brief names, plus two extra probes chosen because they are the only way to
+observe from outside that a *specific* value came back from the collapsed batch correctly.
+
+| Case | Result | `provider_auth_failed` |
+|---|---|---|
+| Reaches the provider (`sess-good`, no caps) | `503` `{"…nap…","kind":"provider_auth"}`, 155 ms | **1** |
+| Ex-member (`sess-leave`, after `POST /api/groups/grp-leave/leave` → `{"ok":true}`) | **`403`** `{"…you can still read this evening…","kind":"left_group"}`, 5.5 ms | 0 |
+| `MONTHLY_MATCH_LIMIT=0`, Worker restarted, binding confirmed in the banner | **`429`** `{"…lot of requests…","kind":"monthly_cap"}`, 66 ms | **0** |
+| Round 11 on a session holding 10 stored rounds | **`429`** `{"…tonight's refinement limit","kind":"round_limit"}`, 5.0 ms | 0 |
+
+Byte-identical bodies and identical statuses to Part 2's measurements on `a60483f`. The control
+matters as much as the refusals: `sess-leave` returned `503 provider_auth` **while still a
+member** and `403` after leaving, so the 403 is the gate and not an artefact.
+
+Two probes into the batch itself, since "same response" alone would not distinguish a batch that
+silently returned the wrong slice:
+
+- **`recommendedTmdbIds` (batch statement 3).** POSTing
+  `{"removedTmdbIds":[27205,999999]}` to `sess-good`, whose round 1 recommended 27205 and never
+  recommended 999999, logged
+  `{"event":"removed_ids_filtered","session_id":"sess-good","submitted":2,"accepted":1}`.
+  The provenance set survived the collapse intact.
+- **`round` (batch statement 1).** A throwaway session seeded with ten `recommendations` rows
+  returned `round_limit` in 5 ms — `toRoundNumber` produced 11 from the batched `COUNT(*)`.
+
+**Stated honestly:** `members` and `accumulatedRemovedIds` are the two batch slices with **no
+external observable** short of a successful round — they only ever reach the prompt. Prompt
+assembly demonstrably completed (the request reached Anthropic and failed on the key, not
+before), which is weak evidence for `members` and none at all for `accumulatedRemovedIds`. Both
+are covered by unit tests; neither is proven end to end here, and the blocker is the same
+missing Anthropic credential that Part 5 already names as the biggest gap.
+
+### #29 — partial-tolerant profile save — **PASS, including the DB check**
+
+`PUT /api/user/profile` with two known ids and one dud in `comfortTitles`, one known and one dud
+in `watchlist`:
+
+```
+HTTP 200  time=0.308s
+{"profile":{"comfortTitles":[27205,155],"watchlist":[157336],"vibes":["Cozy","Cerebral"],
+            "dealbreakers":["Horror"],"streamingServices":["Netflix"]},
+ "skippedTitles":[{"tmdbId":999999901,"reason":"unavailable"},
+                  {"tmdbId":999999902,"reason":"unavailable"}]}
+```
+
+The save **persisted** — a re-`GET` returns the same body — where the old behaviour recorded in
+item 8 above was a `400` with the whole edit refused. Tags came through untouched, which is the
+point: they have nothing to do with TMDB.
+
+**Checked in D1 directly, which is the claim that actually matters:**
+
+```
+profiles(user-rv)          comfort_titles = [27205,155]   watchlist = [157336]
+titles WHERE tmdb_id IN (999999901, 999999902)            → 0 rows
+```
+
+and, across every profile in the database, the anti-join of both id lists against `titles`
+returns **zero dangling references**. A dud id reaches neither `profiles` nor `titles`.
+
+**One case not reachable here:** with a dummy token TMDB answers `401` before it ever considers
+the id, so every skip is `reason: "unavailable"`. The `"not-found"` branch (a genuine TMDB 404)
+needs a real token and was not exercised — same credential-shaped gap as Part 5.
+
+### #30 — poster `srcset` / `sizes` — **PASS**
+
+Read from the live DOM the Worker served, at `/results/sess-good` → "The picks". All five
+posters carry the full ladder:
+
+```
+srcset  .../w92/inception.jpg 92w, .../w154/… 154w, .../w185/… 185w,
+        .../w342/… 342w, .../w500/… 500w
+sizes   (min-width: 40rem) 13rem, 14rem
+```
+
+first poster `loading="eager" fetchpriority="high"`, the other four `loading="lazy"` with no
+`fetchpriority`, all `decoding="async"`.
+
+**The `sizes` value is honest, which is the part worth measuring** — a `sizes` that disagrees
+with the real box makes the browser confidently fetch the wrong variant. Measured
+`getBoundingClientRect().width`: **208 px at 1280 wide** (= 13rem, matching the `min-width:
+40rem` branch) and **224 px at 375 wide** (= 14rem, the fallback). `currentSrc` resolved to
+`w342` in both, the smallest candidate at or above the box at DPR 1. Declaration, layout and
+selection agree.
+
+Posters still 404 against `image.tmdb.org` (fixture paths), exactly as in the two earlier
+passes; candidate selection happens before the fetch, so this does not affect the reading.
+
+`Poster` has one other call site, `title-search.tsx` with `sizes="2rem"`, and it renders only
+inside the TMDB-backed search dropdown — unreachable without a real token, so unverified.
+
+## Part 8 — Observations from this pass
+
+**O-4 — one `GET /api/auth/me` 401 on the first page load after the JWT's 15-minute window
+lapsed**, immediately followed by `200`s on reload with no console errors. This is the shape
+already documented in `docs/pitfalls/testing-pitfalls.md` §5 (the loser of a refresh-token
+rotation race returns `{ user: null }`, and `/profile` fires two such requests at once). Noted
+as a live sighting corroborating a known finding; causation was not proven, and it is **not**
+attributable to #29, #30 or #31.
+
+**O-5 — `left_group` is only discoverable from a refusal.** The read path serves an ex-member
+`200`, so a page load cannot know the viewer has left until something POSTs and fails. The fix
+in Part 6 therefore closes the affordance *after* the first 403, not before it — the user gets
+exactly one dead click, which is also the click that produces the explanation. Closing it before
+the first attempt would need the GET to report membership; that is a server change, out of
+scope here, and arguably not worth it.
+
+**Gates:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` **63 files / 865 passed /
+2 skipped** (baseline 862, +3 for the new tests), only the pre-existing
+`vite:dynamic-import-vars` warnings, `npx @opennextjs/cloudflare build` clean.
