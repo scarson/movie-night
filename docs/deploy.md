@@ -52,6 +52,17 @@ Section 2 is marked DONE for `0001` only. Everything listed here still has to be
 applied by hand, in numeric order, before the deploy that depends on it. Add one
 bullet and one command line per new migration.
 
+- [ ] `0002_session_rotated_at.sql` — adds `sessions.rotated_at`, the single-winner
+      mark for refresh-token rotation. Without the column every token refresh
+      throws, and `authenticateRequest` runs before each route's own error
+      handling, so signed-in users get a raw 500 rather than a sign-in prompt.
+      Nullable `ALTER TABLE … ADD COLUMN`: re-applying it fails on `duplicate
+      column name` and changes nothing.
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --file=migrations/0002_session_rotated_at.sql
+```
+
 - [ ] `0003_title_refresh_attempt.sql` — adds `titles.last_refresh_attempt_at`
       and backfills it from `last_refreshed_at`. The weekly refresh selects
       candidates on this column; until it is applied the cron's `SELECT` fails
@@ -67,20 +78,11 @@ Verify afterwards — the two counts must match:
 npx wrangler d1 execute movie-night-db --remote --command="SELECT COUNT(*) AS total, COUNT(last_refresh_attempt_at) AS backfilled FROM titles"
 ```
 
-- [ ] `0002_session_rotated_at.sql`
 - [ ] `0004_recommendation_indexes.sql`
 
 ```bash
-npx wrangler d1 execute movie-night-db --remote --file=migrations/0002_session_rotated_at.sql
 npx wrangler d1 execute movie-night-db --remote --file=migrations/0004_recommendation_indexes.sql
 ```
-
-**`0002` must land before the code that reads it.** `sessions.rotated_at` carries
-the single-winner mark for refresh-token rotation. Without the column every token
-refresh throws, and `authenticateRequest` runs before each route's own error
-handling, so signed-in users get a raw 500 instead of a sign-in prompt. It is a
-nullable `ALTER TABLE … ADD COLUMN`: re-running it fails on `duplicate column
-name` and changes nothing.
 
 `0004` is index-only and every statement is `IF [NOT] EXISTS`, so re-applying it
 is a no-op. Its two `DROP INDEX`es are irreversible; to roll them back:

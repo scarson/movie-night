@@ -2099,3 +2099,79 @@ it, and it timed out once against unmodified `dev`, so it was never that branch'
 between 12s and 24s on a machine hosting several concurrent suites. The assertion is deterministic;
 the budget is now set clear of the contended upper end rather than the quiet-machine time, per the
 project's standing rule to give heavy jsdom tests real headroom rather than trimming the assertion.
+## G1 — Auth: the rotation race and the interrupted rotation (B1, B4)
+
+**Branch:** `claude/rem-g1-auth`. **Merge classification:** `Review — auth code`. Depends on PREP.
+
+One change to `src/lib/auth.ts`, plus `migrations/0002_session_rotated_at.sql` and the pending-
+migrations list in `docs/deploy.md`. **Zero route files touched** — all 13 `authenticateRequest`
+call sites are byte-identical, and `user: null` still means exactly "unauthenticated".
+
+**What rotation did:** `DELETE FROM sessions WHERE token_hash = ? RETURNING …`, then a
+`SELECT email FROM users`, then an `INSERT` of the replacement. B1 was the loser of a concurrent
+claim getting `{user: null}` → 401 → landing-page redirect, deterministic for any client-side
+navigation into `/ritual` (three simultaneous authenticated fetches) past the 15-minute session-
+cookie window. B4 was a throw anywhere in that window destroying a 90-day session with no
+compensation, outside every route's `try`, wedging the user at 401 permanently.
+
+**What it does now:** read the row and the email in one `JOIN` before any write; claim with one
+`db.batch` of `INSERT … SELECT` + `UPDATE … SET rotated_at`, identical predicates, the INSERT's
+`meta.changes` as arbiter; the loser re-reads and, inside 30 s, authenticates with **no Set-Cookie**;
+the winner prunes its own user's out-of-grace spent rows outside the batch.
+
+**Decisions:**
+- **The loser never mints a token.** It cannot be handed the replacement — the plaintext exists only
+  in the winner's `Set-Cookie` — so retry is structurally impossible, not slow. Minting it a second
+  token would leave a `/ritual` fan-out holding three unreferenced 90-day refresh tokens.
+- **The grace window is decided from a re-read, never from the pre-claim read.** In the real race
+  the loser reads *before* the winner's `UPDATE`, so its `rotated_at` is `NULL`. Proven by mutation:
+  substituting the pre-claim value fails exactly one test, the seam test below, and nothing else.
+- **Both claim statements carry `expires_at`.** Dropping it from the mark reintroduces the wedge —
+  proven by mutation: the arbiter's consistency check throws.
+- **The prune is scoped to `user_id`** (rides `idx_sessions_user`, covers every row this request
+  could have made) and sits outside the batch in its own `try/catch`.
+- **The escaping exception is accepted, not fixed.** The batch removes the *state* loss, so a blip
+  is transient and a retry works; it still surfaces as a raw 500 because `authenticateRequest` runs
+  before each route's `try`. Catching it to clear cookies would sign users out on a blip.
+
+**Gotchas:**
+- **The plan's prescribed sequential loser test cannot distinguish the correct fix from the
+  `rotated_at`-reuse bug the plan itself boxes as "the highest-risk line in the task."** Called
+  twice in a row, the second call's own pre-claim read already sees `rotated_at` set. A test-local
+  `withWriteAfter` helper runs a competing rotation at one named seam — immediately after the code's
+  pre-mutation read — which is the only construction that separates them. It asserts `firedCount()`
+  for the same reason `injectedFailureCount` exists.
+- **`withWriteAfter` is a deterministic interleaving, not concurrency.** The fake D1 is synchronous
+  (testing-pitfalls §5). Nothing here proves two requests can reach the claim together; that stays a
+  review check.
+- **The prescribed grace-expiry test could not fail pre-fix** — the pre-fix code returned null for
+  every already-claimed token. It would also have passed with the spent row gone entirely, in which
+  case the window is never evaluated. It now asserts the spent row is present and marked first.
+- **Two existing rotation tests asserted `oldSession` is null.** The spent row deliberately survives
+  now; updated, not deleted. One of them used `expect(…).not.toBeNull()`, which a deleted row
+  satisfies as `undefined` — replaced with a `typeof` check.
+- **Rotation accumulates rows where it used to stay level.** The prune bounds it; both the prune and
+  the requirement that a failed prune not roll back the rotation are covered.
+- **`docs/deploy.md`'s `### Pending migrations` subsection already existed** — G7 created it, though
+  the plan assigns that to G1. Appended `0002` in numeric order.
+- **`migrations/` on `dev` is `0001`, `0004`.** G4's `0003` is on an unmerged branch, so the gap is
+  real right now. `loadMigration()` iterates the directory, so nothing depends on contiguity.
+
+**Reported, not fixed (outside G1's file ownership):**
+- **Logout does not revoke a spent row.** `src/app/api/auth/logout/route.ts:18` deletes only the
+  presented token's row, so the *previous* refresh token stays usable for the remainder of its 30 s
+  grace after a logout. Pre-change that row did not exist. Bounded at 30 s, no new cookies are
+  issued, and it requires already holding a token that was valid moments earlier.
+- **`MAX_SESSIONS = 10`** (`src/app/api/auth/google/callback/route.ts:15`) counts spent rows toward
+  the cap. Eviction is `ORDER BY created_at ASC`, so spent rows go first, and the prune is
+  user-scoped — any rotation on any device clears that user's out-of-grace rows. Bounded, no change.
+- **A one-millisecond boundary.** The read treats `expires_at === now` as unexpired while the claim
+  predicate `expires_at > ?` does not match it, so that exact millisecond yields a 401 with cookies
+  intact instead of a clean sign-out. Self-healing on the next request. `>` is what the plan pins.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 60 files /
+749 passed / 2 skipped (baseline 740), only the 3 pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean. **11 tests in the file fail when `src/lib/auth.ts` is
+reverted to its pre-change version** — verified by running the suite against `HEAD~1:src/lib/auth.ts`
+rather than by reasoning about it. A 4-mutant study over the fix kills all 4: pre-claim `rotated_at`,
+the mark's dropped `expires_at`, the prune's `try/catch`, and the prune itself.
