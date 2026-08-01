@@ -355,6 +355,10 @@ describe("3.3.7 Redundant Entry — nothing is asked for twice", () => {
 });
 
 describe("the mood back-edge", () => {
+  // Holds on both sides of the sessionId fix, because submit() calls
+  // startSession unconditionally. What it guards is the forbidden alternative:
+  // making submit() reuse a non-null sessionId, which would match the abandoned
+  // brief. The test that discriminates the shipped fix is the one below it.
   it("going back to the mood and resubmitting starts exactly one new session", async () => {
     const calls = stubApi({
       match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
