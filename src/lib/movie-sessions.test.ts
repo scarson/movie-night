@@ -12,6 +12,7 @@ import {
   createMovieSession,
   getRoundNumber,
   getAccumulatedRemovedIds,
+  getRecommendedTmdbIds,
   countMatchesThisMonth,
   getSessionForMember,
   getSessionMembersWithProfiles,
@@ -420,6 +421,22 @@ describe("round counting and accumulation", () => {
     expect([...ids].sort()).toEqual([1, 2, 3]);
   });
 
+  it("getAccumulatedRemovedIds returns the newest round's ids first", async () => {
+    // The prompt's exclusion list is capped, and the entries worth keeping are
+    // the most recent rejections. Order is the mechanism that decides that, so
+    // it is asserted as an exact sequence rather than as a set.
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRecommendation(db, sessionId, 1, { removedIds: [10, 11] });
+    await seedRecommendation(db, sessionId, 2, { removedIds: [20, 21] });
+    await seedRecommendation(db, sessionId, 3, { removedIds: [30, 31] });
+
+    expect(await getAccumulatedRemovedIds(db, sessionId)).toEqual([30, 31, 20, 21, 10, 11]);
+  });
+
   it("countMatchesThisMonth counts only rows created since the start of the current month", async () => {
     const db = createFakeD1(loadMigration());
     await seedUser(db, "u1", "Sam");
@@ -652,7 +669,7 @@ describe("insertRecommendation", () => {
       removed_tmdb_ids: "[2,3]",
       steering_feedback: "less gloomy",
       model: "claude-sonnet-5",
-      prompt_version: "p1.0",
+      prompt_version: "p1.1",
       candidate_snapshot: "[1,2,3]",
     });
     expect(typeof row?.created_at).toBe("string");
@@ -757,5 +774,84 @@ describe("recommendation indexes", () => {
     await seedRecommendation(db, sessionId, 2, { createdAt: new Date().toISOString() });
 
     expect(await countMatchesThisMonth(db)).toBe(1);
+  });
+});
+
+/** Writes a round whose ai_response column is exactly the given text (valid JSON or not). */
+function seedRawRound(db: D1Database, sessionId: string, round: number, aiResponse: string) {
+  return db
+    .prepare(
+      `INSERT INTO recommendations (id, session_id, round_number, ai_response, kept_tmdb_ids, removed_tmdb_ids,
+         steering_feedback, model, prompt_version, candidate_snapshot, created_at)
+       VALUES (?, ?, ?, ?, '[]', '[]', '', 'm', 'p', '[]', ?)`
+    )
+    .bind(crypto.randomUUID(), sessionId, round, aiResponse, new Date().toISOString())
+    .run();
+}
+
+function roundWithRecommendations(tmdbIds: number[]): string {
+  return JSON.stringify({
+    tasteMap: { members: [], overlap: { summary: "", sharedVibes: [], tensionPoints: [] } },
+    recommendations: tmdbIds.map((id) => ({ tmdbId: id, matchScore: 90, explanation: "e" })),
+    conversational: "c",
+  });
+}
+
+describe("getRecommendedTmdbIds", () => {
+  it("unions the tmdb ids recommended across every prior round of the session", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+    const otherSession = await newSession(db);
+
+    await seedRawRound(db, sessionId, 1, roundWithRecommendations([1, 2]));
+    await seedRawRound(db, sessionId, 2, roundWithRecommendations([2, 3]));
+    await seedRawRound(db, otherSession, 1, roundWithRecommendations([99]));
+
+    const ids = await getRecommendedTmdbIds(db, sessionId);
+
+    expect([...ids].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+  });
+
+  it("returns an empty set for a session with no rounds", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    expect(await getRecommendedTmdbIds(db, sessionId)).toEqual(new Set());
+  });
+
+  it("skips a corrupt ai_response row and still returns the other rounds' ids", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRawRound(db, sessionId, 1, "not json");
+    await seedRawRound(db, sessionId, 2, roundWithRecommendations([7, 8]));
+
+    const ids = await getRecommendedTmdbIds(db, sessionId);
+
+    expect([...ids].sort((a, b) => a - b)).toEqual([7, 8]);
+  });
+
+  it("ignores non-integer tmdb ids inside a stored round", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRawRound(
+      db,
+      sessionId,
+      1,
+      JSON.stringify({
+        recommendations: [{ tmdbId: "12" }, { tmdbId: 1.5 }, { tmdbId: 42 }, null],
+      })
+    );
+
+    expect(await getRecommendedTmdbIds(db, sessionId)).toEqual(new Set([42]));
   });
 });

@@ -8,6 +8,7 @@ import {
   joinGroup,
   getGroupsForUser,
   leaveGroup,
+  isGroupMember,
   checkJoinRateLimit,
   logJoinAttempt,
   ReservedGroupNameError,
@@ -391,5 +392,38 @@ describe("checkJoinRateLimit / logJoinAttempt", () => {
       .all();
     expect(results).toHaveLength(10);
     await expect(checkJoinRateLimit(db, "u1")).resolves.toBe(false);
+  });
+});
+
+describe("isGroupMember", () => {
+  it("is true for a current member and false for a stranger", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedUser(db, "u2", "Mallory");
+    await seedGroup(db, "grp1", "Movie Nighters", "ABCD2345");
+    await seedGroupMember(db, "gm1", "grp1", "u1");
+
+    await expect(isGroupMember(db, "grp1", "u1")).resolves.toBe(true);
+    await expect(isGroupMember(db, "grp1", "u2")).resolves.toBe(false);
+  });
+
+  it("is false once the member has left, even though their session history survives", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroup(db, "grp1", "Movie Nighters", "ABCD2345");
+    await seedGroupMember(db, "gm1", "grp1", "u1");
+    await seedMovieSession(db, "sess1", "grp1", "u1");
+    await seedSessionMember(db, "sm1", "sess1", "u1");
+
+    await leaveGroup(db, "u1", "grp1");
+
+    await expect(isGroupMember(db, "grp1", "u1")).resolves.toBe(false);
+  });
+
+  it("is false for an unknown group id", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+
+    await expect(isGroupMember(db, "no-such-group", "u1")).resolves.toBe(false);
   });
 });

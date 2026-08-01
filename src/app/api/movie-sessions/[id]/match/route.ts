@@ -8,17 +8,21 @@ import {
   runMatching,
   selectCandidates,
   MatchingError,
+  PROMPT_VERSION,
   type MatchingErrorKind,
 } from "@/lib/matching";
+import { isGroupMember } from "@/lib/groups";
 import {
   getSessionForMember,
   getSessionMembersWithProfiles,
   getRoundNumber,
   getAccumulatedRemovedIds,
+  getRecommendedTmdbIds,
   countMatchesThisMonth,
   formatTitleRefs,
   getTitlesMap,
   insertRecommendation,
+  type TitleSummary,
 } from "@/lib/movie-sessions";
 
 const MAX_ROUNDS_PER_SESSION = 10;
@@ -33,6 +37,9 @@ const MATCHING_ERROR_HTTP: Record<MatchingErrorKind, { status: number; error: st
   timeout: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
   overloaded: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
   rate_limited: { status: 429, error: "We're getting a lot of requests right now, try again in a moment" },
+  // Deliberately the same copy as timeout/overloaded: the user cannot act on
+  // our credentials and must not be told about them.
+  provider_auth: { status: 503, error: "Our movie brain is taking a nap — try again in a moment" },
 };
 
 function withAuthHeaders(response: NextResponse, headers: Headers): NextResponse {
@@ -89,6 +96,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return withAuthHeaders(NextResponse.json({ error: "Session not found" }, { status: 404 }), headers);
     }
 
+    // session_members outlives group membership on purpose, so history stays
+    // readable — but running a new round spends the account owner's budget on
+    // the remaining members' present-day profiles. That needs live membership.
+    if (!(await isGroupMember(db, session.groupId, user.userId))) {
+      return withAuthHeaders(
+        NextResponse.json(
+          {
+            error: "You've left this group — you can still read this evening, but not run it again",
+            kind: "left_group",
+          },
+          { status: 403 }
+        ),
+        headers
+      );
+    }
+
     // Round limit. Plain SELECT-then-insert: the TOCTOU race is ACCEPTED per
     // eng review — blast radius is one extra ~$0.04 call; no locking.
     const round = await getRoundNumber(db, id);
@@ -102,7 +125,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const monthlyLimit = Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10) || DEFAULT_MONTHLY_MATCH_LIMIT;
+    // 0 is the kill switch, and it is falsy, so `|| DEFAULT` would restore the
+    // full allowance at exactly the moment an operator meant to close it. A
+    // negative value is rejected for the mirror-image reason: `count >= -1` is
+    // always false, which reads as "unlimited" by accident.
+    const parsedLimit = Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10);
+    const monthlyLimit =
+      Number.isNaN(parsedLimit) || parsedLimit < 0 ? DEFAULT_MONTHLY_MATCH_LIMIT : parsedLimit;
     if ((await countMatchesThisMonth(db)) >= monthlyLimit) {
       return withAuthHeaders(
         NextResponse.json(
@@ -113,12 +142,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
+    // A client may only keep or reject a film this session actually showed it.
+    // Unrecognised ids are dropped rather than rejected: a stale second tab
+    // holding an older round's ids must not hard-fail the app's costliest path.
+    const recommendedIds = await getRecommendedTmdbIds(db, id);
+    const acceptedKeptIds = keptTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
+    const acceptedRemovedIds = removedTmdbIds.filter((tmdbId) => recommendedIds.has(tmdbId));
+    if (acceptedRemovedIds.length !== removedTmdbIds.length) {
+      console.log(
+        JSON.stringify({
+          event: "removed_ids_filtered",
+          session_id: id,
+          submitted: removedTmdbIds.length,
+          accepted: acceptedRemovedIds.length,
+        })
+      );
+    }
+
     const members = await getSessionMembersWithProfiles(db, id);
+    // This round's removals lead: the prompt's exclusion list is capped from the
+    // front, and the films the group just rejected are the ones it must name.
     const allRemovedIds = [
-      ...new Set([...(await getAccumulatedRemovedIds(db, id)), ...removedTmdbIds]),
+      ...new Set([...acceptedRemovedIds, ...(await getAccumulatedRemovedIds(db, id))]),
     ];
 
-    const candidates = await selectCandidates(db, members, session.discoverNew);
+    const candidates = await selectCandidates(db, members, session.discoverNew, new Set(allRemovedIds));
     const titlesForNames = await getTitlesMap(
       db,
       [...new Set(members.flatMap((m) => [...m.comfortTitles, ...m.watchlist]))]
@@ -142,7 +190,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         moodVibes: session.moodVibes,
         moodText: session.moodText,
         discoverNew: session.discoverNew,
-        keptTitles: await formatTitleRefs(db, keptTmdbIds),
+        keptTitles: await formatTitleRefs(db, acceptedKeptIds),
         removedTitles: await formatTitleRefs(db, allRemovedIds),
         steeringFeedback,
         candidates,
@@ -151,17 +199,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       context: { groupId: session.groupId, sessionId: id, round },
     });
 
-    await insertRecommendation(db, {
-      sessionId: id,
-      roundNumber: round,
-      aiResponse: response,
-      keptTmdbIds,
-      removedTmdbIds,
-      steeringFeedback,
-      candidateSnapshot: candidates.map((c) => c.tmdbId),
-    });
+    const recommendedIdList = response.recommendations.map((rec) => rec.tmdbId);
+    try {
+      await insertRecommendation(db, {
+        sessionId: id,
+        roundNumber: round,
+        aiResponse: response,
+        keptTmdbIds: acceptedKeptIds,
+        removedTmdbIds: acceptedRemovedIds,
+        steeringFeedback,
+        candidateSnapshot: candidates.map((c) => c.tmdbId),
+      });
+    } catch (err) {
+      // Ids and counts only. The response carries member names, per-member taste
+      // summaries and the conversational write-up, and invocation logs are
+      // retained — this is enough to identify and re-run the round, no more.
+      console.error(
+        JSON.stringify({
+          event: "round_persist_failed",
+          session_id: id,
+          round,
+          tmdb_ids: recommendedIdList,
+          prompt_version: PROMPT_VERSION,
+          message: String(err),
+        })
+      );
+      throw err;
+    }
 
-    const titles = await getTitlesMap(db, response.recommendations.map((rec) => rec.tmdbId));
+    let titles: Record<number, TitleSummary> = {};
+    try {
+      titles = await getTitlesMap(db, recommendedIdList);
+    } catch (err) {
+      // The round is already persisted and paid for. RankedList renders an
+      // unhydrated pick as "pick N", so a sparse map is a degraded response,
+      // not a failed one — and failing here would desync the client's carried
+      // exclusion state from the round the server just stored.
+      console.error("POST /api/movie-sessions/[id]/match titles hydration:", err);
+    }
     return withAuthHeaders(NextResponse.json({ round, response, titles }), headers);
   } catch (err) {
     if (err instanceof MatchingError) {
