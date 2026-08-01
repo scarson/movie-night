@@ -214,7 +214,7 @@ npm run lint            # ESLint (eslint .)
 npx tsc --noEmit        # Type-check (excludes worker.ts — see tsconfig)
 npm run preview         # OpenNext build + wrangler dev (local CF preview)
 npm run deploy          # OpenNext build + wrangler deploy
-npm run migrate:local   # Apply migrations/0001_initial_schema.sql to local D1
+npm run migrate:local   # Apply every migrations/*.sql, in order, to a fresh local D1
 npm run seed:local      # Seed titles catalog from TMDB into local D1 (tsx scripts/seed.ts --local)
 ```
 
@@ -222,7 +222,7 @@ npm run seed:local      # Seed titles catalog from TMDB into local D1 (tsx scrip
 
 ```bash
 npm run migrate:local                                                                     # Apply the schema to local D1
-npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql  # Same command, spelled out
+npx wrangler d1 execute movie-night-db --local --file=migrations/0001_initial_schema.sql  # Apply one migration file
 npx wrangler d1 execute movie-night-db --local --command="SELECT * FROM titles LIMIT 5"   # Query local D1
 ```
 

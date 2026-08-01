@@ -286,9 +286,37 @@ describe("withFailingStatement", () => {
 });
 
 describe("loadMigration", () => {
-  it("reads the initial schema migration from disk", () => {
+  it("reads the schema from disk", () => {
     const sql = loadMigration();
     expect(sql).toContain("CREATE TABLE users");
     expect(sql).toContain("CREATE TABLE titles");
+  });
+
+  it("builds a database carrying every table the deployed schema has", async () => {
+    const db = createFakeD1(loadMigration());
+
+    // NOT LIKE 'sqlite_%' drops the sqlite_sequence table SQLite creates for
+    // rate_limit_log's AUTOINCREMENT id — it is internal, not part of the schema.
+    const { results } = await db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+      )
+      .all<{ name: string }>();
+
+    expect(results.map((row) => row.name)).toEqual([
+      "group_members",
+      "groups",
+      "movie_sessions",
+      "profiles",
+      "rate_limit_log",
+      "recommendations",
+      "session_members",
+      "sessions",
+      "tension_axes",
+      "titles",
+      "users",
+      "watch_history",
+      "watch_ratings",
+    ]);
   });
 });

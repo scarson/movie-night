@@ -64,13 +64,24 @@ CREATE INDEX idx_recommendations_session ON recommendations(session_id);
 CREATE INDEX idx_movie_sessions_group ON movie_sessions(group_id);
 ```
 
-**Local databases need the same treatment, by hand.** `npm run migrate:local`
-applies `0001` only, so a local D1 built with it — and anything layered on top,
-including `npm run seed:local` — carries the initial schema and nothing else.
-Until that script iterates the directory, apply each later migration yourself:
+### The local database
+
+`npm run migrate:local` applies every file in `migrations/` in filename order,
+and stops at the first one that fails. A local D1 built with it carries every
+migration above, so no later file needs applying by hand.
+
+**It targets a FRESH local database.** Against a local D1 that already has
+`0001` applied, the very first file fails on `table users already exists` and
+nothing after it runs — so a newly added migration silently never lands. The
+script is deliberately strict about this rather than skipping files that error,
+because a tolerant loop is how a genuinely malformed migration goes unnoticed.
+
+To reset and reapply from scratch:
 
 ```bash
-npx wrangler d1 execute movie-night-db --local --file=migrations/0004_recommendation_indexes.sql
+rm -rf .wrangler/state/v3/d1
+npm run migrate:local
+npm run seed:local
 ```
 
 ## 3. Configure the Google OAuth client

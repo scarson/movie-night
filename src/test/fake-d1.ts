@@ -1,12 +1,20 @@
 // ABOUTME: In-memory D1Database implementation backed by node:sqlite (DatabaseSync).
 // ABOUTME: Real SQL semantics (FK cascades, RETURNING) with zero new test dependencies.
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** Reads the Phase 1 initial schema migration from disk. */
+/**
+ * Concatenates every migration in migrations/, in filename order, so the fake's
+ * schema always matches what a fresh remote database would have.
+ */
 export function loadMigration(): string {
-  return readFileSync(join(process.cwd(), "migrations/0001_initial_schema.sql"), "utf-8");
+  const dir = join(process.cwd(), "migrations");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(dir, f), "utf-8"))
+    .join("\n");
 }
 
 /**
