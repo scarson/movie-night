@@ -49,10 +49,47 @@ describe("Poster", () => {
     ).toBe("async");
   });
 
+  it("offers the TMDB width ladder as srcset candidates, capped at w500", () => {
+    render(<Poster title="Arrival" posterPath="/abc123.jpg" />);
+    const img = screen.getByRole("img", { name: "Arrival poster" });
+    expect(img.getAttribute("srcset")).toBe(
+      [
+        "https://image.tmdb.org/t/p/w92/abc123.jpg 92w",
+        "https://image.tmdb.org/t/p/w154/abc123.jpg 154w",
+        "https://image.tmdb.org/t/p/w185/abc123.jpg 185w",
+        "https://image.tmdb.org/t/p/w342/abc123.jpg 342w",
+        "https://image.tmdb.org/t/p/w500/abc123.jpg 500w",
+      ].join(", ")
+    );
+  });
+
+  it("describes the picks-list column by default, in the units the grid uses", () => {
+    // ranked-list.tsx sets grid-cols-[minmax(0,14rem)_1fr] sm:grid-cols-[13rem_1fr],
+    // and Tailwind's sm breakpoint is 40rem.
+    render(<Poster title="Arrival" posterPath="/abc123.jpg" />);
+    expect(
+      screen.getByRole("img", { name: "Arrival poster" }).getAttribute("sizes")
+    ).toBe("(min-width: 40rem) 13rem, 14rem");
+  });
+
+  it("lets a caller with a differently-sized box describe its own", () => {
+    render(
+      <Poster title="Arrival" posterPath="/abc123.jpg" size="w92" sizes="2rem" />
+    );
+    const img = screen.getByRole("img", { name: "Arrival poster" });
+    expect(img.getAttribute("sizes")).toBe("2rem");
+    expect(img.getAttribute("src")).toBe("https://image.tmdb.org/t/p/w92/abc123.jpg");
+    expect(img.getAttribute("srcset")).toContain(
+      "https://image.tmdb.org/t/p/w92/abc123.jpg 92w"
+    );
+  });
+
   it("renders a labeled fallback box when posterPath is null", () => {
     const { container } = render(<Poster title="Arrival" posterPath={null} />);
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByRole("img", { name: "Arrival poster" })).toBeDefined();
+    const fallback = screen.getByRole("img", { name: "Arrival poster" });
+    expect(fallback.getAttribute("srcset")).toBeNull();
+    expect(fallback.getAttribute("sizes")).toBeNull();
   });
 
   it("renders the same fallback box for a priority poster with no path", () => {
