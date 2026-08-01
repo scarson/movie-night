@@ -208,6 +208,45 @@ describe("withFailingStatement", () => {
 
     const { results } = await db.prepare("SELECT token_hash FROM sessions ORDER BY token_hash").all();
     expect(results).toEqual([{ token_hash: "hash1" }, { token_hash: "hash3" }]);
+    expect(injectedFailureCount(db)).toBe(1);
+  });
+
+  it("matches anywhere in the statement, not just at its start", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      match: "FROM users WHERE id",
+    });
+    await seedUser(db, "u1");
+
+    await expect(db.prepare("SELECT id FROM users WHERE id = ?").bind("u1").first()).rejects.toThrow(
+      "D1_ERROR: injected failure"
+    );
+    expect(injectedFailureCount(db)).toBe(1);
+  });
+
+  it("re-tests a global RegExp from the start of each statement", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      // A /g pattern carries lastIndex between calls, which would make every
+      // other statement slip past a matcher built on RegExp.test.
+      match: /INSERT INTO sessions/g,
+    });
+    await seedUser(db, "u1");
+
+    for (const hash of ["hash1", "hash2", "hash3"]) {
+      await expect(db.prepare(insertSession(hash)).run()).rejects.toThrow(
+        "D1_ERROR: injected failure"
+      );
+    }
+
+    expect(injectedFailureCount(db)).toBe(3);
+  });
+
+  it("rejects an onCall below 1, which could never fire", () => {
+    expect(() =>
+      withFailingStatement(createFakeD1(loadMigration()), {
+        match: "INSERT INTO sessions",
+        onCall: 0,
+      })
+    ).toThrow("onCall is 1-based");
   });
 
   it("counts onCall per wrapper rather than globally", async () => {
@@ -317,27 +356,47 @@ describe("withFailingStatement", () => {
   });
 
   it("still enforces the D1 bound-parameter ceiling, ahead of the injected failure", () => {
+    // The ceiling is D1's documented hard limit, not a tunable — a fake that
+    // drifts above it is the blind spot testing-pitfalls §7 was written about.
+    expect(D1_MAX_BOUND_PARAMS).toBe(100);
+
     const db = withFailingStatement(createFakeD1(loadMigration()), {
       match: "INSERT INTO sessions",
     });
 
     // Matching SQL, so the ceiling has to win at bind() before execution gates.
     expect(() =>
-      db.prepare(INSERT_SESSION_BOUND).bind(...new Array(D1_MAX_BOUND_PARAMS + 1).fill(null))
-    ).toThrow(`D1_ERROR: too many SQL variables (101 > ${D1_MAX_BOUND_PARAMS})`);
+      db.prepare(INSERT_SESSION_BOUND).bind(...new Array(101).fill(null))
+    ).toThrow("D1_ERROR: too many SQL variables (101 > 100)");
+
+    expect(() => db.prepare(INSERT_SESSION_BOUND).bind(...new Array(100).fill(null))).not.toThrow();
   });
 
-  it("refuses a batch statement prepared from a different handle", async () => {
+  it("refuses a batch statement not prepared from this handle", async () => {
     const base = createFakeD1(loadMigration());
     const db = withFailingStatement(base, { match: "INSERT INTO group_members" });
+    const other = withFailingStatement(base, { match: "INSERT INTO group_members" });
+    await seedUser(db, "u1");
 
-    await expect(
-      db.batch([
-        base
-          .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
-          .bind("grp1", "Movie Night", "ABC123", NOW),
-      ])
-    ).rejects.toThrow("batch() received a statement prepared from a different handle");
+    const foreign = [
+      base
+        .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+        .bind("grp1", "Movie Night", "ABC123", NOW),
+      other
+        .prepare("INSERT INTO group_members (id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)")
+        .bind("gm1", "grp1", "u1", NOW),
+    ];
+
+    for (const statement of foreign) {
+      await expect(
+        db.batch([
+          db
+            .prepare("INSERT INTO groups (id, name, invite_code, created_at) VALUES (?, ?, ?, ?)")
+            .bind("grp2", "Second", "DEF456", NOW),
+          statement,
+        ])
+      ).rejects.toThrow("batch() received a statement not prepared from this handle");
+    }
   });
 
   it("reports how many times the injection fired", async () => {
@@ -360,6 +419,19 @@ describe("withFailingStatement", () => {
     await seedUser(db, "u1");
     await db.prepare(insertSession("hash1")).run();
 
+    expect(injectedFailureCount(db)).toBe(0);
+  });
+
+  it("reports zero firings when onCall overshoots the matching executions", async () => {
+    const db = withFailingStatement(createFakeD1(loadMigration()), {
+      match: "INSERT INTO sessions",
+      onCall: 5,
+    });
+    await seedUser(db, "u1");
+    await db.prepare(insertSession("hash1")).run();
+    await db.prepare(insertSession("hash2")).run();
+
+    // Two statements matched and none failed: a count of matches would say 2.
     expect(injectedFailureCount(db)).toBe(0);
   });
 
@@ -386,6 +458,9 @@ describe("withFailingStatement", () => {
     await expect(db.prepare(insertSession("hash2")).run()).rejects.toThrow(
       /^D1_ERROR: injected failure$/
     );
+
+    // Both executions must have failed, or the annotation never ran.
+    expect(injectedFailureCount(db)).toBe(2);
   });
 });
 
@@ -401,33 +476,49 @@ describe("loadMigration", () => {
   // loadMigration resolves its directory from process.cwd(), so a temporary cwd
   // is the injection point; vitest's forks pool makes process.chdir available.
   // Under pool: "threads" process.chdir is undefined and this test would throw.
-  it("concatenates every migration in filename order and ignores non-SQL files", () => {
+  it("concatenates every migration in filename order and ignores non-SQL files", async () => {
     const root = mkdtempSync(join(tmpdir(), "movie-night-migrations-"));
     mkdirSync(join(root, "migrations"));
     // Written out of filename order. How much that discriminates depends on the
     // filesystem — APFS hands back readdir results already ordered, so the sort
     // is only provably load-bearing where readdir is hash-ordered, as on ext4.
     // The ordering assertion states the property on either.
-    for (const name of ["0003_third", "0001_first", "0004_fourth", "0002_second"]) {
-      writeFileSync(join(root, "migrations", `${name}.sql`), `CREATE TABLE ${name} (id TEXT);\n`);
+    // Filename order t1..t4; written scrambled so creation order cannot pass for it.
+    for (const name of ["0003_t3", "0001_t1", "0004_t4", "0002_t2"]) {
+      const table = name.slice(5);
+      // Ends on a comment with no trailing newline, as a hand-written migration
+      // can, so a missing separator would comment out the next file's first line.
+      writeFileSync(
+        join(root, "migrations", `${name}.sql`),
+        `CREATE TABLE ${table} (id TEXT);\n-- end of ${table}`
+      );
     }
     writeFileSync(join(root, "migrations", "notes.txt"), "CREATE TABLE not_a_migration (id TEXT);\n");
 
+    // The cwd is borrowed for one synchronous call and every assertion runs
+    // after it is handed back, so no other test can observe the change.
     const originalCwd = process.cwd();
+    let sql: string;
     process.chdir(root);
     try {
-      const sql = loadMigration();
-
-      expect(sql).not.toContain("not_a_migration");
-      const positions = ["0001_first", "0002_second", "0003_third", "0004_fourth"].map((name) =>
-        sql.indexOf(`CREATE TABLE ${name}`)
-      );
-      expect(positions.every((p) => p !== -1)).toBe(true);
-      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      sql = loadMigration();
     } finally {
       process.chdir(originalCwd);
       rmSync(root, { recursive: true, force: true });
     }
+
+    expect(sql).not.toContain("not_a_migration");
+    const positions = ["t1", "t2", "t3", "t4"].map((table) =>
+      sql.indexOf(`CREATE TABLE ${table}`)
+    );
+    expect(positions.every((p) => p !== -1)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+
+    // Every table has to survive into a real database, not just into the string.
+    const { results } = await createFakeD1(sql)
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all<{ name: string }>();
+    expect(results.map((row) => row.name)).toEqual(["t1", "t2", "t3", "t4"]);
   });
 
   it("builds a database carrying every table the deployed schema has", async () => {

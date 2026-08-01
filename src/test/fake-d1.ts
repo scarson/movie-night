@@ -134,13 +134,17 @@ export interface FailureInjection {
    * `movie_sessions` — match on enough of the statement to be unambiguous.
    */
   match: string | RegExp;
-  /** Fail only the Nth matching execution (1-based). Defaults to every match. */
+  /**
+   * Fail only the Nth matching execution (1-based). Defaults to every match.
+   * `exec()` counts as an execution, so fixture setup run through the wrapper
+   * advances this too.
+   */
   onCall?: number;
   /** The error thrown. Defaults to `new Error("D1_ERROR: injected failure")`. */
   error?: Error;
 }
 
-/** Reads the firing count off a wrapper built by withFailingStatement. */
+/** Key under which a wrapper stashes the reader for its own firing count. */
 const INJECTED_FAILURES = Symbol("injectedFailures");
 
 /**
@@ -161,6 +165,10 @@ class FailingPreparedStatement {
       this.sql,
       this.gate
     ) as unknown as D1PreparedStatement;
+  }
+
+  isGatedBy(gate: (sql: string) => void): boolean {
+    return this.gate === gate;
   }
 
   async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
@@ -199,6 +207,9 @@ class FailingPreparedStatement {
  * unfixed code. Assert `injectedFailureCount(db)` to prove the failure happened.
  */
 export function withFailingStatement(db: D1Database, injection: FailureInjection): D1Database {
+  if (injection.onCall !== undefined && injection.onCall < 1) {
+    throw new Error("withFailingStatement: onCall is 1-based, so it can never fire below 1");
+  }
   let matchedExecutions = 0;
   let firedFailures = 0;
 
@@ -223,14 +234,17 @@ export function withFailingStatement(db: D1Database, injection: FailureInjection
       return new FailingPreparedStatement(db.prepare(sql), sql, gate) as unknown as D1PreparedStatement;
     },
 
-    // The wrapped statements carry the gate, so the underlying batch's
+    // The wrapped statements carry this handle's gate, so the underlying batch's
     // BEGIN/ROLLBACK still sees the injected throw and rolls the transaction back.
-    // A foreign statement would run ungated, so refuse it rather than pass silently.
+    // A statement from any other handle answers to a different gate or none at
+    // all, so refuse it rather than run it under the wrong injection.
     async batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
       for (const statement of statements) {
-        if (!(statement instanceof FailingPreparedStatement)) {
+        const owned =
+          statement instanceof FailingPreparedStatement && statement.isGatedBy(gate);
+        if (!owned) {
           throw new Error(
-            "withFailingStatement: batch() received a statement prepared from a different handle"
+            "withFailingStatement: batch() received a statement not prepared from this handle"
           );
         }
       }
