@@ -2423,3 +2423,187 @@ anything deployed (`isSecure` was false throughout, so the `Secure` cookie attri
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 837 passed
 / 2 skipped (baseline 836, +1 for the new regression test), `npx opennextjs-cloudflare build` clean.
+---
+
+## Partial-tolerant profile enrichment (`claude/enrichment-partial-failure`)
+
+**The dead end.** `PUT /api/user/profile` enriched every referenced tmdb id the catalog didn't have
+by fetching it from TMDB. A single failure — a deleted id that 404s, a transient 5xx, a network blip
+— returned a 400 and wrote *nothing*: the titles that resolved perfectly well, and every tag
+selection, which never touches TMDB. Reachable in ordinary use, because `/api/titles/search` merges
+live TMDB search hits into the local catalog, so a user can pick an id that later 404s. In the
+ritual it dead-ended "Continue →" at step 0 with an error naming no remedy. Raising
+`MAX_UNKNOWN_IDS_PER_PUT` from 10 to 50 (PR #28) multiplied the chances of one dud id by five.
+
+**The fix.** Enrichment is now partial-tolerant. Ids that fail are dropped from `comfortTitles` and
+`watchlist` *before* the profile row is written — so `profiles` still never references a tmdb id
+with no `titles` row, which is the invariant enrichment exists to hold — and come back in the
+response as `skippedTitles: [{ tmdbId, reason }]`. `reason` is `"not-found"` for a TMDB 404 and
+`"unavailable"` for everything else (5xx, network, a refused D1 write), distinguished off
+`TmdbError.status`. The two need different remedies, so the reason has to travel with the id. When
+nothing was skipped the key is absent and the body is byte-identical to before.
+
+**All unknown ids failing is deliberately not an error.** The tempting rule — "if none of what you
+added landed, refuse" — fires hardest in exactly the case being fixed: with one unknown id, one
+failure *is* 100%, so a single dud would still take the whole save down and lose the tag edits with
+it. "All failed" is not a distinct kind of failure, it is the same per-title failure N times. The
+route therefore always persists and always reports; the *message* carries the distinction the user
+actually needs (permanent vs. transient).
+
+**Surfacing.** `saveProfile` returns `{ error, notice }` — a save can land and still have dropped a
+title, so the two are separate fields, not alternatives. `notice` is phrased in `session-flow.ts`
+next to the existing `GENERIC_ERROR` copy: one clause per reason present, naming up to three titles
+then counting the rest ("Whiplash, Amelie, Moonlight and 2 more aren't in TMDB anymore…"). Both the
+profile editor and the ritual render it in an **always-mounted** `aria-live="polite"` paragraph,
+copying the picker-cap regions in `quick/page.tsx` and `TitleSearch` — a polite region added to the
+page at the same moment as its text announces inconsistently. The ritual advances as normal; the
+notice sits beside the step content and travels with the user. The profile editor suppresses its
+bare "Saved" while the notice is up, since the notice says "Saved" itself and two polite regions
+would talk over each other, and clears it on the next edit.
+
+`text-amber` for the notice: DESIGN.md's semantic table maps `--warning` to amber, and it reads
+9.04:1 on midnight. Every other `text-amber` in the app is a link, so this is the one non-link use
+outside `rough-day-toggle`; flagged for Sam rather than assumed.
+
+**Not done, deliberately:** the enrichment loop stays sequential (out of scope, and the separate
+latency change the cap only bounds), and the client does *not* strip skipped titles from the
+editor's draft — keeping the chip means one tap to retry a transient failure or to remove a
+permanent one, and the notice already names it, so nothing is silent.
+
+**Tests.** Three drove the route change and failed on the pre-change code with
+`AssertionError: expected 400 to be 200`: one dud among good ids (good titles land, tags survive,
+dud reported, `profiles` has no dangling reference), a 404 and a 503 in the same save yielding
+different reasons, and every unknown id failing still persisting the tags. A fourth pins that a save
+with no unknown ids returns exactly `{ profile }` and calls TMDB zero times. The old
+"returns 400 listing failed ids … and saves nothing" test was rewritten rather than deleted — it
+encoded the behaviour being changed. Three UI tests (profile editor: naming and remedy, and the
+notice clearing on the next edit; ritual: advancing while naming the dropped title in a polite
+region) failed with `Unable to find an element with the text: /^Saved\./`. Six new `session-flow`
+tests cover the phrasing: each reason alone, both together, pass-through of a real error, and the
+three-name cap — whose fixture is deliberately non-alphabetical so "the first three survive" cannot
+look self-evidently right (testing-pitfalls §4, truncation direction).
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 848 passed
+/ 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
+## Poster `srcset` + `sizes` (branch `claude/poster-srcset`)
+
+`Poster` requested a single fixed TMDB width — `w342` for the picks list, `w92` for the
+title-search thumbnail — regardless of device pixel ratio. It now emits the TMDB poster ladder as
+`srcset` (`w92, w154, w185, w342, w500`, each with a `w` descriptor) plus a `sizes` string
+describing the box.
+
+**Layout evidence, read out of the compiled stylesheet (`.open-next/assets/_next/static/chunks/*.css`),
+not inferred.** `sm` compiles to `@media (min-width:40rem)`; the picks-list row compiles to
+`grid-template-columns:minmax(0,14rem) 1fr` with `.sm\:grid-cols-\[13rem_1fr\]` →
+`grid-template-columns:13rem 1fr`; `--spacing:.25rem`, so the title-search `w-8` span is exactly
+`2rem`. So the poster column is at most 14rem below 40rem and exactly 13rem above it, and the
+thumbnail is 2rem. `sizes` is written in the same units the grid uses (`rem`, and `40rem` rather
+than `640px`) so the two cannot drift if the root font size changes.
+
+- default `sizes="(min-width: 40rem) 13rem, 14rem"` — the picks-list card
+- `TitleSearch` passes `sizes="2rem"` — one line, the only call-site change, and it is required:
+  left on the default the browser would fetch a poster-sized variant for a 32px thumbnail.
+
+**The ladder stops at w500 deliberately.** Real `Content-Length` from `image.tmdb.org`: w92 6.2 KB,
+w154 14.1 KB, w185 15.7 KB, w342 44.7 KB, w500 87.1 KB, w780 162.6 KB. w780 would only ever be
+selected by a phone at DPR 3, which is 163 KB for a 224px box against 87 KB at w500 for 2.2×
+density.
+
+**Honest accounting: this costs bytes on retina, it does not save them.** The audit
+(`dev/reports/2026-08-01-performance-audit.md` §6.3) predicted "roughly halving poster bytes on
+DPR-1 desktop". That does not survive contact with the actual column: the box is 208 CSS px, and
+the smallest candidate covering 208 device px is `w342` — `w185` would be upscaled. So DPR-1 keeps
+`w342` and saves nothing, while DPR-2 moves `w342 → w500`, about +42 KB per poster, ~+250 KB across
+a six-pick list. What the change actually buys is correctness of resolution: today a DPR-2 phone
+renders `w342` into a 224px box at 1.53 device-px per CSS px. Title search is unchanged in practice
+(`w92` at DPR 1–2, `w154` at DPR 3). Anyone who wants the bytes back should cap the ladder at
+`w342`, which reduces this to a no-op for the picks list.
+
+**Verification.** The attributes are asserted in jsdom and are correct by construction; **actual
+variant selection is not verified in a browser.** jsdom has no layout and never evaluates `sizes`,
+and every `Poster` call site is behind auth (`/results/[sessionId]`, `/profile`, `/ritual`), so a
+real render would need a seeded, authenticated session. Not claimed as measured.
+
+Preserved unchanged: the first-pick `priority` (eager + `fetchpriority=high`) and the comment
+explaining it is *not* an LCP fix; unconditional `decoding="async"`; the no-poster `<div>` fallback,
+which now also asserts it emits no `srcset`/`sizes`; and the `crossOrigin`-less `preconnect` in
+`src/app/layout.tsx` — posters are no-CORS `<img src>` requests and TMDB's CDN sends no
+`Access-Control-Allow-Origin`, so a CORS-mode preconnect would warm an unusable socket.
+
+**Tests.** Four new, all confirmed failing first with `expected null to be …` — the attributes did
+not exist. Two in `poster.test.tsx` pin the exact `srcset` string and the default `sizes`, one pins
+a caller-supplied `sizes`, and one in `title-search.test.tsx` pins the thumbnail's `2rem`.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 852 passed
+/ 2 skipped, only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean. Rebased onto `dev` @ d99cf7c and all four re-run there;
+against the a60483f the work started from, the counts were 61 / 840 / 2 (baseline 836, +4 new).
+## Match route: collapsing the independent D1 reads (branch `claude/match-read-batching`)
+
+Acting on **B3** of `dev/reports/2026-08-01-performance-audit.md`, whose thesis is that at this
+app's data scale SQL execution time is irrelevant and the number of sequential D1 round trips is
+everything. The audit found no `Promise.all` and no `db.batch` for reads anywhere in `src/lib` or
+`src/app/api`.
+
+**Measured first, with the statement recorder, not assumed.** One representative second-round match
+request — two members with profile title ids, a first round supplying kept/removed provenance, the
+request keeping one pick and rejecting another — issued **13 D1 round trips**. It now issues **7**.
+The audit's own count (10–20, "5 independent reads") was taken before the live-membership gate and
+the recommended-id provenance read existed, so the pre-change set is six independent reads, not
+five, and the audit's line numbers are stale even where its analysis holds.
+
+**The dependency analysis.** `getSessionForMember` binds only the session id and the caller's user
+id; `isGroupMember` needs `session.groupId`, so those two are a genuine chain and stay sequential
+and ahead of everything else. The next five bind the session id or nothing at all —
+`roundNumberStatement`, `matchesThisMonthStatement` (no bind), `recommendedTmdbIdsStatement`,
+`sessionMembersStatement`, `accumulatedRemovedIdsStatement` — and no mapper reads another's rows.
+They are now one `db.batch` behind `getMatchRoundContext`. Everything downstream depends on that
+batch: `selectCandidates` on the members and the removals, the title hydration on the members plus
+the accepted kept and removed ids.
+
+**`db.batch`, not `Promise.all`, deliberately.** D1 sends a batch as a single request, so the win is
+a round-trip *count*; concurrent statements would still be five requests with only their waiting
+overlapped, and no Cloudflare documentation guarantees that overlap the way `batch()`'s does. The
+price is that a batch is a transaction: the three reads of `recommendations` now share one snapshot
+and can no longer disagree about how many rounds the session has. That is a change in read
+consistency, in the direction of more consistency, and it is the reason the authorization reads stay
+outside the batch — an eager batch runs every statement, and gating reads must keep their own
+failure ordering.
+
+**The other collapse is deduplication, not parallelism.** The route hydrated title names three
+times: the members' lists, then the kept ids, then the removed ids. They are now one `getTitlesMap`
+over the union, and `formatTitleRefs` takes that map instead of a database handle. Same names, same
+order, fewer rows on the wire — the union is never larger than the sum of the parts, so the chunk
+count can only go down.
+
+**Test harness, two supporting fixes.** The fake D1 ran every batched statement through `run()`,
+which executes but discards rows, so any batched read came back empty while real D1 returns its
+results; `batch()` now goes through `all()` and recovers the changes count from the connection's own
+counters. And `recordStatements` recorded on `bind`, which missed `countMatchesThisMonth` (it binds
+nothing) and counted statements that were prepared but never executed; it now records on execution
+and exposes `roundTrips`, where a batch is the single request D1 sends it as.
+
+**The failing test.** `costs one round trip per read the round genuinely needs` asserts
+`expect(roundTrips).toHaveLength(7)` and first failed with
+`AssertionError: expected [ [ { …(2) } ], [ { …(2) } ], …(11) ] to have a length of 7 but got 13`.
+A behaviour test would have passed before and after and proved nothing, so the round-trip count is
+the assertion. The companion test `returns the same round, response and titles it did before the
+reads were collapsed` pins the response body and the prompt's KEEP/exclusion lines and member
+blocks; it passed before the change, which is the point of it.
+
+**What this does not prove.** The fake D1 is synchronous `node:sqlite` and cannot reproduce network
+latency. The test proves the round-trip *count* fell from 13 to 7. It does not measure a wall-clock
+improvement, and none is claimed — the wall-clock saving is six production D1 round trips, whose
+size nobody can state until the app is deployed and the number is recorded.
+
+**Also added:** `PLAT-2` in `docs/pitfalls/implementation-pitfalls.md`, so the pattern is a
+convention rather than a one-off, as the audit asked.
+
+**Not taken:** the audit's B4 (`SELECT *` at `src/app/api/movie-sessions/[id]/route.ts:34`
+over-fetching `candidate_snapshot` and `ai_response`) is a real and trivial win, but that file is
+another agent's and `src/lib/movie-sessions.test.ts` carries a deliberate copy of its query. Left
+for its owner.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 845 passed
+/ 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean.

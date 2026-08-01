@@ -88,11 +88,24 @@ export function createFakeD1(migrationSql: string): D1Database {
   sqliteDb.exec("PRAGMA foreign_keys = ON");
   sqliteDb.exec(migrationSql);
 
+  // total_changes() is monotonic, so differencing it isolates one statement's
+  // changed rows even though SELECTs leave changes() holding a stale value.
+  const readCounters = (): { total_changes: number; last_row_id: number } =>
+    sqliteDb
+      .prepare("SELECT total_changes() AS total_changes, last_insert_rowid() AS last_row_id")
+      .get() as { total_changes: number; last_row_id: number };
+
   const fakeDb = {
     prepare(sql: string): D1PreparedStatement {
       return new FakeD1PreparedStatement(sqliteDb, sql) as unknown as D1PreparedStatement;
     },
 
+    // all() rather than run(), because D1's batch returns a read statement's
+    // rows and node:sqlite's run() discards them — batched reads would come
+    // back empty. The changes count run() would have reported is recovered
+    // from the connection's own counters instead, so a batched write still
+    // reports meta.changes. Going through the statement's public interface
+    // also keeps every wrapper (failure injection, recording, seams) working.
     async batch<T = Record<string, unknown>>(
       statements: D1PreparedStatement[]
     ): Promise<{ results: T[]; success: true; meta: Record<string, unknown> }[]> {
@@ -100,7 +113,17 @@ export function createFakeD1(migrationSql: string): D1Database {
       try {
         const results = [];
         for (const statement of statements) {
-          results.push(await (statement as unknown as FakeD1PreparedStatement).run<T>());
+          const changesBefore = readCounters().total_changes;
+          const { results: rows } = await statement.all<T>();
+          const counters = readCounters();
+          results.push({
+            results: rows,
+            success: true as const,
+            meta: {
+              changes: counters.total_changes - changesBefore,
+              last_row_id: counters.last_row_id,
+            },
+          });
         }
         sqliteDb.exec("COMMIT");
         return results;

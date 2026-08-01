@@ -138,43 +138,36 @@ export async function createMovieSession(
 }
 
 /** Next round number for the session: prior recommendation count + 1. */
-export async function getRoundNumber(db: D1Database, sessionId: string): Promise<number> {
-  const row = await db
-    .prepare("SELECT COUNT(*) as count FROM recommendations WHERE session_id = ?")
-    .bind(sessionId)
-    .first<{ count: number }>();
-  return (row?.count ?? 0) + 1;
-}
+const roundNumberStatement = (db: D1Database, sessionId: string) =>
+  db.prepare("SELECT COUNT(*) as count FROM recommendations WHERE session_id = ?").bind(sessionId);
 
-/**
- * Union of removed tmdb ids across every prior round of the session, deduped,
- * newest round first. The prompt's exclusion list is capped from the front, so
- * the order here decides which rejections survive truncation.
- */
-export async function getAccumulatedRemovedIds(db: D1Database, sessionId: string): Promise<number[]> {
-  const { results } = await db
-    .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? ORDER BY round_number DESC")
-    .bind(sessionId)
-    .all<{ removed_tmdb_ids: string }>();
-  const ids = new Set<number>();
-  for (const row of results) {
-    for (const id of parseJsonColumn<number[]>(row.removed_tmdb_ids, [])) ids.add(id);
-  }
-  return [...ids];
-}
+const toRoundNumber = (rows: unknown[]): number => {
+  const [row] = rows as { count: number }[];
+  return (row?.count ?? 0) + 1;
+};
+
+/** Count of matching calls made this calendar month (UTC), across all sessions. */
+const matchesThisMonthStatement = (db: D1Database) =>
+  db.prepare(
+    "SELECT COUNT(*) as count FROM recommendations WHERE created_at >= strftime('%Y-%m-01T00:00:00Z', 'now')"
+  );
+
+const toMatchesThisMonth = (rows: unknown[]): number => {
+  const [row] = rows as { count: number }[];
+  return row?.count ?? 0;
+};
 
 /**
  * Every tmdb id this session has actually recommended, across all prior rounds.
  * A client may only keep or reject a film the session showed it, so this is the
  * provenance set the match route intersects its kept/removed lists against.
  */
-export async function getRecommendedTmdbIds(db: D1Database, sessionId: string): Promise<Set<number>> {
-  const { results } = await db
-    .prepare("SELECT ai_response FROM recommendations WHERE session_id = ?")
-    .bind(sessionId)
-    .all<{ ai_response: string }>();
+const recommendedTmdbIdsStatement = (db: D1Database, sessionId: string) =>
+  db.prepare("SELECT ai_response FROM recommendations WHERE session_id = ?").bind(sessionId);
+
+const toRecommendedTmdbIds = (rows: unknown[]): Set<number> => {
   const ids = new Set<number>();
-  for (const row of results) {
+  for (const row of rows as { ai_response: string }[]) {
     const parsed = parseJsonColumn<MatchingResponse | null>(row.ai_response, null);
     // The column's shape is enforced on the write path and by the session GET,
     // and this is neither. A row that reached D1 outside those guards can hold
@@ -186,17 +179,25 @@ export async function getRecommendedTmdbIds(db: D1Database, sessionId: string): 
     }
   }
   return ids;
-}
+};
 
-/** Count of matching calls made this calendar month (UTC), across all sessions. */
-export async function countMatchesThisMonth(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare(
-      "SELECT COUNT(*) as count FROM recommendations WHERE created_at >= strftime('%Y-%m-01T00:00:00Z', 'now')"
-    )
-    .first<{ count: number }>();
-  return row?.count ?? 0;
-}
+/**
+ * Union of removed tmdb ids across every prior round of the session, deduped,
+ * newest round first. The prompt's exclusion list is capped from the front, so
+ * the order here decides which rejections survive truncation.
+ */
+const accumulatedRemovedIdsStatement = (db: D1Database, sessionId: string) =>
+  db
+    .prepare("SELECT removed_tmdb_ids FROM recommendations WHERE session_id = ? ORDER BY round_number DESC")
+    .bind(sessionId);
+
+const toAccumulatedRemovedIds = (rows: unknown[]): number[] => {
+  const ids = new Set<number>();
+  for (const row of rows as { removed_tmdb_ids: string }[]) {
+    for (const id of parseJsonColumn<number[]>(row.removed_tmdb_ids, [])) ids.add(id);
+  }
+  return [...ids];
+};
 
 export interface SessionView {
   id: string;
@@ -281,11 +282,8 @@ export interface SessionMemberProfile {
  * Members whose user row is gone (deleted accounts) are skipped: they can no
  * longer contribute preferences.
  */
-export async function getSessionMembersWithProfiles(
-  db: D1Database,
-  sessionId: string
-): Promise<SessionMemberProfile[]> {
-  const { results } = await db
+const sessionMembersStatement = (db: D1Database, sessionId: string) =>
+  db
     .prepare(
       `SELECT sm.user_id, sm.rough_day, u.name,
               p.comfort_titles, p.watchlist, p.vibes, p.dealbreakers, p.streaming_services
@@ -294,8 +292,11 @@ export async function getSessionMembersWithProfiles(
        LEFT JOIN profiles p ON p.user_id = sm.user_id
        WHERE sm.session_id = ?`
     )
-    .bind(sessionId)
-    .all<{
+    .bind(sessionId);
+
+const toSessionMembers = (rows: unknown[]): SessionMemberProfile[] =>
+  (
+    rows as {
       user_id: string;
       rough_day: number;
       name: string;
@@ -304,9 +305,8 @@ export async function getSessionMembersWithProfiles(
       vibes: string | null;
       dealbreakers: string | null;
       streaming_services: string | null;
-    }>();
-
-  return results.map((row) => ({
+    }[]
+  ).map((row) => ({
     userId: row.user_id,
     name: row.name,
     roughDay: row.rough_day === 1,
@@ -316,6 +316,47 @@ export async function getSessionMembersWithProfiles(
     dealbreakers: parseJsonColumn<string[]>(row.dealbreakers, []),
     streamingServices: parseJsonColumn<string[]>(row.streaming_services, []),
   }));
+
+export interface MatchRoundContext {
+  round: number;
+  matchesThisMonth: number;
+  recommendedTmdbIds: Set<number>;
+  members: SessionMemberProfile[];
+  accumulatedRemovedIds: number[];
+}
+
+/**
+ * Everything a matching round must read before it can build a prompt, in one
+ * D1 round trip. None of these five reads consumes another's result — they are
+ * keyed on the session id or on nothing at all — so awaiting them one at a time
+ * bought five sequential network round trips for no ordering guarantee. SQL
+ * time here is microseconds; the round trips are the cost.
+ *
+ * `batch` rather than concurrent statements, for two reasons. D1 sends a batch
+ * as a single request, so the saving is a count rather than an overlap. And a
+ * batch is a transaction, which pins one snapshot across the three reads of
+ * `recommendations` — the round number, the provenance set and the accumulated
+ * removals can no longer disagree about how many rounds the session has.
+ */
+export async function getMatchRoundContext(
+  db: D1Database,
+  sessionId: string
+): Promise<MatchRoundContext> {
+  const [round, month, recommended, members, removed] = await db.batch([
+    roundNumberStatement(db, sessionId),
+    matchesThisMonthStatement(db),
+    recommendedTmdbIdsStatement(db, sessionId),
+    sessionMembersStatement(db, sessionId),
+    accumulatedRemovedIdsStatement(db, sessionId),
+  ]);
+
+  return {
+    round: toRoundNumber(round.results),
+    matchesThisMonth: toMatchesThisMonth(month.results),
+    recommendedTmdbIds: toRecommendedTmdbIds(recommended.results),
+    members: toSessionMembers(members.results),
+    accumulatedRemovedIds: toAccumulatedRemovedIds(removed.results),
+  };
 }
 
 export interface TitleSummary {
@@ -366,12 +407,15 @@ export async function getTitlesMap(
   return map;
 }
 
-/** Formats title references for the prompt's keep/exclude lists: "Title (tmdbId N)". Unknown ids are skipped. */
-export async function formatTitleRefs(db: D1Database, tmdbIds: number[]): Promise<string[]> {
-  const map = await getTitlesMap(db, tmdbIds);
+/**
+ * Formats title references for the prompt's keep/exclude lists:
+ * "Title (tmdbId N)". Unknown ids are skipped. Reads from an already-hydrated
+ * map so a prompt that names titles from several lists pays for one lookup.
+ */
+export function formatTitleRefs(titles: Record<number, TitleSummary>, tmdbIds: number[]): string[] {
   return tmdbIds
-    .filter((id) => map[id] !== undefined)
-    .map((id) => `${map[id].title} (tmdbId ${id})`);
+    .filter((id) => titles[id] !== undefined)
+    .map((id) => `${titles[id].title} (tmdbId ${id})`);
 }
 
 export interface InsertRecommendationArgs {

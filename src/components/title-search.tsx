@@ -172,6 +172,7 @@ export function TitleSearch({
                     title={title.title}
                     posterPath={title.posterPath}
                     size="w92"
+                    sizes="2rem"
                   />
                 </span>
                 <span className="text-base text-cream">

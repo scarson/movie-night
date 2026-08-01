@@ -55,6 +55,7 @@ export default function ProfilePage() {
   const [quickPicks, setQuickPicks] = useState<TitleRef[]>([]);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<string | null>(null);
 
   const [confirming, setConfirming] = useState(false);
   const [confirmWord, setConfirmWord] = useState("");
@@ -115,10 +116,15 @@ export default function ProfilePage() {
   const save = async () => {
     if (draft === null) return;
     setSaveError(null);
+    setSkipped(null);
     setSaveState("saving");
-    const error = await saveProfile(draft);
-    setSaveState(error === null ? "saved" : "idle");
+    const { error, notice } = await saveProfile(draft);
+    // The notice says "Saved" itself, and it is the half of the outcome the
+    // user doesn't already know — a bare "Saved" beside it would only give the
+    // two polite regions something to talk over each other about.
+    setSaveState(error === null && notice === null ? "saved" : "idle");
     if (error !== null) setSaveError(error);
+    setSkipped(notice);
   };
 
   const remove = async () => {
@@ -171,6 +177,7 @@ export default function ProfilePage() {
                 setDraft(next);
                 // A standing "Saved" over unsaved edits is worse than no confirmation.
                 setSaveState((state) => (state === "saved" ? "idle" : state));
+                setSkipped(null);
               }}
               quickPicks={quickPicks}
             />
@@ -188,6 +195,15 @@ export default function ProfilePage() {
               {saveState === "saved" ? "Saved" : ""}
             </p>
           </div>
+          {/* Mounted whether or not it has anything to say: a polite region
+              added to the page at the same moment as its text is announced
+              inconsistently. */}
+          <p
+            aria-live="polite"
+            className={`max-w-[62ch] text-sm text-amber ${skipped === null ? "" : "mt-md"}`}
+          >
+            {skipped ?? ""}
+          </p>
           {saveError !== null && (
             <p role="alert" className="mt-md text-sm text-ember">
               {saveError}

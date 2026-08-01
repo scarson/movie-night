@@ -176,6 +176,18 @@ describe("TitleSearch", () => {
     fireEvent.click(quickPick);
     expect(onChange).toHaveBeenCalledWith([ARRIVAL, KNIVES]);
   });
+
+  it("tells the browser its result thumbnails are 2rem wide, not poster-sized", async () => {
+    // The thumbnail sits in a w-8 span. Left on the picks-list default the
+    // browser would fetch a 224px-wide variant for a 32px box.
+    vi.stubGlobal("fetch", vi.fn(async () => searchResponse([ARRIVAL])));
+    const { container } = render(<TitleSearch selected={[]} onChange={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "arri" } });
+    await advance(250);
+    const thumb = container.querySelector("img");
+    expect(thumb?.getAttribute("sizes")).toBe("2rem");
+    expect(thumb?.getAttribute("src")).toBe("https://image.tmdb.org/t/p/w92/arrival.jpg");
+  });
 });
 
 /** Fills the list with distinct titles that are none of the fixtures above. */
