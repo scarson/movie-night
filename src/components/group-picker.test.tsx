@@ -80,3 +80,45 @@ describe("GroupPicker", () => {
     expect(screen.getByRole("radiogroup", { name: /who's watching/i })).toBeDefined();
   });
 });
+
+describe("1.4.10 Reflow — the member list", () => {
+  const longNames: GroupOption = {
+    id: "g3",
+    name: "Sunday Nights",
+    members: [
+      { userId: "u1", name: "Alexandra Featherstonehaugh", avatarUrl: null },
+      { userId: "u2", name: "Jordan", avatarUrl: null },
+    ],
+  };
+
+  it("wraps the member list rather than clipping it", () => {
+    // `truncate` hid 43px of the names at 320px, with no scrollbar and no
+    // title, so a document-level `scrollWidth` sweep could not see it.
+    //
+    // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
+    // element, so this assertion is structural and CANNOT prove the visual fix.
+    // The geometric check — `scrollWidth <= clientWidth` on this element's own
+    // box at 320x800 — lives in the browser runbook at
+    // dev/reports/2026-08-01-authenticated-a11y-verification.md §Part 1.
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+
+    const line = screen.getByText("Alexandra Featherstonehaugh, Jordan");
+    const classes = line.className.split(/\s+/);
+    expect(classes).not.toContain("truncate");
+    // Unbounded wrapping, not line-clamp-2: a clamp still discards whatever
+    // does not fit, which is the loss of information 1.4.10 forbids.
+    expect(classes).not.toContain("line-clamp-2");
+    expect(classes).toContain("break-words");
+  });
+
+  it("keeps the full member list in the DOM", () => {
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+    expect(screen.getByText("Alexandra Featherstonehaugh, Jordan")).toBeDefined();
+  });
+
+  it("keeps the group name unclipped above it", () => {
+    // The name was never truncated and must stay that way.
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+    expect(screen.getByText("Sunday Nights").className).not.toContain("truncate");
+  });
+});

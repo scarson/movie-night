@@ -118,6 +118,27 @@ describe("Groups page", () => {
     ).toBeDefined();
   });
 
+  it("renders the whole invite link, wrapped rather than clipped", async () => {
+    // 1.4.10 Reflow. `truncate` hid 79px (~25%) of the URL at 320px and 23px at
+    // 375px, with no scrollbar and no title — which is why three document-level
+    // `scrollWidth` sweeps walked straight past it.
+    //
+    // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
+    // element, so this assertion is structural and CANNOT prove the visual fix.
+    // The geometric check — `scrollWidth <= clientWidth` on this element's own
+    // box at 320x800 — lives in the browser runbook at
+    // dev/reports/2026-08-01-authenticated-a11y-verification.md §Part 1.
+    stubApi({ groups: [SUNDAY] });
+    renderGroups();
+
+    const link = await screen.findByText(
+      `${window.location.origin}/groups/join/aB23cdEF`
+    );
+    const classes = link.className.split(/\s+/);
+    expect(classes).not.toContain("truncate");
+    expect(classes).toContain("break-all");
+  });
+
   it("copies the invite link built from the current origin", async () => {
     stubApi({ groups: [SUNDAY] });
     renderGroups();

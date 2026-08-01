@@ -90,7 +90,7 @@ export function GroupPicker({ groups, value, onChange }: GroupPickerProps) {
                 >
                   {group.name}
                 </span>
-                <span className="mt-2xs block truncate text-sm text-ash">
+                <span className="mt-2xs block break-words text-sm text-ash">
                   {group.members.map((member) => member.name).join(", ")}
                 </span>
               </span>
