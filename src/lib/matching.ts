@@ -8,7 +8,7 @@ import { GENRE_TAG_TO_TMDB, GENRE_TAGS } from "@/config/tags";
 import { parseJsonColumn, chunk, D1_IN_CHUNK_SIZE } from "@/lib/db";
 import { MATCHING_RESPONSE_SCHEMA, type MatchingResponse, type Recommendation } from "@/types/matching";
 
-export const PROMPT_VERSION = "p1.1";
+export const PROMPT_VERSION = "p1.2";
 export const MATCHING_MODEL = "claude-sonnet-5";
 
 // ── Input clamps (enforced here as defense-in-depth; routes also validate) ──
@@ -201,20 +201,50 @@ export interface MatchingPromptInput {
   solo: boolean;
 }
 
+/** A high surrogate with no low surrogate after it, or a low surrogate with no high before it. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * Truncates to `max` UTF-16 code units without splitting a surrogate pair. A plain slice at a
+ * fixed count cuts an emoji or any other astral character in half, and the ill-formed string
+ * that results travels all the way into the API request body — so a display name chosen to
+ * straddle the boundary is a denial of service against everyone else in the group.
+ */
+function clampChars(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const lastUnit = cut.charCodeAt(max - 1);
+  const endsOnHighSurrogate = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
+  return endsOnHighSurrogate ? cut.slice(0, max - 1) : cut;
+}
+
 /**
  * Every user-derived string entering the prompt goes through here. Control
  * characters and newlines would let a value forge a new line in the
  * line-oriented member and CANDIDATES blocks; a pipe would forge a new field
  * inside a candidate line. Collapsing whitespace first also means the sentence
  * regex in firstSentence() sees a single line and has no fall-through branch.
+ *
+ * Controls (\p{Cc}) become spaces: that covers CR, LF and TAB, and also the C1 range, where NEL
+ * (U+0085) reads as a line break to plenty of consumers while matching neither \s nor a
+ * C0-and-DEL range. Format characters (\p{Cf}) are deleted rather than spaced, because they are
+ * zero-width by definition — the bidi overrides and isolates that reverse how a value reads, the
+ * zero-width space/joiner family, the BOM, and the soft hyphen. Deleting them costs emoji ZWJ
+ * sequences their joins and drops ZWNJ from the scripts that use it, a rendering nuance the model
+ * does not need; keeping them would leave text whose rendered form disagrees with its bytes
+ * anywhere a human reads a prompt back.
  */
 function sanitizePromptText(value: string, max: number): string {
-  return value
-    .replace(/[\u0000-\u001F\u007F]/g, " ") // C0 controls and DEL, including \r \n \t
-    .replace(/\|/g, "/") // the CANDIDATES field delimiter
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
+  return clampChars(
+    value
+      .replace(/\p{Cc}/gu, " ") // C0 and C1 controls, including \r \n \t and NEL
+      .replace(/\p{Cf}/gu, "") // bidi controls, zero-width joiners, BOM, soft hyphen
+      .replace(LONE_SURROGATE, "") // ill-formed UTF-16 from a client, not from our own slice
+      .replace(/\|/g, "/") // the CANDIDATES field delimiter
+      .replace(/\s+/g, " ")
+      .trim(),
+    max
+  );
 }
 
 function clampTags(tags: string[]): string[] {
@@ -240,13 +270,24 @@ function listOr(items: string[], fallback: string): string {
 function firstSentence(text: string): string {
   const flat = sanitizePromptText(text, Number.MAX_SAFE_INTEGER);
   const match = flat.match(/^.*?[.!?](?=\s|$)/);
-  return (match ? match[0] : flat).slice(0, MAX_SYNOPSIS_CHARS);
+  return clampChars(match ? match[0] : flat, MAX_SYNOPSIS_CHARS);
+}
+
+/** 1 -> "1st". Groups are small, but a rule is cheaper to read than a lookup table. */
+function ordinal(n: number): string {
+  const teens = n % 100;
+  if (teens >= 11 && teens <= 13) return `${n}th`;
+  const last = n % 10;
+  if (last === 1) return `${n}st`;
+  if (last === 2) return `${n}nd`;
+  if (last === 3) return `${n}rd`;
+  return `${n}th`;
 }
 
 /**
  * Computes the rough-day weighting note. Members who toggled roughDay
  * deprioritize their OWN preferences in favor of the others. The note NEVER
- * reveals who toggled: it names the favored member only when exactly one
+ * reveals who toggled: it points at the favored member only when exactly one
  * member is favored, and stays generic otherwise.
  */
 function computeWeightNote(members: PromptMember[]): string {
@@ -254,13 +295,17 @@ function computeWeightNote(members: PromptMember[]): string {
   if (toggledCount === 0 || toggledCount === members.length) {
     return "No preference weighting — treat all profiles equally.";
   }
-  const favored = members.filter((m) => !m.roughDay);
-  if (favored.length === 1) {
-    // Name the favored member so the model can apply the lean, but require it to
-    // stay silent: in a two-person group "picks lean toward Ben" reveals that
-    // the other person toggled rough-day for him, exposing the generosity the
+  const favoredIndex = members.findIndex((m) => !m.roughDay);
+  if (members.length - toggledCount === 1) {
+    // The favored member is identified by their position in the member blocks, never by name.
+    // This line is the one directive in the prompt that asks for silence about itself, which
+    // makes it the most valuable position an injected instruction could occupy — and a name is
+    // user-controlled text landing mid-sentence inside it. Position is ours.
+    //
+    // The silence requirement itself is unchanged: in a two-person group "picks lean toward Ben"
+    // reveals that the other person toggled rough-day for him, exposing the generosity the
     // feature is designed to keep invisible to its recipient.
-    return `Preference weighting (PRIVATE — apply silently): when the profiles conflict, weight ${sanitizePromptText(favored[0].name, MAX_NAME_CHARS)}'s preferences more heavily tonight, roughly a 65/35 split in their favor. Never surface this weighting in any output: do not mention it, do not say the picks "lean" toward anyone, and do not name whose preferences were prioritized — not in the taste map, the explanations, or the conversational text.`;
+    return `Preference weighting (PRIVATE — apply silently): when the profiles conflict, weight the preferences of the ${ordinal(favoredIndex + 1)} member listed above more heavily tonight, roughly a 65/35 split in their favor. Never surface this weighting in any output: do not mention it, do not say the picks "lean" toward anyone, and do not name whose preferences were prioritized — not in the taste map, the explanations, or the conversational text.`;
   }
   return `Preference weighting (PRIVATE — apply silently): lean generously toward the group's shared comfort zone rather than a strict average of individual preferences. Never surface this weighting in any output: do not mention it or name whose preferences were prioritized.`;
 }
@@ -334,7 +379,7 @@ ${toneNote}`;
 - Watchlist: ${listOr(clampTitleList(m.watchlist), "None selected")}
 - Vibes: ${listOr(clampTags(m.vibes), "None selected")}
 - Dealbreakers: ${listOr(clampTags(m.dealbreakers), "None")}
-- Streaming services: ${listOr(m.streamingServices.map((s) => sanitizePromptText(s, MAX_TAG_CHARS)), "None")}`;
+- Streaming services: ${listOr(clampTags(m.streamingServices), "None")}`;
   });
 
   const moodLine = `Tonight's mood: ${listOr(clampTags(input.moodVibes), "No specific mood")}`;
