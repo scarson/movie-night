@@ -2667,3 +2667,20 @@ needs the session GET to report live membership, which is a server change and wa
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 865
 passed / 2 skipped (baseline 862), `npx @opennextjs/cloudflare build` clean.
+
+---
+
+## Next queue planned — items 6-10 (2026-08-01)
+
+`dev/plans/2026-08-01-next-queue.md` scopes the five items after the current wave. The shape of the
+argument: Phase 1 is feature-complete, remediated and verified end to end, but has never been
+*experienced* — every verification so far asked whether behaviour was correct, none asked whether the
+thing is good to use on a phone by someone who has never seen it. Items 6-8 (first-run and unpainted
+states, a design-system drift sweep, mobile/touch QA of the ritual) close that. Items 9-10 (dependency
+review, cost model) are pre-public hygiene and the input to the spend decision the abuse-surface review
+will surface.
+
+Recorded as a decision rather than left as an omission: **executing Phase 2 is deliberately not in the
+next five.** Building the rating loop before anyone has used the recommender would build on an
+unvalidated base, and the plan's hardest questions are product judgments that need Sam. It should
+follow his review of the design doc and the app actually shipping.
