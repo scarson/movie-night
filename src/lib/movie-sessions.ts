@@ -169,7 +169,12 @@ const toRecommendedTmdbIds = (rows: unknown[]): Set<number> => {
   const ids = new Set<number>();
   for (const row of rows as { ai_response: string }[]) {
     const parsed = parseJsonColumn<MatchingResponse | null>(row.ai_response, null);
-    for (const rec of parsed?.recommendations ?? []) {
+    // The column's shape is enforced on the write path and by the session GET,
+    // and this is neither. A row that reached D1 outside those guards can hold
+    // anything, and `for...of` over a non-iterable throws out of the whole
+    // match request — the round the session GET already degrades past.
+    if (!Array.isArray(parsed?.recommendations)) continue;
+    for (const rec of parsed.recommendations) {
       if (Number.isInteger(rec?.tmdbId)) ids.add(rec.tmdbId);
     }
   }
