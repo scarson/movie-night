@@ -120,7 +120,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const monthlyLimit = Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10) || DEFAULT_MONTHLY_MATCH_LIMIT;
+    // 0 is the kill switch, and it is falsy, so `|| DEFAULT` would restore the
+    // full allowance at exactly the moment an operator meant to close it. A
+    // negative value is rejected for the mirror-image reason: `count >= -1` is
+    // always false, which reads as "unlimited" by accident.
+    const parsedLimit = Number.parseInt(env.MONTHLY_MATCH_LIMIT ?? "", 10);
+    const monthlyLimit =
+      Number.isNaN(parsedLimit) || parsedLimit < 0 ? DEFAULT_MONTHLY_MATCH_LIMIT : parsedLimit;
     if ((await countMatchesThisMonth(db)) >= monthlyLimit) {
       return withAuthHeaders(
         NextResponse.json(

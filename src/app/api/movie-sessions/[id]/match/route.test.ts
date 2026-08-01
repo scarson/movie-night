@@ -368,6 +368,56 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  describe("MONTHLY_MATCH_LIMIT parsing", () => {
+    async function attempt(monthlyLimit?: string): Promise<Response> {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({
+        env: fakeEnv(db, monthlyLimit),
+        ctx: {},
+      } as never);
+      const sessionId = await setup(db);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+      return response;
+    }
+
+    it("0 disables matching outright — it is the kill switch, not a missing value", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db, "0"), ctx: {} } as never);
+      const sessionId = await setup(db);
+      const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+
+      const response = await postMatch(sessionId, "u1");
+
+      expect(response.status).toBe(429);
+      expect((await response.json<Record<string, string>>()).kind).toBe("monthly_cap");
+      expect(create).not.toHaveBeenCalled();
+      const { results } = await db
+        .prepare("SELECT * FROM recommendations WHERE session_id = ?")
+        .bind(sessionId)
+        .all();
+      expect(results).toHaveLength(0);
+    });
+
+    it("a negative limit falls back to the default rather than reading as unlimited", async () => {
+      expect((await attempt("-1")).status).toBe(200);
+    });
+
+    it("a non-numeric limit falls back to the default", async () => {
+      expect((await attempt("abc")).status).toBe(200);
+    });
+
+    it("an empty limit falls back to the default", async () => {
+      expect((await attempt("")).status).toBe(200);
+    });
+
+    it("an absent limit falls back to the default", async () => {
+      expect((await attempt()).status).toBe(200);
+    });
+  });
+
   it("maps a refusal (after one retry) to 502 kind malformed with the locked message", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
