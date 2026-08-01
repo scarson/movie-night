@@ -267,6 +267,10 @@ describe("/api/user/profile", () => {
       keywords: '["heist"]',
     });
     expect(row?.last_refreshed_at).toBeTruthy();
+    // The fetch that populated this row is an attempt as much as a success, and
+    // the weekly refresh picks its candidates off the attempt stamp — a NULL
+    // here makes a title fetched seconds ago immediately due for re-fetching.
+    expect(row?.last_refresh_attempt_at).toBe(row?.last_refreshed_at);
   });
 
   it("PUT returns 400 with unknownIds when more than 10 ids are unknown, without fetching", async () => {

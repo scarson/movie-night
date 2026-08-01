@@ -55,6 +55,7 @@ const TITLES_COLUMNS = [
   "streaming",
   "seasons",
   "last_refreshed_at",
+  "last_refresh_attempt_at",
   "created_at",
   "updated_at",
 ] as const;
@@ -65,6 +66,12 @@ const TITLES_COLUMNS = [
  * values are coerced through Number()/Math.trunc so a malformed upstream field
  * can never inject raw SQL. `seasons` is always NULL — this seed script only
  * indexes movies. `now` is injected so the function stays pure and testable.
+ *
+ * `last_refresh_attempt_at` carries `now` alongside `last_refreshed_at`: the
+ * seed reached TMDB for this row, which is an attempt and a success both.
+ * INSERT OR REPLACE rebuilds the row from these columns alone, so omitting it
+ * would reset the attempt stamp the weekly refresh selects candidates on and
+ * make the whole re-seeded catalog look due again the moment it was written.
  */
 export function titleToInsertStatement(title: SeedTitle, now: string): string {
   const values = [
@@ -82,6 +89,7 @@ export function titleToInsertStatement(title: SeedTitle, now: string): string {
     sqlQuote(JSON.stringify(title.keywords)),
     sqlQuote(JSON.stringify(title.streaming)),
     "NULL",
+    sqlQuote(now),
     sqlQuote(now),
     sqlQuote(now),
     sqlQuote(now),
