@@ -1524,3 +1524,52 @@ change, so no new test — the existing suite passing unchanged is the whole ver
 it has already been applied to the remote database, and the plan scopes this task to two lines in
 two files. The remaining references live in historical plan documents, where provenance is the
 point.
+
+### G6 review rounds (plan §0.3)
+
+**Round A — correctness.** Boundaries verified line by line against plan §1.3: `groups/page.tsx`
+line 288 and the `copyInvite` comment (G5's) untouched; `profile/page.tsx` lines 232-235 (G3's
+deletion copy) untouched; `ritual/page.tsx` limited to line 337. `outlinedBoundaryClasses` and
+`primaryFillClasses` are byte-identical — no resting or hover colour moved. No control gained a
+`disabled` attribute. All eight controls that carry one now get exactly one treatment matching
+their level, and none carries both.
+
+**One out-of-region edit, surfaced rather than hidden.** Deleting the bespoke string from
+`profile/page.tsx:27` left `const PRIMARY_BUTTON = primaryButtonClasses` — a bare alias with a
+single use. Inlining it touched line 180, outside G6's named region. No other group owns that line
+(G3 owns 232-235), so the rebase risk is nil, but the plan says to surface rather than edit across
+a boundary, so it is surfaced here and in the PR.
+
+**Round B — adversarial.** The plan asserts the disabled treatment wins over the resting fill and
+over hover. Verified against the *compiled stylesheet* rather than reasoned about: in
+`.next/static/chunks/*.css`, `.bg-amber` is at byte 15836, `.hover\:bg-warm-white` at 23699,
+`.disabled\:bg-slate` at 24554 and `.disabled\:hover\:bg-slate` at 24894. The disabled variant is
+both higher-specificity (`:disabled` adds a pseudo-class) and later in source order than hover, so
+it wins twice over; the border pair has the same shape. This is the one claim jsdom could not
+support, and it is now backed by the real build output.
+
+Chunking cannot change behavior for duplicates (`parseIds` and the profile's `referenced` both
+dedupe upstream) or for empty input (`chunk([])` yields no chunks and the route short-circuits at
+`ids.length === 0`).
+
+Tailwind's content scan reads markdown, so `disabled:opacity-50` and `-60` rules still appear in
+the bundle — emitted from the plan and research documents in `dev/` and from the two test files
+that assert the token's *absence*. ~80 bytes of dead CSS that no element references. Not worth
+"fixing": the fix would be to stop writing tests that name the banned token.
+
+**Round C — test quality.** Two findings, both fixed.
+
+1. **Vacuous-pass risk.** `Math.max(...reads.map(...))` returns `-Infinity` over an empty array,
+   which clears any ceiling, and a zero count clears any upper bound. If the SQL ever stopped
+   matching the filter, both chunking tests would have passed while measuring nothing. Both now
+   assert `reads.length > 0` first.
+2. **The narrowed boundary assertion was broader than intended.** The first cut,
+   `/(^|\s)border-slate\b/`, exempted *every* variant prefix — it would have let a real
+   `hover:border-slate` on a control through, and hover is a state 1.4.11 governs. Replaced with
+   `/(^|\s)(?!disabled:)\S*border-slate\b/`, which carves out only the sanctioned `disabled:`
+   prefix and still catches `hover:`, `focus:` and responsive variants. Checked against ten
+   hand-built class strings covering both directions before adopting it.
+
+Also confirmed: no new test asserts a derived value passed straight back as its own input — the
+rendered assertions run against `RefinePanel`, a real call site, and the class constants are
+asserted as constants in `control-classes.test.ts`, not laundered through a render.

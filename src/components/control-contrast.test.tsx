@@ -20,13 +20,14 @@ import { RefinePanel } from "@/components/refine-panel";
 const CONTROL_BORDER = "border-ash";
 
 /**
- * A slate boundary in the *resting* state — an unprefixed utility, not one behind
- * a variant. 1.4.11 governs the resting boundary and exempts inactive components,
- * and DESIGN.md §Accessibility sanctions slate for disabled controls, so
- * `disabled:border-slate` must not trip these assertions. Requiring the token to
- * start the class or follow whitespace excludes every `variant:border-slate`.
+ * A slate boundary in any state 1.4.11 governs. The criterion exempts inactive
+ * components, and DESIGN.md §Accessibility sanctions slate for disabled controls,
+ * so a `disabled:`-prefixed utility must not trip these assertions — every other
+ * prefix still does, including `hover:` and a responsive variant. Carving out
+ * only the sanctioned prefix keeps this as strict as a bare substring check
+ * everywhere it was ever meaningful.
  */
-const RESTING_SLATE_BORDER = /(^|\s)border-slate\b/;
+const UNSANCTIONED_SLATE_BORDER = /(^|\s)(?!disabled:)\S*border-slate\b/;
 
 describe("1.4.11 — resting control boundaries", () => {
   it("ash clears 3:1 on both surfaces a control can sit on", () => {
@@ -38,21 +39,21 @@ describe("1.4.11 — resting control boundaries", () => {
     render(<Chip label="Cozy" selected={false} onToggle={() => {}} />);
     const chip = screen.getByRole("checkbox", { name: "Cozy" });
     expect(chip.className).toContain(CONTROL_BORDER);
-    expect(chip.className).not.toMatch(RESTING_SLATE_BORDER);
+    expect(chip.className).not.toMatch(UNSANCTIONED_SLATE_BORDER);
   });
 
   it("an unchecked switch row draws its boundary in ash", () => {
     render(<ToggleRow label="Reduce animations" checked={false} onChange={() => {}} />);
     const toggle = screen.getByRole("switch", { name: "Reduce animations" });
     expect(toggle.className).toContain(CONTROL_BORDER);
-    expect(toggle.className).not.toMatch(RESTING_SLATE_BORDER);
+    expect(toggle.className).not.toMatch(UNSANCTIONED_SLATE_BORDER);
   });
 
   it("an unchecked rough-day toggle draws its boundary in ash", () => {
     render(<RoughDayToggle name="Bob" checked={false} onChange={() => {}} />);
     const toggle = screen.getByRole("switch", { name: "Bob had a rough day" });
     expect(toggle.className).toContain(CONTROL_BORDER);
-    expect(toggle.className).not.toMatch(RESTING_SLATE_BORDER);
+    expect(toggle.className).not.toMatch(UNSANCTIONED_SLATE_BORDER);
   });
 
   it("an unselected group row draws its boundary in ash", () => {
@@ -66,7 +67,7 @@ describe("1.4.11 — resting control boundaries", () => {
     // The row is the label wrapping the radio; the radio itself carries no border.
     const row = screen.getByRole("radio", { name: /Us/ }).closest("label");
     expect(row?.className).toContain(CONTROL_BORDER);
-    expect(row?.className).not.toMatch(RESTING_SLATE_BORDER);
+    expect(row?.className).not.toMatch(UNSANCTIONED_SLATE_BORDER);
   });
 
   it("the custom-tag input and its Add button draw boundaries in ash", () => {
@@ -75,7 +76,7 @@ describe("1.4.11 — resting control boundaries", () => {
     const add = screen.getByRole("button", { name: "Add" });
     for (const el of [input, add]) {
       expect(el.className).toContain(CONTROL_BORDER);
-      expect(el.className).not.toMatch(RESTING_SLATE_BORDER);
+      expect(el.className).not.toMatch(UNSANCTIONED_SLATE_BORDER);
     }
   });
 });

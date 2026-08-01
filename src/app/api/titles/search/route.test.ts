@@ -308,8 +308,12 @@ describe("GET /api/titles/search?ids= (saved-id resolution)", () => {
     ).json<{ results: Array<{ tmdbId: number }> }>();
 
     expect(body.results).toHaveLength(100);
-    const widest = Math.max(...statements.map((s) => s.boundParams));
-    expect(widest).toBeLessThanOrEqual(D1_IN_CHUNK_SIZE);
+    const reads = statements.filter((s) => /SELECT[\s\S]*FROM titles/.test(s.sql));
+    // Guards the assertion below against passing vacuously: an empty filter would
+    // make Math.max return -Infinity, which clears any ceiling.
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.length).toBeLessThanOrEqual(Math.ceil(100 / D1_IN_CHUNK_SIZE));
+    expect(Math.max(...reads.map((s) => s.boundParams))).toBeLessThanOrEqual(D1_IN_CHUNK_SIZE);
   });
 
   it("preserves the caller's order across the chunk boundary", async () => {

@@ -336,6 +336,9 @@ describe("/api/user/profile", () => {
     expect(fetchStub).not.toHaveBeenCalled();
 
     const reads = statements.filter((s) => /SELECT[\s\S]*FROM titles/.test(s.sql));
+    // Guards the two assertions below against passing vacuously: with an empty
+    // filter, Math.max returns -Infinity and a zero count clears any ceiling.
+    expect(reads.length).toBeGreaterThan(0);
     expect(reads.length).toBeLessThanOrEqual(Math.ceil(100 / D1_IN_CHUNK_SIZE));
     expect(Math.max(...reads.map((s) => s.boundParams))).toBeLessThanOrEqual(D1_IN_CHUNK_SIZE);
   });
