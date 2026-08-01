@@ -77,6 +77,42 @@ export function validateReturnTo(returnTo: string | null): string {
   return returnTo;
 }
 
+// ── Session lifecycle ────────────────────────────────────────
+
+/** How many places one account may be signed in at once. */
+export const MAX_SESSIONS = 10;
+
+/**
+ * Drop the least recently created sign-ins beyond MAX_SESSIONS.
+ *
+ * The cap counts sign-ins, not rows. A row a rotation has spent is a tombstone
+ * its replacement already superseded, waiting to be pruned; counting one costs
+ * the account a place it is not occupying, and evicting one spends an eviction
+ * that should have fallen on a real sign-in. Both halves have to read the same
+ * population or the cap stops binding: the tombstone is older than the sign-ins
+ * it sits beside, so an unfiltered delete answers a filtered count by removing
+ * the tombstone and leaving every sign-in in place. Rotation clears its own
+ * tombstones on the account's next refresh.
+ */
+export async function enforceSessionLimit(db: D1Database, userId: string): Promise<void> {
+  const countRow = await db
+    .prepare("SELECT COUNT(*) as count FROM sessions WHERE user_id = ? AND rotated_at IS NULL")
+    .bind(userId)
+    .first<{ count: number }>();
+
+  const excess = (countRow?.count ?? 0) - MAX_SESSIONS;
+  if (excess <= 0) return;
+
+  await db
+    .prepare(
+      "DELETE FROM sessions WHERE token_hash IN " +
+        "(SELECT token_hash FROM sessions WHERE user_id = ? AND rotated_at IS NULL " +
+        "ORDER BY created_at ASC LIMIT ?)"
+    )
+    .bind(userId, excess)
+    .run();
+}
+
 // ── Request authentication ───────────────────────────────────
 
 /**

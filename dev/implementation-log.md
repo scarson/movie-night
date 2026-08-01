@@ -2620,3 +2620,114 @@ asserts through `getMatchRoundContext(...).recommendedTmdbIds`. Gates after the 
 **Scope caveat:** every measurement in the report was taken against `a60483f`; the three PRs `dev`
 gained mid-pass (#29 enrichment partial-failure, #30 poster srcset, #31 match-read batching) were
 not re-verified against a running Worker, and #31 changes how the match route reads D1.
+
+---
+
+## `claude/tier2-cleanup` — Tier 2 correctness items (2026-08-01)
+
+Branched from `dev` at `5d76a38`. Baseline `npm test`: 63 files / 862 passed / 2 skipped.
+Three of the four Tier 2 items in `dev/handoff-2026-08-01.md`; the fourth is analysis only.
+
+### Item 1 — the per-user session cap counted rotation tombstones
+
+**Where it actually lives.** The handoff and the brief both place `MAX_SESSIONS` in
+`src/lib/auth.ts`. It was in `src/app/api/auth/google/callback/route.ts:15`, with the count and the
+eviction inline in the OAuth callback and no test file anywhere near it. The constant and the
+enforcement moved to `src/lib/auth.ts` as `MAX_SESSIONS` / `enforceSessionLimit(db, userId)` —
+the callback now calls it and holds no session-lifecycle SQL. The move is what makes the change
+testable at all; the route has no test harness.
+
+**The semantics chosen: the cap counts sign-ins, not rows.** A row with `rotated_at` set is a
+tombstone its replacement already superseded, kept alive only for the 30 s grace window and pruned
+on the account's next refresh. It is excluded from **both** the count and the eviction set:
+
+- Excluded from the count, because counting it charges the account for a place it does not occupy —
+  the reported bug. One device's own rotations could evict another device.
+- Excluded from the eviction set, because the two halves have to read the same population or the cap
+  stops binding. A tombstone is *older* than the sign-ins beside it, so an unfiltered `DELETE`
+  answering a filtered `COUNT` spends its one allowance removing the tombstone and leaves every
+  sign-in in place.
+
+Unchanged: which live session is evicted when there genuinely are more than ten (still the oldest by
+`created_at`), the 15-minute JWT, the 90-day refresh expiry, and the rotation grace window.
+
+**The failing tests.** `holds the cap against sessions a rotation has spent` — ten live sign-ins plus
+two tombstones — first failed with
+
+```
+AssertionError: expected [ 'live-02', 'live-03', …(6) ] to deeply equal [ 'live-00', 'live-01', …(8) ]
+-   "live-00"
+-   "live-01"
+```
+
+i.e. two real devices evicted by two tombstones. `evicts the oldest live session when live sign-ins
+exceed the cap` passes against the original code and exists to catch the half-fix; with only the
+`COUNT` filtered it failed with `+ "live-00"` — eleven live rows surviving a cap of ten, because the
+delete had spent itself on the tombstone. The third test pins the under-cap no-op.
+
+### Item 2 — the transient-D1-exception-during-rotation 500: deliberately unchanged
+
+Reconsidered on its merits, as asked, and **kept**. The reasoning, so it is not re-opened:
+
+- **`user: null` is strictly worse, and the premise for preferring it does not hold.** `AuthProvider`
+  (`src/components/auth-provider.tsx:37`) does `setUser(res.ok ? … : null)` — it collapses 401 and
+  500 to the same signed-out state, as do `session-flow.ts:28,54` and `profile/page.tsx:136`. So
+  returning `user: null` does not *avoid* bouncing the user; it bounces them identically while
+  discarding the only signal that an infrastructure fault occurred. It buys nothing and costs the
+  exception.
+- **A typed result (503 "we couldn't check right now") is the right shape and cannot pay for itself
+  here.** It means changing `authenticateRequest`'s return type at 13 call sites in 12 route files,
+  *and* teaching `AuthProvider` and every page fetch to distinguish it — because nothing reads status
+  codes that finely today. Until the client distinguishes them, a 503 is a 500 with a nicer number.
+- **No session is lost either way**, which is the property that makes acceptance safe, and it is
+  already pinned: `leaves the original session usable when the replacement insert fails` / `… when
+  the rotation mark fails` / `… when the pre-rotation read fails` (`src/lib/auth.test.ts`) each
+  assert the throw propagates, the row survives with `rotated_at` still NULL, and
+  `injectedFailureCount(db) === 1`. B4's mandate was permanent session loss; it is gone.
+
+No code change and no new test — the three above already cover it.
+
+### Item 3 — `SELECT *` over `recommendations` on every results-page load
+
+`src/app/api/movie-sessions/[id]/route.ts:34` now names `round_number, ai_response`, the only two
+columns the response uses, and types the row `Pick<RecommendationRow, …>`. The row also carries
+`candidate_snapshot`, the whole ~200-title pool the round was chosen from, which nothing downstream
+reads. Identified in `dev/reports/2026-08-01-performance-audit.md`.
+
+**The failing test.** `reads only the round columns it serves`
+(`src/app/api/movie-sessions/[id]/route.test.ts`) records the executed SQL with
+`recordStatements` and asserts the column list. First failure:
+
+```
+AssertionError: expected [ '*' ] to deeply equal [ 'round_number', 'ai_response' ]
+```
+
+A behaviour test cannot fail here — the response body is identical either way — so the assertion is
+on the statement.
+
+**The deliberate copy stayed in step.** `src/lib/movie-sessions.test.ts:745` carries a copy of this
+query to prove the shape still resolves against `idx_recommendations_session_round`; it was updated
+with the same column list, and its comment now points at the route test as the thing that pins the
+columns (the copy pins the ordering and the index, and should not also try to pin the projection).
+
+### Item 4 — the `users.name` scrub collateral: analysis, no code change
+
+`dev/research/2026-08-01-name-scrub-collateral.md`. Recommendation: resolve member names at render
+time from a structured reference rather than rewriting stored prose at delete time, landed with the
+eval re-run that `PROMPT_VERSION = p1.1` already requires and while there are zero production rounds
+to back-fill. If deferred, accept it and say so — a stop-word heuristic trades a visible garbling bug
+for a silent privacy-promise failure for the users with the commonest names. Three corrections to the
+framing are recorded there: the 2-character floor is not what contains this, the brief's suggested
+"bound it to their own rounds" narrowing does not exist, and the accidental case (a user named Will
+or Grace) is likelier and costlier than the adversarial one.
+
+### Ownership note
+
+`src/app/api/auth/google/callback/route.ts` was on the do-not-touch list, which was written on the
+assumption that `MAX_SESSIONS` lived in `src/lib/auth.ts`. Item 1 is not implementable without it.
+Both sibling worktree branches were checked and carry a zero-line diff from `5d76a38`, so the
+collision risk was nil; the footprint there is one import and one call.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 866 passed
+/ 2 skipped (baseline 862), only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean.

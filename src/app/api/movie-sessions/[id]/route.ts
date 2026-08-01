@@ -31,10 +31,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return withAuthHeaders(NextResponse.json({ error: "Session not found" }, { status: 404 }), headers);
     }
 
+    // Named columns, not *: the row also carries candidate_snapshot, the whole
+    // pool the round was chosen from, which nothing below this reads.
     const latest = await db
-      .prepare("SELECT * FROM recommendations WHERE session_id = ? ORDER BY round_number DESC LIMIT 1")
+      .prepare(
+        "SELECT round_number, ai_response FROM recommendations WHERE session_id = ? ORDER BY round_number DESC LIMIT 1"
+      )
       .bind(id)
-      .first<RecommendationRow>();
+      .first<Pick<RecommendationRow, "round_number" | "ai_response">>();
 
     let response: MatchingResponse | null = null;
     if (latest) {

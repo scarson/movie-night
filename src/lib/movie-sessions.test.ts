@@ -738,10 +738,11 @@ describe("recommendation indexes", () => {
   });
 
   // This copies the results route's query rather than calling it (the route needs
-  // a full authenticated request, and src/app/api/movie-sessions/[id]/route.ts is
-  // another group's file). It therefore proves the *query shape* still resolves
-  // against the replaced index — not that the route does. If that route's query
-  // changes, this copy must change with it or it stops covering anything.
+  // a full authenticated request). It therefore proves the *query shape* still
+  // resolves against the replaced index — not that the route does. If that
+  // route's query changes, this copy must change with it or it stops covering
+  // anything; the column list is pinned by that route's own test, which asserts
+  // the recorded SQL selects round_number and ai_response and nothing else.
   it("the latest-round query shape still selects the highest round of that session", async () => {
     const db = createFakeD1(schemaWithIndexes());
     await seedUser(db, "u1", "Sam");
@@ -756,7 +757,9 @@ describe("recommendation indexes", () => {
     await seedRecommendation(db, otherSession, 9);
 
     const latest = await db
-      .prepare("SELECT * FROM recommendations WHERE session_id = ? ORDER BY round_number DESC LIMIT 1")
+      .prepare(
+        "SELECT round_number, ai_response FROM recommendations WHERE session_id = ? ORDER BY round_number DESC LIMIT 1"
+      )
       .bind(sessionId)
       .first<{ round_number: number }>();
     expect(latest?.round_number).toBe(3);
