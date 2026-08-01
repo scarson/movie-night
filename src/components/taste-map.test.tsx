@@ -111,7 +111,7 @@ describe("TasteMap", () => {
     render(<TasteMap tasteMap={TWO} showWeightingNote />);
 
     const note = screen.getByTestId("weighting-note");
-    expect(note.textContent).toMatch(/lean/i);
+    expect(note.textContent).toMatch(/you asked/i);
     // The rough-day toggle is private: the reason is never named, and no other
     // member is ever identified as the beneficiary.
     expect(note.textContent).not.toMatch(/rough day/i);
@@ -119,10 +119,23 @@ describe("TasteMap", () => {
     expect(note.textContent).not.toContain("Alice Chen");
   });
 
+  it("describes the viewer's own request and claims nothing about how the picks were weighted", () => {
+    // The engine cancels the weighting when every member toggled, so a claim
+    // about what the picks did is false in that case. Gating the note on
+    // whether weighting actually applied would be worse: the toggler knows
+    // their own flag, so the note's presence would read out their partner's.
+    // Describing the request is true either way and leaks nothing.
+    render(<TasteMap tasteMap={TWO} showWeightingNote />);
+
+    const note = screen.getByTestId("weighting-note");
+    expect(note.textContent).toMatch(/you asked us to put everyone else first/i);
+    expect(note.textContent).not.toMatch(/lean|picks|weight|prioriti[sz]/i);
+  });
+
   it("says nothing at all about weighting when the viewer set no flag", () => {
     const { container } = render(<TasteMap tasteMap={TWO} showWeightingNote={false} />);
     expect(screen.queryByTestId("weighting-note")).toBeNull();
-    expect(container.textContent).not.toMatch(/rough day|lean toward|weight/i);
+    expect(container.textContent).not.toMatch(/rough day|lean toward|weight|everyone else first/i);
   });
 
   it("renders AI-authored text as literal characters, never as markup", () => {
