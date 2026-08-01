@@ -2099,3 +2099,111 @@ it, and it timed out once against unmodified `dev`, so it was never that branch'
 between 12s and 24s on a machine hosting several concurrent suites. The assertion is deterministic;
 the budget is now set clear of the contended upper end rather than the quiet-machine time, per the
 project's standing rule to give heavy jsdom tests real headroom rather than trimming the assertion.
+## G1 — Auth: the rotation race and the interrupted rotation (B1, B4)
+
+**Branch:** `claude/rem-g1-auth`. **Merge classification:** `Review — auth code`. Depends on PREP.
+
+One change to `src/lib/auth.ts`, plus `migrations/0002_session_rotated_at.sql` and the pending-
+migrations list in `docs/deploy.md`. **Zero route files touched** — all 13 `authenticateRequest`
+call sites are byte-identical, and `user: null` still means exactly "unauthenticated".
+
+**What rotation did:** `DELETE FROM sessions WHERE token_hash = ? RETURNING …`, then a
+`SELECT email FROM users`, then an `INSERT` of the replacement. B1 was the loser of a concurrent
+claim getting `{user: null}` → 401 → landing-page redirect, deterministic for any client-side
+navigation into `/ritual` (three simultaneous authenticated fetches) past the 15-minute session-
+cookie window. B4 was a throw anywhere in that window destroying a 90-day session with no
+compensation, outside every route's `try`, wedging the user at 401 permanently.
+
+**What it does now:** read the row and the email in one `JOIN` before any write; claim with one
+`db.batch` of `INSERT … SELECT` + `UPDATE … SET rotated_at`, identical predicates, the INSERT's
+`meta.changes` as arbiter; the loser re-reads and, inside 30 s, authenticates with **no Set-Cookie**;
+the winner prunes its own user's out-of-grace spent rows outside the batch.
+
+**Decisions:**
+- **The loser never mints a token.** It cannot be handed the replacement — the plaintext exists only
+  in the winner's `Set-Cookie` — so retry is structurally impossible, not slow. Minting it a second
+  token would leave a `/ritual` fan-out holding three unreferenced 90-day refresh tokens.
+- **The grace window is decided from a re-read, never from the pre-claim read.** In the real race
+  the loser reads *before* the winner's `UPDATE`, so its `rotated_at` is `NULL`. Proven by mutation:
+  substituting the pre-claim value fails exactly one test, the seam test below, and nothing else.
+- **Both claim statements carry `expires_at`.** Dropping it from the mark reintroduces the wedge —
+  proven by mutation: the arbiter's consistency check throws.
+- **The prune is scoped to `user_id`** (rides `idx_sessions_user`, covers every row this request
+  could have made) and sits outside the batch in its own `try/catch`.
+- **The escaping exception is accepted, not fixed.** The batch removes the *state* loss, so a blip
+  is transient and a retry works; it still surfaces as a raw 500 because `authenticateRequest` runs
+  before each route's `try`. Catching it to clear cookies would sign users out on a blip.
+
+**Gotchas:**
+- **The plan's prescribed sequential loser test cannot distinguish the correct fix from the
+  `rotated_at`-reuse bug the plan itself boxes as "the highest-risk line in the task."** Called
+  twice in a row, the second call's own pre-claim read already sees `rotated_at` set. A test-local
+  `withWriteAfter` helper runs a competing rotation at one named seam — immediately after the code's
+  pre-mutation read — which is the only construction that separates them. It asserts `firedCount()`
+  for the same reason `injectedFailureCount` exists.
+- **`withWriteAfter` is a deterministic interleaving, not concurrency.** The fake D1 is synchronous
+  (testing-pitfalls §5). Nothing here proves two requests can reach the claim together; that stays a
+  review check.
+- **The prescribed grace-expiry test could not fail pre-fix** — the pre-fix code returned null for
+  every already-claimed token. It would also have passed with the spent row gone entirely, in which
+  case the window is never evaluated. It now asserts the spent row is present and marked first.
+- **Two existing rotation tests asserted `oldSession` is null.** The spent row deliberately survives
+  now; updated, not deleted. One of them used `expect(…).not.toBeNull()`, which a deleted row
+  satisfies as `undefined` — replaced with a `typeof` check.
+- **Rotation accumulates rows where it used to stay level.** The prune bounds it; both the prune and
+  the requirement that a failed prune not roll back the rotation are covered.
+- **`docs/deploy.md`'s `### Pending migrations` subsection already existed** — an earlier group
+  created it, though the plan assigns that to G1, so the "highest-consequence documentation edit in
+  the campaign" reduced to one bullet plus one command under a heading that was already right.
+- **The migration list needed reordering on rebase.** G4's `0003` landed mid-flight, and a plain
+  rebase left `0002` sitting below it. The list is explicitly numeric-order; fixed while resolving.
+- **No fallback on `meta.changes`.** `?? 0` reads an absent count as a loss — but the batch has
+  already committed by then, so the winner would skip `setAuthCookies` and the replacement's
+  plaintext, the only copy, would never reach the client, signing them out 30 s later. `D1Meta.changes`
+  is a required `number`; the type is the contract.
+
+**Boundary extension — logout, fixed on coordinator decision.** `src/app/api/auth/logout/route.ts`
+sits outside G1's declared file list (§1.1). It was reported rather than edited, and the coordinator
+ruled: fix it in this PR, because it is a regression this change introduces rather than pre-existing
+residue. Before G1 the `DELETE … RETURNING` removed the predecessor row the instant it was spent, so
+logout had nothing to miss; the grace window deliberately keeps that row alive, which means a
+logged-out user's *previous* refresh token stayed valid for up to 30 s after they clicked the button.
+Two independent readers found it, which is a signal about how obvious it looks later. Every other
+group has merged and nothing else is in flight, so there is no conflict risk.
+
+The fix deletes that user's spent rows alongside the presented one, in one batch. **The predicate is
+`user_id = ? AND rotated_at IS NOT NULL`, not all-rows-for-this-user**: spent rows are unusable
+outside their grace window, so removing them cannot disturb a session another device is actively
+holding, which a blanket delete would. Batched with the existing delete so a partial failure cannot
+report a clean logout while leaving a graced token behind. **Accepted edge, recorded at the call
+site:** another device inside its own grace window gets a 401 and re-authenticates — an explicit
+logout should invalidate aggressively.
+
+`src/app/api/auth/logout/route.test.ts` is new (the route had no tests). Four of its six cases fail
+against the branch as it stood before the fix. Three mutants, all killed by exactly one test each:
+un-batching the pair fails the atomicity case, dropping the `user_id` scope fails the other-user
+case, dropping `rotated_at IS NOT NULL` fails the other-device case.
+
+**Reported, not fixed (going to Sam as-is):**
+- **`MAX_SESSIONS = 10`** (`src/app/api/auth/google/callback/route.ts:15`) counts spent rows toward
+  the cap. Eviction is `ORDER BY created_at ASC`, so spent rows go first, and the prune is
+  user-scoped — any rotation on any device clears that user's out-of-grace rows. Bounded, no change.
+- **A one-millisecond boundary.** The read treats `expires_at === now` as unexpired while the claim
+  predicate `expires_at > ?` does not match it, so that exact millisecond yields a 401 with cookies
+  intact instead of a clean sign-out. Self-healing on the next request. `>` is what the plan pins.
+
+**Review rounds.** Three self-review rounds (correctness against the spec, adversarial/security,
+test quality by mutation) plus one independent fresh-agent round. The independent round found the
+`?? 0` fallback above, the logout residue below, the unasserted expiry bound inside the grace check
+(now covered and mutation-killed), two temporal comments, and that `withWriteAfter` implemented only
+`prepare`/`batch` so an unseamed `exec` would have failed as "not a function". It independently
+reproduced both mutation results and confirmed zero route diffs, no fake concurrency, no secret in
+any log or error, and no account-existence oracle.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files /
+832 passed / 2 skipped (baseline on `origin/dev`: 816), only the 3 pre-existing
+`vite:dynamic-import-vars` warnings, `npx @opennextjs/cloudflare build` clean. **12 of the file's 36
+tests fail when `src/lib/auth.ts` alone is reverted to `origin/dev`** — measured by running the
+suite that way, not reasoned about. A 5-mutant study over the fix kills all 5: the pre-claim
+`rotated_at`, the mark's dropped `expires_at`, the grace check's expiry bound, the prune's
+`try/catch`, and the prune itself.

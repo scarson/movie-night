@@ -14,10 +14,32 @@ export async function POST(request: NextRequest) {
   const refreshToken = request.cookies.get("mn-refresh")?.value;
   if (refreshToken) {
     const tokenHash = await sha256(refreshToken);
-    await db
-      .prepare("DELETE FROM sessions WHERE token_hash = ?")
+    const session = await db
+      .prepare("SELECT user_id FROM sessions WHERE token_hash = ?")
       .bind(tokenHash)
-      .run();
+      .first<{ user_id: string }>();
+
+    if (session) {
+      // Rotation leaves the token it spent authenticating for a grace window, so
+      // deleting only the presented one would let the credential the user just
+      // revoked keep working for the rest of that window. Both deletes share one
+      // batch — a transaction — so a partial failure cannot report a clean logout
+      // while leaving a graced token behind.
+      //
+      // Scoped to spent rows of this user: they are unusable outside their grace
+      // window, so removing them cannot disturb a session another device is
+      // actively holding, which deleting every row for the user would.
+      //
+      // Known edge, accepted: another device that just lost a rotation race and
+      // is inside its own grace window gets a 401 on its next request and
+      // re-authenticates. An explicit logout should invalidate aggressively.
+      await db.batch([
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash),
+        db
+          .prepare("DELETE FROM sessions WHERE user_id = ? AND rotated_at IS NOT NULL")
+          .bind(session.user_id),
+      ]);
+    }
   }
 
   clearAuthCookies(headers, isSecure);
