@@ -938,3 +938,42 @@ string, and the `bg-amber … hover:bg-warm-white` pair that catches a near-copy
 size), plus four assertions pinning the split. The four filter blocks across the outlined and
 primary guards now share one `callSitesSpelling(pattern)` helper rather than being copy-pasted
 a third and fourth time.
+
+---
+
+## Person-color contrast sweep — the taste-map colors closed out (2026-08-01)
+
+Branch `claude/a11y-verification`. **607 tests passing** (was 569).
+
+Closes the "spot-measured, not swept" item in `docs/accessibility.md` §Not yet verified. Test
+first: `src/components/person-color-contrast.test.tsx` enumerates every real (foreground,
+composited background) pair for `person-a`…`person-d` and `overlap`, each asserted at the
+threshold its role carries — 4.5:1 for the 12px tag labels, 20px member headings and 16px
+landing copy, 3:1 for the legend swatches and section rules.
+
+**Everything passes.** All five land on exactly one opaque backdrop, `midnight`, because every
+surface that uses them renders in a bare `<main>` with no panel between it and `body`: 5.59 /
+6.10 / 7.34 / 7.27 / 5.54. The one composited pair is the selected dealbreaker chip, whose
+`#ce7b8c20` fill flattens to `#271f27` — label 5.21:1, border 6.10:1 against the page.
+
+**`composite()` added to `src/test/contrast.ts`**, since the compositing trap from the
+2026-07-27 pass had no code behind it. Source-over flattening of `#rrggbbaa` over an opaque
+backdrop, with a test that reproduces the trap itself (amber against raw `amber-glow` measures
+<1.05:1; against the flattened panel, >3:1).
+
+**The sweep is only a sweep if the enumeration is complete**, so the test pins the files allowed
+to paint a person color to an allowlist (the slate-allowlist pattern from `control-contrast`),
+counting Tailwind utilities, `var(--token)` reads *and* raw hex — the chip fill is written
+`bg-[#ce7b8c20]`. A second guard asserts nothing outside `taste-map.tsx` imports `personColor` /
+`PERSON_COLORS`, which would otherwise paint these hues on an unmeasured surface without moving
+any count.
+
+**Two near-misses found, both pinned as constraints rather than fixed** (nothing violates them
+today): the rose chip on `charcoal` would be 4.45:1, and `overlap` on an `amber-glow` wash is
+4.49:1. Both are in DESIGN.md §Accessibility beside the `ember`/`slate` rules.
+
+**The amber-wash one was checked in a browser, not argued.** The landing hero paints an
+`amber-glow` ellipse anchored at the top edge; whether it reaches the person-colored vignette is
+a layout question jsdom cannot answer. Measured the real gradient box and span rects at 375px and
+1280px: the ellipse fades out at y≈263 / y≈235 while the colored spans start at y≈434 / y≈432, so
+the alpha under them is zero at both widths.

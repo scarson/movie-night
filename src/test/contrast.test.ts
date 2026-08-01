@@ -1,7 +1,7 @@
 // ABOUTME: Validates the WCAG contrast helper against reference pairs, then pins the
 // ABOUTME: palette facts the design system depends on so a token edit can't silently break AA.
 import { describe, it, expect } from "vitest";
-import { contrastRatio, TOKENS } from "@/test/contrast";
+import { composite, contrastRatio, TOKENS } from "@/test/contrast";
 
 describe("contrastRatio", () => {
   // Reference pairs from the WCAG 2.x relative-luminance definition. If these
@@ -23,6 +23,38 @@ describe("contrastRatio", () => {
 
   it("accepts shorthand hex", () => {
     expect(contrastRatio("#fff", "#000")).toBeCloseTo(21.0, 2);
+  });
+});
+
+describe("composite", () => {
+  it("returns an opaque color unchanged", () => {
+    expect(composite(TOKENS.amber, TOKENS.midnight)).toBe(TOKENS.amber);
+  });
+
+  it("flattens a fully transparent color to the backdrop", () => {
+    expect(composite("#ffffff00", TOKENS.midnight)).toBe(TOKENS.midnight);
+  });
+
+  it("flattens a fully opaque color to itself", () => {
+    expect(composite("#ffffffff", TOKENS.midnight)).toBe("#ffffff");
+  });
+
+  it("mixes half-alpha white over black to mid grey", () => {
+    // 0x80/255 = 0.502 → round(0.502 * 255) = 128.
+    expect(composite("#ffffff80", "#000000")).toBe("#808080");
+  });
+
+  it("expands shorthand alpha", () => {
+    expect(composite("#fff8", "#000")).toBe(composite("#ffffff88", "#000000"));
+  });
+
+  it("makes a translucent overlay comparable — the trap from the 2026-07-27 pass", () => {
+    // Comparing against the raw token is nonsense: amber against amber-glow
+    // measures ~1:1 because the alpha is ignored. Flatten first.
+    expect(contrastRatio(TOKENS.amber, TOKENS["amber-glow"])).toBeLessThan(1.05);
+    expect(
+      contrastRatio(TOKENS.amber, composite(TOKENS["amber-glow"], TOKENS.charcoal))
+    ).toBeGreaterThan(3);
   });
 });
 
