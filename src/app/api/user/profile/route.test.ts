@@ -1,5 +1,5 @@
 // ABOUTME: Tests for GET/PUT /api/user/profile — empty defaults, validation limits,
-// ABOUTME: and TMDB enrichment of unknown tmdb ids (with the >10-unknown-ids 400 contract).
+// ABOUTME: and TMDB enrichment of unknown tmdb ids (with the enrichment-ceiling 400 contract).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -273,7 +273,42 @@ describe("/api/user/profile", () => {
     expect(row?.last_refresh_attempt_at).toBe(row?.last_refreshed_at);
   });
 
-  it("PUT returns 400 with unknownIds when more than 10 ids are unknown, without fetching", async () => {
+  it("PUT enriches a whole list's worth of unknown ids in one save", async () => {
+    // Search merges TMDB hits into the local catalog, so a first save routinely
+    // carries titles the catalog has never seen. The enrichment ceiling has to
+    // clear a full list of them, or an ordinary editing pass dead-ends.
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    await seedUser(db, "u1", "Sam");
+
+    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+      const id = Number(String(input).match(/\/movie\/(\d+)/)![1]);
+      return new Response(JSON.stringify(tmdbDetail(id, `Movie ${id}`)), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    const unknown = Array.from({ length: 50 }, (_, i) => 9000 + i);
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      await authedPut(
+        "u1",
+        validBody({ comfortTitles: unknown.slice(0, 25), watchlist: unknown.slice(25) })
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchStub).toHaveBeenCalledTimes(50);
+
+    const { results } = await db
+      .prepare("SELECT tmdb_id FROM titles WHERE content_type = 'movie'")
+      .all<{ tmdb_id: number }>();
+    expect(results.map((r) => r.tmdb_id).sort((a, b) => a - b)).toEqual(unknown);
+
+    const row = await db.prepare("SELECT * FROM profiles WHERE user_id = 'u1'").first();
+    expect(row).not.toBeNull();
+  });
+
+  it("PUT names the enrichment ceiling in the error it returns above it", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
     await seedUser(db, "u1", "Sam");
@@ -281,12 +316,20 @@ describe("/api/user/profile", () => {
     const fetchStub = vi.fn();
     vi.stubGlobal("fetch", fetchStub);
 
+    const unknown = Array.from({ length: 51 }, (_, i) => 9000 + i);
     const { PUT } = await import("./route");
-    const unknown = Array.from({ length: 11 }, (_, i) => 9000 + i);
-    const response = await PUT(await authedPut("u1", validBody({ comfortTitles: unknown })));
+    const response = await PUT(
+      await authedPut(
+        "u1",
+        validBody({ comfortTitles: unknown.slice(0, 50), watchlist: unknown.slice(50) })
+      )
+    );
 
     expect(response.status).toBe(400);
     const body = await response.json<Record<string, unknown>>();
+    expect(body.error).toBe(
+      "A save can add at most 50 titles that aren't in our catalog yet — save some, then add the rest"
+    );
     expect(body.unknownIds).toEqual(unknown);
     expect(fetchStub).not.toHaveBeenCalled();
 
@@ -303,19 +346,26 @@ describe("/api/user/profile", () => {
     const fetchStub = vi.fn();
     vi.stubGlobal("fetch", fetchStub);
 
-    // Known and unknown ids interleaved, neither group ascending — an ascending
-    // fixture makes "the referenced order survived" look self-evidently true.
-    const referenced = [
-      9005, 300, 9001, 9009, 100, 9003, 9000, 9007, 500, 9002, 9008, 9004, 9006, 9010,
-    ];
+    // Unknown ids descend and the known ids sit between them — an ascending
+    // fixture makes "the referenced order survived" look self-evidently true,
+    // and D1 hands index-ordered results back ascending.
+    const descending = Array.from({ length: 97 }, (_, i) => 9096 - i);
+    const referenced = [...descending];
+    referenced.splice(77, 0, 500);
+    referenced.splice(40, 0, 100);
+    referenced.splice(5, 0, 300);
+
     const { PUT } = await import("./route");
-    const response = await PUT(await authedPut("u1", validBody({ comfortTitles: referenced })));
+    const response = await PUT(
+      await authedPut(
+        "u1",
+        validBody({ comfortTitles: referenced.slice(0, 50), watchlist: referenced.slice(50) })
+      )
+    );
 
     expect(response.status).toBe(400);
     const body = await response.json<Record<string, unknown>>();
-    expect(body.unknownIds).toEqual([
-      9005, 9001, 9009, 9003, 9000, 9007, 9002, 9008, 9004, 9006, 9010,
-    ]);
+    expect(body.unknownIds).toEqual(descending);
     expect(fetchStub).not.toHaveBeenCalled();
   });
 

@@ -11,7 +11,11 @@ import type { ProfileRow } from "@/types/db";
 const MAX_TITLE_LIST_ENTRIES = 50;
 const MAX_TAG_LIST_ENTRIES = 30;
 const MAX_TAG_CHARS = 30;
-const MAX_UNKNOWN_IDS_PER_PUT = 10;
+// Every referenced id absent from `titles` costs one TMDB detail fetch and one D1
+// write, taken sequentially inside the save the ritual's "Continue" blocks on. The
+// two title lists already bound the referenced set at 2 × MAX_TITLE_LIST_ENTRIES;
+// this holds the enrichment half of that to one list's worth.
+const MAX_UNKNOWN_IDS_PER_PUT = MAX_TITLE_LIST_ENTRIES;
 
 interface ProfileBody {
   comfortTitles: number[];
@@ -134,7 +138,10 @@ export async function PUT(request: NextRequest) {
     if (unknownIds.length > MAX_UNKNOWN_IDS_PER_PUT) {
       return withAuthHeaders(
         NextResponse.json(
-          { error: `More than ${MAX_UNKNOWN_IDS_PER_PUT} unknown titles in one save`, unknownIds },
+          {
+            error: `A save can add at most ${MAX_UNKNOWN_IDS_PER_PUT} titles that aren't in our catalog yet — save some, then add the rest`,
+            unknownIds,
+          },
           { status: 400 }
         ),
         headers
