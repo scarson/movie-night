@@ -1872,3 +1872,47 @@ which completed clean.
 
 Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` (59 files / 616 passed / 2 skipped — baseline
 615 plus the one new row-counting test), and the OpenNext build.
+
+### G4-1 — B6: the weekly refresh sweeps the whole catalog and never fakes freshness
+
+`migrations/0003_title_refresh_attempt.sql` adds `titles.last_refresh_attempt_at` and backfills it
+from `last_refreshed_at`. The cron now predicates on the attempt column and orders on the success
+column:
+
+```sql
+WHERE last_refresh_attempt_at IS NULL OR last_refresh_attempt_at < <now -7 days>
+ORDER BY last_refreshed_at ASC, popularity DESC
+```
+
+SQLite sorts NULLs first on `ASC`, so never-successfully-refreshed rows lead and popularity is the
+within-run tiebreaker. The success `UPDATE` stamps both columns; the per-title failure path queues
+an attempt-only `UPDATE` on a **separate** array with its own flush, so its changed rows can never
+reach `refreshed` — a run where all 200 fetches fail must report `refreshed: 0`, not 200.
+
+`last_refreshed_at` is never written on a failure. `asOfNote()` renders it on every pick's
+streaming line, so stamping it on a failed fetch would make the UI assert a freshness that never
+happened.
+
+**Honest reading of what the new tests prove.** Two of the six are guards rather than proofs: the
+400-title forward-progress test and the attempt-stamps-never-inflate-`refreshed` test both pass
+against the unfixed code, because with every fetch succeeding the old predicate also advances, and
+the old code wrote no attempt stamps at all. The starvation bug's live half is proved by the
+permanently-failing-title test, which fetched the same id twice before the fix and once after, and
+by the composite-ordering test. Mechanism B of the bug (cron jitter re-qualifying the popularity
+head) is not reproducible in the unit suite without clock control, and no test here claims to
+cover it.
+
+Two write-error branches are now covered with PREP-1's `withFailingStatement`: a failed refresh
+write (`UPDATE titles SET streaming …`) and a failed attempt stamp. The second counts the title in
+both `fetch_errors` and `write_errors` — they describe different failures of the same title, and
+swallowing the write failure would hide a D1 outage on the failure path entirely. I mutation-checked
+that branch (removing the counter increment fails the test) because the test was written after the
+code it covers.
+
+`docs/deploy.md` §2 gains the `### Pending migrations — not yet applied to the remote database`
+subsection with `0003` in it. The plan assigns creation of that subsection to G1 (which lands
+`0002` and merges first); G1 was not present in the tree when this landed, so G4 created it rather
+than append a migration line under a heading marked ✅ DONE where a deployer would skip it.
+
+Gates: `npx tsc --noEmit`, `npm run lint`, `npm test` — 59 files / 636 passed / 2 skipped, still
+exactly 2 skips, no new warnings.

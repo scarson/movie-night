@@ -50,6 +50,15 @@ three are Phase 2 tables, created empty by design.
 
 The ✅ above covers `0001` only. Apply these in numeric order:
 
+- [ ] `0003_title_refresh_attempt.sql` — adds `titles.last_refresh_attempt_at`
+      and backfills it from `last_refreshed_at`. The weekly refresh selects
+      candidates on this column; without it the cron's `SELECT` fails and no
+      title is ever refreshed again.
+
+```bash
+npx wrangler d1 execute movie-night-db --remote --file=migrations/0003_title_refresh_attempt.sql
+```
+
 - [ ] `0004_recommendation_indexes.sql`
 
 ```bash

@@ -1,5 +1,5 @@
 // ABOUTME: Weekly cron orchestrator that refreshes streaming availability, popularity,
-// ABOUTME: and vote counts for the most-popular stale titles from TMDB.
+// ABOUTME: and vote counts from TMDB for the titles refreshed least recently.
 import { detailToEnrichment, fetchMovieDetail } from "./tmdb";
 import { sqliteIsoNow } from "./db";
 
@@ -27,8 +27,8 @@ export async function runWeeklyRefresh(
   const stale = await db
     .prepare(
       `SELECT tmdb_id, content_type FROM titles
-       WHERE last_refreshed_at IS NULL OR last_refreshed_at < ${sqliteIsoNow("-7 days")}
-       ORDER BY popularity DESC
+       WHERE last_refresh_attempt_at IS NULL OR last_refresh_attempt_at < ${sqliteIsoNow("-7 days")}
+       ORDER BY last_refreshed_at ASC, popularity DESC
        LIMIT ${STALE_TITLES_LIMIT}`
     )
     .all<StaleTitleRow>();
@@ -38,6 +38,7 @@ export async function runWeeklyRefresh(
   let fetchErrors = 0;
   let writeErrors = 0;
   let pending: D1PreparedStatement[] = [];
+  let pendingAttempts: D1PreparedStatement[] = [];
 
   // Commit the queued chunk. Clear `pending` before awaiting so a failed batch
   // isn't re-submitted (and grown) on the next chunk boundary, count the rows
@@ -56,6 +57,20 @@ export async function runWeeklyRefresh(
     }
   };
 
+  // Commit the queued attempt stamps. These ride their own array so their
+  // changed rows never reach `refreshed`: a run where every fetch failed writes
+  // one attempt stamp per title and must still report zero refreshes.
+  const flushAttempts = async (): Promise<void> => {
+    if (pendingAttempts.length === 0) return;
+    const batch = pendingAttempts;
+    pendingAttempts = [];
+    try {
+      await db.batch(batch);
+    } catch {
+      writeErrors += batch.length;
+    }
+  };
+
   for (const row of stale.results) {
     try {
       const detail = await fetchMovieDetail(row.tmdb_id, env.TMDB_API_TOKEN, fetchImpl);
@@ -63,13 +78,14 @@ export async function runWeeklyRefresh(
       pending.push(
         db
           .prepare(
-            "UPDATE titles SET streaming = ?, popularity = ?, vote_count = ?, vote_average = ?, last_refreshed_at = ? WHERE tmdb_id = ? AND content_type = ?"
+            "UPDATE titles SET streaming = ?, popularity = ?, vote_count = ?, vote_average = ?, last_refreshed_at = ?, last_refresh_attempt_at = ? WHERE tmdb_id = ? AND content_type = ?"
           )
           .bind(
             JSON.stringify(enrichment.streaming),
             detail.popularity,
             detail.vote_count,
             detail.vote_average,
+            now,
             now,
             row.tmdb_id,
             row.content_type
@@ -81,10 +97,26 @@ export async function runWeeklyRefresh(
       }
     } catch {
       fetchErrors++;
+      // Record that the title was tried. Without this it keeps satisfying the
+      // staleness predicate and re-consumes a slot on every run, starving the
+      // tail of the catalog. last_refreshed_at stays untouched because
+      // asOfNote() renders it to the user.
+      pendingAttempts.push(
+        db
+          .prepare(
+            "UPDATE titles SET last_refresh_attempt_at = ? WHERE tmdb_id = ? AND content_type = ?"
+          )
+          .bind(now, row.tmdb_id, row.content_type)
+      );
+
+      if (pendingAttempts.length >= BATCH_CHUNK_SIZE) {
+        await flushAttempts();
+      }
     }
   }
 
   await flush();
+  await flushAttempts();
 
   log(
     JSON.stringify({
