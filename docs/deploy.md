@@ -173,11 +173,13 @@ npm run deploy    # opennextjs-cloudflare build && wrangler deploy
 CI (`.github/workflows/ci.yml`) runs type-check, lint, test, and build on pushes
 to `dev` and `main`; deployment is manual via this command.
 
-## Plan-tier check before the first cron run
+## Plan tier — ✅ Workers Paid
 
-**Workers Paid is a prerequisite for this application.** Confirm the account is
-on Workers Paid before deploying — this is a pre-deploy checklist line, not a
-tuning knob.
+**Workers Paid is a prerequisite for this application, and this account is on it**
+(confirmed by Sam, 2026-08-01). Nothing below is a blocker for our deployment;
+it is recorded so the requirement survives a change of account, a second
+environment, or anyone reading `STALE_TITLES_LIMIT` and wondering whether it is
+a tuning knob. It is not — leave it at 200.
 
 `wrangler.jsonc` registers a weekly cron (`0 9 * * 1`) that refreshes streaming
 availability for `STALE_TITLES_LIMIT` (200) titles per run.
@@ -200,6 +202,12 @@ render on the HTTP side. Lowering `STALE_TITLES_LIMIT` does not make the app
 viable on Free, and at 40/week a ~1,000-title catalog takes 25 weeks to sweep,
 so `asOfNote` would stamp most picks stale indefinitely. Leave it at 200 and
 deploy on Paid.
+
+The one figure worth re-checking rather than trusting: Workers Paid allowed only
+1,000 subrequests per invocation until 2026-02-11. Two independent reviews of
+this code reasoned from that stale number and reached opposite conclusions about
+`STALE_TITLES_LIMIT`. Read the limits from the Cloudflare docs before acting on
+them, as `CLAUDE.md` requires.
 
 ## Post-deploy verification
 
