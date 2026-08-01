@@ -61,6 +61,29 @@ function seedRateLimitAttempt(db: D1Database, scope: string, key: string, at: st
     .run();
 }
 
+/**
+ * Makes any statement whose SQL contains `match` throw when it runs, leaving
+ * every other statement working — the only way to reach a path that succeeds
+ * and then fails on a later write. bind() returns a NEW statement object, so
+ * the wrapper has to follow it or it is dropped before the statement ever runs.
+ */
+function withFailingStatement(db: D1Database, match: string): D1Database {
+  const wrapStatement = (stmt: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    if (!sql.includes(match)) return stmt;
+    return {
+      bind: (...values: unknown[]) => wrapStatement(stmt.bind(...values), sql),
+      run: async () => {
+        throw new Error("D1_ERROR: injected failure");
+      },
+      first: (colName?: string) => (colName === undefined ? stmt.first() : stmt.first(colName)),
+      all: () => stmt.all(),
+      raw: () => stmt.raw(),
+    } as unknown as D1PreparedStatement;
+  };
+
+  return { ...db, prepare: (sql: string) => wrapStatement(db.prepare(sql), sql) } as D1Database;
+}
+
 describe("createGroup", () => {
   it("creates a group with an 8-char invite code from the safe alphabet, adds the creator as a member, and returns the group", async () => {
     const db = createFakeD1(loadMigration());
@@ -306,6 +329,53 @@ describe("checkJoinRateLimit / logJoinAttempt", () => {
     }
 
     await expect(checkJoinRateLimit(db, "u1")).resolves.toBe(true);
+  });
+
+  it("logJoinAttempt prunes this key's rows from outside the window", async () => {
+    const db = createFakeD1(loadMigration());
+    const old = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    await seedRateLimitAttempt(db, "group_join", "k1", old);
+
+    await logJoinAttempt(db, "k1");
+
+    const { results } = await db
+      .prepare("SELECT at FROM rate_limit_log WHERE scope = 'group_join' AND key = ?")
+      .bind("k1")
+      .all<{ at: string }>();
+    expect(results).toHaveLength(1);
+    expect(results[0].at).not.toBe(old);
+  });
+
+  it("logJoinAttempt's prune leaves other scopes and other keys alone", async () => {
+    const db = createFakeD1(loadMigration());
+    const old = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    await seedRateLimitAttempt(db, "match", "k1", old);
+    await seedRateLimitAttempt(db, "group_join", "k2", old);
+
+    await logJoinAttempt(db, "k1");
+
+    // A future 'match' scope may use a different window; the prune must not
+    // reach outside the (scope, key) it was called for.
+    const survivors = await db
+      .prepare("SELECT COUNT(*) as count FROM rate_limit_log WHERE at = ?")
+      .bind(old)
+      .first<{ count: number }>();
+    expect(survivors?.count).toBe(2);
+  });
+
+  it("logJoinAttempt still records the attempt when the prune fails", async () => {
+    // The prune is housekeeping and is deliberately not batched with the
+    // INSERT: D1's batch() is a transaction, so a failed prune would roll back
+    // the rate-limit record while the caller goes on to join anyway.
+    const db = withFailingStatement(createFakeD1(loadMigration()), "DELETE FROM rate_limit_log");
+
+    await expect(logJoinAttempt(db, "k1")).resolves.toBeUndefined();
+
+    const { results } = await db
+      .prepare("SELECT * FROM rate_limit_log WHERE scope = 'group_join' AND key = ?")
+      .bind("k1")
+      .all();
+    expect(results).toHaveLength(1);
   });
 
   it("logJoinAttempt inserts a row that checkJoinRateLimit later counts", async () => {

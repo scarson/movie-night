@@ -208,4 +208,23 @@ export async function logJoinAttempt(db: D1Database, key: string): Promise<void>
     .prepare("INSERT INTO rate_limit_log (scope, key, at) VALUES (?, ?, ?)")
     .bind(JOIN_RATE_LIMIT_SCOPE, key, new Date().toISOString())
     .run();
+
+  // Housekeeping only, and deliberately NOT batched with the insert above: D1's
+  // batch() is a transaction, so a failed prune would roll back the rate-limit
+  // record while the caller proceeds to join anyway. Scoped to (scope, key) so
+  // it uses idx_rate_limit_scope_key and so a future 'match' scope with a
+  // different window is unaffected. Rows older than the window are already
+  // invisible to checkJoinRateLimit; this discards the only record of
+  // invite-code enumeration outside the window, which nothing reads today.
+  try {
+    await db
+      .prepare(
+        `DELETE FROM rate_limit_log
+         WHERE scope = ? AND key = ? AND at < ${sqliteIsoNow(JOIN_RATE_LIMIT_WINDOW)}`
+      )
+      .bind(JOIN_RATE_LIMIT_SCOPE, key)
+      .run();
+  } catch {
+    // A failed prune must never fail a rate-limit record.
+  }
 }
