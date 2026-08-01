@@ -1969,7 +1969,32 @@ internal and external subrequests share the single 10,000 limit. And `worker.ts`
 `waitUntil`, which the file no longer contains — it now reads as a prohibition against reaching for
 it, which is the durable form of that warning.
 
-**Surfaced, not fixed:** `src/app/api/user/profile/route.ts`'s enrichment insert is an
-`INSERT OR REPLACE`, so re-saving a profile that references a known title wipes any
-`last_refresh_attempt_at` the cron wrote — making the seeder/profile-route gap an ongoing condition
-rather than a one-time one. Both files belong to other groups; filed as follow-up.
+**Surfaced, not fixed:** neither `scripts/seed-lib.ts` nor the profile-save enrichment insert in
+`src/app/api/user/profile/route.ts` writes `last_refresh_attempt_at`, so a title they insert looks
+due for a refresh the moment it lands. The seeder is the one that matters: it is an
+`INSERT OR REPLACE` over the whole catalog, so a re-seed resets every attempt stamp the cron has
+written. The profile route only enriches ids its own existence check found missing, so it never
+replaces a live row. Both files belong to other groups' scope; filed as follow-up.
+
+### G4 — second review round
+
+A second independent review checked the first round's fixes and swept for what it missed. It
+confirmed `rewindOneWeek()` is sound (a uniform shift of both stored columns is order- and
+difference-preserving for a predicate and an ORDER BY that only compare stored values against
+`now`), reproduced the four-test kill on a reverted query, and re-ran each recorded gate number
+from its own commit. Three things came out of it:
+
+**The 7-day window was not tested.** Every fixture was either 2020 or an hour ago, so
+`sqliteIsoNow("-7 days")` could be changed to `-1 days` or `-30 days` with all tests still green —
+a wrong window would ship either 7× the TMDB spend or a catalog that never sweeps. There is now a
+boundary case with rows at 6 and 8 days; it fails under both of those mutations.
+
+**A false claim in this log, corrected above.** The profile route's `INSERT OR REPLACE` cannot
+overwrite a live `titles` row, because the ids it enriches are exactly the ones its own existence
+check did not find. The seeder is the writer that genuinely resets attempt stamps on every re-seed.
+
+**Residual edge, in spec but worth naming.** A permanently-failing title's attempt stamp ages out on
+the same 7-day cadence as everyone else's, so 200 or more permanently-failing titles would starve
+the sweep again — the same failure class as B6 at a higher threshold. The plan's contract ("a
+permanently-failing title consumes at most one slot per 7 days") is met; a catalog that ever
+approaches that threshold needs a different mechanism, such as backing off per consecutive failure.

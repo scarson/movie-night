@@ -7,6 +7,10 @@ import { runWeeklyRefresh } from "./cron-handler";
 const OLD_TIMESTAMP = "2020-01-01T00:00:00.000Z"; // > 7 days stale under any reasonable "now"
 const RECENT_TIMESTAMP = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago: fresh
 
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function fakeEnv(db: D1Database, overrides: Partial<CloudflareEnv> = {}): CloudflareEnv {
   return {
     DB: db,
@@ -130,9 +134,9 @@ describe("runWeeklyRefresh", () => {
       lastRefreshedAt: RECENT_TIMESTAMP,
       lastRefreshAttemptAt: RECENT_TIMESTAMP,
     });
-    // Attempted an hour ago and never successfully refreshed — the shape a
-    // title whose TMDB fetch keeps failing has after a run. It must wait its
-    // 7 days like everything else rather than re-consuming a slot.
+    // Attempted an hour ago and not successfully refreshed since 2020 — the
+    // shape a title whose TMDB fetch keeps failing has after a run. It must wait
+    // its 7 days like everything else rather than re-consuming a slot.
     await seedTitle(db, {
       tmdbId: 4,
       title: "Recently Attempted, Long Stale",
@@ -153,6 +157,35 @@ describe("runWeeklyRefresh", () => {
     expect(ids.sort((a, b) => a - b)).toEqual([1, 2]);
     expect(ids).not.toContain(3);
     expect(ids).not.toContain(4);
+  });
+
+  it("puts the staleness boundary at 7 days, not merely somewhere between an hour and years", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitle(db, {
+      tmdbId: 1,
+      title: "Attempted Six Days Ago",
+      popularity: 10,
+      lastRefreshedAt: daysAgo(6),
+      lastRefreshAttemptAt: daysAgo(6),
+    });
+    await seedTitle(db, {
+      tmdbId: 2,
+      title: "Attempted Eight Days Ago",
+      popularity: 20,
+      lastRefreshedAt: daysAgo(8),
+      lastRefreshAttemptAt: daysAgo(8),
+    });
+
+    const fetchStub = vi.fn((url: string | URL) => {
+      const id = Number(new URL(String(url)).pathname.split("/").pop());
+      return Promise.resolve(jsonResponse(detailFixture(id)));
+    });
+
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
+
+    // Fixtures years apart cannot tell a 7-day window from a 30-day one, and the
+    // window is what makes the sweep weekly.
+    expect(fetchedIds(fetchStub)).toEqual([2]);
   });
 
   it("orders refresh candidates by popularity DESC among titles of equal refresh recency", async () => {
@@ -187,7 +220,8 @@ describe("runWeeklyRefresh", () => {
 
     expect(fetchStub).toHaveBeenCalledTimes(200);
     // Which 200 survive the cap matters, not just how many: seedTitles gives
-    // every title popularity == its id and no refresh history, so the window is
+    // every title an identical long-past refresh history and popularity == its
+    // id, so last_refreshed_at ties and popularity DESC decides — the window is
     // the 200 most popular and the five least popular are the ones dropped.
     expect(fetchedIds(fetchStub)).toEqual(
       Array.from({ length: 200 }, (_, i) => 205 - i)
@@ -368,6 +402,9 @@ describe("runWeeklyRefresh", () => {
     expect(new Set([...firstRun, ...secondRun]).size).toBe(400);
   });
 
+  // A guard on the degenerate cadence, not a proof of the fix: with every fetch
+  // succeeding, a predicate on either timestamp column advances. The discriminating
+  // case is the week-elapsed sweep above.
   it("makes forward progress on a run that follows immediately, with no time elapsed", async () => {
     const db = createFakeD1(loadMigration());
     await seedTitles(db, 400);

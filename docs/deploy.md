@@ -54,17 +54,17 @@ bullet and one command line per new migration.
 
 - [ ] `0003_title_refresh_attempt.sql` — adds `titles.last_refresh_attempt_at`
       and backfills it from `last_refreshed_at`. The weekly refresh selects
-      candidates on this column; without it the cron's `SELECT` fails on every
-      run and no title is ever refreshed again.
+      candidates on this column; until it is applied the cron's `SELECT` fails
+      on every run and no title is refreshed.
 
 ```bash
 npx wrangler d1 execute movie-night-db --remote --file=migrations/0003_title_refresh_attempt.sql
 ```
 
-Verify afterwards:
+Verify afterwards — the two counts must match:
 
 ```bash
-npx wrangler d1 execute movie-night-db --remote --command="SELECT COUNT(*) AS backfilled FROM titles WHERE last_refresh_attempt_at IS NOT NULL"
+npx wrangler d1 execute movie-night-db --remote --command="SELECT COUNT(*) AS total, COUNT(last_refresh_attempt_at) AS backfilled FROM titles"
 ```
 
 - [ ] `0004_recommendation_indexes.sql`
@@ -179,8 +179,9 @@ availability for `STALE_TITLES_LIMIT` (200) titles per run.
 
 A 200-title run issues 200 external TMDB fetches — `fetchMovieDetail` folds
 keywords, credits and watch/providers into one request via `append_to_response`
-— plus 1 + `ceil(200/25)` = 9 internal D1 calls, which draw on the separate
-Cloudflare-services budget and never compete with the fetches.
+— plus 1 + `ceil(200/25)` = 9 internal D1 calls. On Free those 9 draw on the
+separate Cloudflare-services budget and never compete with the fetches; on Paid
+all 209 share the single 10,000 allowance, which is equally untroubled.
 
 Subrequests are therefore not the Free-plan blocker; **CPU is**. Parsing 200
 TMDB detail documents does not fit in 10 ms, and neither does an OpenNext SSR
