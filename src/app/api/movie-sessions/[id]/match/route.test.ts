@@ -276,7 +276,9 @@ describe("POST /api/movie-sessions/[id]/match", () => {
       steeringFeedback: "",
       candidateSnapshot: [27205, 155, 603],
     });
-    const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 603, 550])))]);
+    // 155 and 603 are excluded from the pool, so the model can only name the
+    // three titles that survive the removal filter.
+    const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 550, 680])))]);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     // 603 and 27205 both appeared in round 1's recommendations, so they are ids
@@ -444,6 +446,40 @@ describe("POST /api/movie-sessions/[id]/match", () => {
       .bind(sessionId)
       .all();
     expect(results).toHaveLength(0);
+  });
+
+  it("keeps removed titles out of the candidate pool the model is given", async () => {
+    const db = createFakeD1(loadMigration());
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setup(db);
+    await insertRecommendation(db, {
+      sessionId,
+      roundNumber: 1,
+      aiResponse: validResponse([27205, 155, 603]),
+      keptTmdbIds: [],
+      removedTmdbIds: [155],
+      steeringFeedback: "",
+      candidateSnapshot: [27205, 155, 603],
+    });
+    const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 550, 680])))]);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const response = await postMatch(sessionId, "u1", { removedTmdbIds: [603] });
+    logSpy.mockRestore();
+
+    expect(response.status).toBe(200);
+    const params = create.mock.calls[0][0] as { messages: Array<{ content: string }> };
+    const candidateBlock = params.messages[0].content.split("CANDIDATES (recommend only from this list):")[1];
+    expect(candidateBlock).not.toContain("155 | ");
+    expect(candidateBlock).not.toContain("603 | ");
+    expect(candidateBlock).toContain("27205 | ");
+    // The persisted snapshot is the same filtered pool, so parseMatchingResponse
+    // and any later audit agree on what the model was allowed to name.
+    const row = await db
+      .prepare("SELECT candidate_snapshot FROM recommendations WHERE session_id = ? AND round_number = 2")
+      .bind(sessionId)
+      .first<{ candidate_snapshot: string }>();
+    expect(JSON.parse(row!.candidate_snapshot).sort((a: number, b: number) => a - b)).toEqual([550, 680, 27205]);
   });
 
   describe("removed/kept id provenance", () => {

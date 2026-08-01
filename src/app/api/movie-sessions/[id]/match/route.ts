@@ -136,7 +136,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ...new Set([...(await getAccumulatedRemovedIds(db, id)), ...acceptedRemovedIds]),
     ];
 
-    const candidates = await selectCandidates(db, members, session.discoverNew);
+    const candidates = await selectCandidates(db, members, session.discoverNew, new Set(allRemovedIds));
     const titlesForNames = await getTitlesMap(
       db,
       [...new Set(members.flatMap((m) => [...m.comfortTitles, ...m.watchlist]))]

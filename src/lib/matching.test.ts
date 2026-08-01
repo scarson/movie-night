@@ -156,7 +156,7 @@ describe("selectCandidates", () => {
     await seedTitle(db, 2, "High", { popularity: 90 });
     await seedTitle(db, 3, "Mid", { popularity: 50 });
 
-    const result = await selectCandidates(db, [emptyProfile()], false);
+    const result = await selectCandidates(db, [emptyProfile()], false, new Set());
 
     expect(result.map((t) => t.tmdbId)).toEqual([2, 3, 1]);
     expect(result[0]).toEqual({
@@ -178,7 +178,7 @@ describe("selectCandidates", () => {
       { ...emptyProfile(), dealbreakers: ["Sci-Fi"] },
       { ...emptyProfile(), dealbreakers: ["Horror"] },
     ];
-    const result = await selectCandidates(db, profiles, false);
+    const result = await selectCandidates(db, profiles, false, new Set());
 
     expect(result.map((t) => t.tmdbId)).toEqual([2]);
   });
@@ -189,7 +189,7 @@ describe("selectCandidates", () => {
     await seedTitle(db, 2, "Cape Flick", { genres: ["Action", "Adventure"] });
 
     const profiles = [{ ...emptyProfile(), dealbreakers: ["True Crime", "Superhero", "Dark"] }];
-    const result = await selectCandidates(db, profiles, false);
+    const result = await selectCandidates(db, profiles, false, new Set());
 
     expect(result.map((t) => t.tmdbId).sort()).toEqual([1, 2]);
   });
@@ -210,7 +210,7 @@ describe("selectCandidates", () => {
     await seedTitle(db, 8, "Obscure Watchlist", { popularity: 0.2 });
 
     const profiles = [{ comfortTitles: [7], watchlist: [8], dealbreakers: [] }];
-    const result = await selectCandidates(db, profiles, false);
+    const result = await selectCandidates(db, profiles, false, new Set());
 
     const ids = result.map((t) => t.tmdbId);
     expect(ids).toContain(7);
@@ -240,7 +240,7 @@ describe("selectCandidates", () => {
     const profiles = [
       { comfortTitles: nicheIds.slice(0, 75), watchlist: nicheIds.slice(75), dealbreakers: [] },
     ];
-    const result = await selectCandidates(db, profiles, false);
+    const result = await selectCandidates(db, profiles, false, new Set());
 
     const resultIds = new Set(result.map((t) => t.tmdbId));
     expect(nicheIds.every((id) => resultIds.has(id))).toBe(true);
@@ -255,7 +255,7 @@ describe("selectCandidates", () => {
       { comfortTitles: [1], watchlist: [], dealbreakers: [] },
       { ...emptyProfile(), dealbreakers: ["Horror"] },
     ];
-    const result = await selectCandidates(db, profiles, false);
+    const result = await selectCandidates(db, profiles, false, new Set());
 
     expect(result.map((t) => t.tmdbId)).toEqual([2]);
   });
@@ -267,7 +267,7 @@ describe("selectCandidates", () => {
     await seedTitle(db, 3, "Fresh", { popularity: 70 });
 
     const profiles = [{ comfortTitles: [1], watchlist: [2], dealbreakers: [] }];
-    const result = await selectCandidates(db, profiles, true);
+    const result = await selectCandidates(db, profiles, true, new Set());
 
     expect(result.map((t) => t.tmdbId)).toEqual([3]);
   });
@@ -284,12 +284,51 @@ describe("selectCandidates", () => {
       `INSERT INTO titles (tmdb_id, content_type, title, year, genres, synopsis, popularity, created_at) VALUES ${rows.join(",")}`
     );
 
-    const result = await selectCandidates(db, [emptyProfile()], false);
+    const result = await selectCandidates(db, [emptyProfile()], false, new Set());
 
     expect(result).toHaveLength(200);
     // Cap keeps the MOST popular 200 (popularity = 1000 - id, so ids 1..200 survive).
     expect(result[0].tmdbId).toBe(1);
     expect(result[199].tmdbId).toBe(200);
+  });
+
+  it("excludes removed ids from the candidate pool", async () => {
+    const db = createFakeD1(loadMigration());
+    for (let i = 1; i <= 20; i++) await seedTitle(db, i, `Title ${i}`, { popularity: 100 - i });
+
+    const result = await selectCandidates(db, [emptyProfile()], false, new Set([3, 7, 11]));
+
+    const ids = result.map((t) => t.tmdbId);
+    expect(ids).not.toContain(3);
+    expect(ids).not.toContain(7);
+    expect(ids).not.toContain(11);
+    expect(ids).toHaveLength(17);
+  });
+
+  it("excludes a removed title even when it sits on a member's own watchlist", async () => {
+    // "Never return" has no exception for "but it's on your own list". The
+    // filter must run before the referenced/fill split, or a member-referenced
+    // title walks back in through the branch that exists to protect it.
+    const db = createFakeD1(loadMigration());
+    await seedTitle(db, 1, "Rejected Favourite", { popularity: 0.1 });
+    await seedTitle(db, 2, "Safe Pick", { popularity: 90 });
+
+    const profiles = [{ comfortTitles: [], watchlist: [1], dealbreakers: [] }];
+    const result = await selectCandidates(db, profiles, false, new Set([1]));
+
+    expect(result.map((t) => t.tmdbId)).toEqual([2]);
+  });
+
+  it("leaves the surviving titles in popularity order after filtering", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitle(db, 1, "Top", { popularity: 90 });
+    await seedTitle(db, 2, "Second", { popularity: 80 });
+    await seedTitle(db, 3, "Third", { popularity: 70 });
+    await seedTitle(db, 4, "Fourth", { popularity: 60 });
+
+    const result = await selectCandidates(db, [emptyProfile()], false, new Set([2]));
+
+    expect(result.map((t) => t.tmdbId)).toEqual([1, 3, 4]);
   });
 });
 

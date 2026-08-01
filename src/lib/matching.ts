@@ -74,13 +74,18 @@ const CANDIDATE_COLUMNS = "tmdb_id, title, year, genres, synopsis, popularity";
 
 /**
  * Deterministic candidate pool: top titles by popularity plus every title any
- * member references, minus SQL-filterable dealbreaker genres, minus (in
- * discovery mode) titles the members already know. Capped at 200.
+ * member references, minus SQL-filterable dealbreaker genres, minus ids the
+ * group removed this session, minus (in discovery mode) titles the members
+ * already know. Capped at 200.
+ *
+ * removedIds is required rather than defaulted: an optional parameter is how a
+ * future call site silently opts out of the never-return guarantee.
  */
 export async function selectCandidates(
   db: D1Database,
   profiles: CandidateProfile[],
-  discoverNew: boolean
+  discoverNew: boolean,
+  removedIds: Set<number>
 ): Promise<CandidateTitle[]> {
   const { results } = await db
     .prepare(
@@ -125,6 +130,10 @@ export async function selectCandidates(
     const genres = parseJsonColumn<string[]>(row.genres, []);
     return !genres.some((genre) => excludedGenres.has(genre));
   });
+
+  // "Never return" has no exception for "but it's on your own list": a title the
+  // group rejected this session must not re-enter the pool as a referenced title.
+  candidates = candidates.filter((row) => !removedIds.has(row.tmdb_id));
 
   if (discoverNew) {
     candidates = candidates.filter((row) => !referencedIds.has(row.tmdb_id));
