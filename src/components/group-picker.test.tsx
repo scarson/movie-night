@@ -8,6 +8,7 @@ import {
   defaultGroupSelection,
   type GroupOption,
 } from "@/components/group-picker";
+import { clippingUtilities } from "@/test/clipping";
 
 const alice = { userId: "u1", name: "Alice Chen", avatarUrl: null };
 const bob = { userId: "u2", name: "Bob Reyes", avatarUrl: null };
@@ -78,5 +79,49 @@ describe("GroupPicker", () => {
   it("groups the options under one accessible name so they read as one question", () => {
     render(<GroupPicker groups={[couple]} value="g1" onChange={vi.fn()} />);
     expect(screen.getByRole("radiogroup", { name: /who's watching/i })).toBeDefined();
+  });
+});
+
+describe("1.4.10 Reflow — the member list", () => {
+  const longNames: GroupOption = {
+    id: "g3",
+    name: "Sunday Nights",
+    members: [
+      { userId: "u1", name: "Alexandra Featherstonehaugh", avatarUrl: null },
+      { userId: "u2", name: "Jordan", avatarUrl: null },
+    ],
+  };
+
+  it("declares no clipping utility on the member list, so it wraps (structural guard)", () => {
+    // 1.4.10 Reflow. At 320px these names need ~43px more than the row gives
+    // them, so `truncate` drops the tail silently — no scrollbar, no title, and
+    // nothing a document-level `scrollWidth` sweep can see.
+    //
+    // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
+    // element, so this assertion is structural and CANNOT prove the visual fix.
+    // The geometric check — `scrollWidth <= clientWidth` on this element's own
+    // box at 320x800 — lives in the browser runbook at
+    // dev/reports/2026-08-01-authenticated-a11y-verification.md §Part 1.
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+
+    const line = screen.getByText("Alexandra Featherstonehaugh, Jordan");
+    // Denylist rather than just "not truncate", and it covers every clamp:
+    // unbounded wrapping is the requirement, and a line-clamp of any depth
+    // still discards whatever does not fit — the same loss of information
+    // 1.4.10 forbids, one line further down.
+    expect(clippingUtilities(line)).toEqual([]);
+    expect(line.className.split(/\s+/)).toContain("break-words");
+  });
+
+  it("keeps the full member list in the DOM", () => {
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+    expect(screen.getByText("Alexandra Featherstonehaugh, Jordan")).toBeDefined();
+  });
+
+  it("keeps the group name unclipped above it", () => {
+    // The name identifies the row being chosen, so it must stay whole — fixing
+    // the member line below it must not be paid for by clipping this.
+    render(<GroupPicker groups={[longNames]} value={null} onChange={vi.fn()} />);
+    expect(clippingUtilities(screen.getByText("Sunday Nights"))).toEqual([]);
   });
 });

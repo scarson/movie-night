@@ -1337,3 +1337,88 @@ measurement presented as this change's rather than the audit's, and three stale 
 statements no task owned. Gates pristine at every commit: `tsc` silent, `eslint` silent,
 **59 files / 627 passed / 2 skipped** (615 baseline + 12), the three documented
 `vite:dynamic-import-vars` warnings and nothing else, plus `@opennextjs/cloudflare build`.
+## 2026-08-01 — G5: picker limits, the mood back-edge, and the two open AA failures
+
+Branch `claude/rem-g5-ui`, four tasks from §8 of the remediation plan. Rebased onto `dev` after G7
+landed, so the baseline is G7's **627 passed / 2 skipped** → **676 passed / 2 skipped**, +49 tests
+across 60 files. `npx tsc --noEmit`, `npm run lint`, `npm test` and `npx opennextjs-cloudflare
+build` all clean.
+
+**B10 — the pickers now enforce the counts the server enforces.** `TagPicker` and `TitleSearch`
+capped tag *length* but never entry *count*, so the reported path — select all 30 presets (16 mood
++ 14 genre, exactly `MAX_TAG_LIST_ENTRIES`), then add one custom tag — built a 31-entry payload and
+took a hard 400. Both take a `max` prop and refuse the tap with an `aria-live` explanation, copying
+`/quick`'s 3-tag pattern rather than inventing one; deselecting always works and clears it. The
+five render sites pass the endpoint's own ceiling explicitly — a shared `src/config/limits.ts`
+would have been imported by four groups' files and turned a two-component change into a cross-group
+refactor.
+
+**B11 — the mood back-edge starts a fresh session.** The plan's stated test ("assert `startSession`
+was called twice") **passes against the unfixed code**, because `submit()` already calls
+`startSession` unconditionally. The bug needs a sharper probe. The reachable defect is that
+`sessionId` survives the back-edge, so when the *resubmit's* session create fails, "Try again"
+falls back on the first session and re-runs the mood the user just abandoned — `mood_vibes` /
+`mood_text` / `discover_new` are written once at creation and never updated. That is the test that
+was written, and it fails on unfixed code with `POST /api/movie-sessions/s1/match`. Orphaned
+zero-round rows are accepted debris, documented at both handlers; no cleanup was built.
+
+**WCAG 1.4.10 — both open AA failures closed, and verified in a browser.** `docs/accessibility.md`
+goes **2 → 0**. The invite link takes `break-all` (matching `groups/join/[code]`'s treatment of the
+raw code); the member list takes unbounded `break-words` rather than the `line-clamp-2` the report
+suggested first — a clamp still discards what does not fit, which is the same information loss
+under a different mechanism. Re-measured per element on a signed-in `wrangler dev` build via the
+Part 1 runbook: invite link 236/315 → 236/236 at 320px, 291/291 at 375px; member list 43px lost →
+190/190 at 320px, 233/233 at 375px. Also checked against a production-length origin and an
+80-character one (0 clipped, three lines), a four-long-name group (0 clipped, four lines, row
+140px against the 44px minimum), and a 55-character unbreakable token — that last one is why
+`break-words` and not bare wrapping, which would have overflowed the box.
+
+**The methodological point is the durable part.** Three prior reflow passes reported these routes
+clean because they compared the *document's* `scrollWidth` to its `clientWidth`. `truncate` clips
+with no scrollbar and no document overflow, so that check cannot see it; the sweep has to walk
+every node for `text-overflow: ellipsis` with `scrollWidth > clientWidth`. And **jsdom cannot prove
+either fix** — no layout engine, so `scrollWidth` and `clientWidth` read 0 for every element. The
+unit guards are className assertions and say so in a comment pointing at the runbook. Anyone
+tempted to "strengthen" them into geometric assertions will get a test that passes on anything.
+
+**Which of the new tests actually discriminate was answered empirically, not asserted.** A throwaway
+copy of the tree, each production hunk reverted in turn, suite re-run, copy destroyed. That is what
+caught the three findings worth the most here. **The plan's own mandated B11 test is a no-op** —
+"assert `startSession` was called twice" holds either way, because `submit()` calls it
+unconditionally; the discriminating probe is a *failed* create after the back-edge, which falls back
+on the abandoned session. **The 1.4.10 guards were a one-word denylist** — re-clipping the invite
+link as `overflow-hidden text-ellipsis whitespace-nowrap`, or the member list as `line-clamp-1`
+(excluded `line-clamp-2` but not the strictly worse `line-clamp-1`), left the suite green; the check
+now goes through `src/test/clipping.ts` and both spellings fail. **And reverting
+`profile-editor.tsx` and `mood-screen.tsx` entirely also left it green** — five of the six render
+sites the plan named were untested. Ceiling tests now exercise them through the composed
+components, which catches a picker wired to the wrong list's ceiling and the value drifting from
+the endpoint's; **it does not pin the prop, and cannot.** Every explicit `max` equals the
+component's own default, so deleting all five changes no behaviour and fails nothing. The only
+fix that would pin them is making `max` required, and §8 G5-1 specifies `max?: number` with a
+default — so the limit is recorded here and in the tests' comments rather than designed around.
+Tests that hold on both sides of a fix are labelled as such where they exist, so the suite does
+not overstate itself.
+
+**That finding arrived the hard way.** The review that produced it reverted those two files inside
+the worktree rather than a copy and left the reversion staged; the next commit swept it up, and
+the suite stayed green through all of it — which is precisely the claim being made, demonstrated
+by accident. Restored in a named commit. The lesson is `git status` before every `git add`, even
+when the command names explicit paths, because the index can hold work that is not yours.
+
+**Review rounds.** Four, three by fresh agents with no conversation history. Findings acted on: the
+a11y record's "zero remaining ellipsis-clipped elements" claim covered only the two routes actually
+swept, while `/ritual` still carries a `truncate` the same section says to leave alone — a future
+sweep trusting it would read a real clip as a regression; two table cells implied measurements that
+were not taken; and four test comments narrated the defect in the past tense against CLAUDE.md's
+rule on temporal comments. Cleared as false alarms: `text-ember` on the new live regions is painted
+on `midnight` (4.70:1) at every render site, not `charcoal` (4.12:1) — traced to `body` rather than
+assumed from the class list; and `break-all` / `break-words` were confirmed to emit under the
+installed Tailwind 4.3.3 rather than taken from memory.
+
+**Found in passing, out of scope, flagged not fixed.** `PUT /api/user/profile` carries a *second*
+cap the client still cannot see: `MAX_UNKNOWN_IDS_PER_PUT = 10` (`route.ts:14`, `:128`), counted
+over the deduped union of both title lists against the local catalog. Since the search endpoint
+merges TMDB results, adding 11 catalog-new titles in one pass is an ordinary thing to do and takes
+the same unactionable 400 that B10 exists to prevent. Different axis (per-save, cross-list,
+catalog-relative), so `max` does not touch it. B10's discipline is not fully satisfied until it is.

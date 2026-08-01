@@ -18,7 +18,13 @@ import Quick from "@/app/quick/page";
 const ALICE = { userId: "u1", email: "alice@example.com", name: "Alice Chen", avatarUrl: null };
 const BOB = { userId: "u2", name: "Bob Reyes", avatarUrl: null };
 
-function stubApi(overrides: { match?: { status: number; body: unknown } } = {}) {
+interface StubOptions {
+  session?: { status: number; body: unknown };
+  match?: { status: number; body: unknown };
+}
+
+/** Reads `overrides` at request time, so a test may flip a route mid-flow. */
+function stubApi(overrides: StubOptions = {}) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -36,7 +42,8 @@ function stubApi(overrides: { match?: { status: number; body: unknown } } = {}) 
         );
       }
       if (url === "/api/movie-sessions") {
-        return new Response(JSON.stringify({ sessionId: "s1" }), { status: 200 });
+        const c = overrides.session ?? { status: 200, body: { sessionId: "s1" } };
+        return new Response(JSON.stringify(c.body), { status: c.status });
       }
       if (url.endsWith("/match")) {
         const m = overrides.match ?? { status: 200, body: { round: 1 } };
@@ -260,6 +267,93 @@ describe("quick match", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("refinement limit");
     expect(push).not.toHaveBeenCalled();
+  });
+
+  // Holds on both sides of the sessionId fix, because submit() calls
+  // startSession unconditionally. What it guards is the forbidden alternative:
+  // making submit() reuse a non-null sessionId, which would match the abandoned
+  // brief. The test that discriminates the shipped fix is the one below it.
+  it("changing the vibe and resubmitting starts exactly one new session", async () => {
+    const calls = stubApi({
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cozy" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /change the vibe/i }));
+
+    // A different vibe: the second session must carry this one, not the first.
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Cozy" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Thrilling" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(4));
+    const sessionPosts = calls.filter((c) => c.url === "/api/movie-sessions");
+    expect(sessionPosts).toHaveLength(2);
+    expect(sessionPosts[0].body).toMatchObject({ moodVibes: ["Cozy"] });
+    expect(sessionPosts[1].body).toMatchObject({ moodVibes: ["Thrilling"] });
+  });
+
+  it("after changing the vibe, a failed session create leaves nothing to retry the old vibe against", async () => {
+    // The discriminating case for the back-edge. If the session id survives
+    // "Change the vibe", the resubmit's create failure falls back on the first
+    // session, and "Try again" re-runs the vibe the user just abandoned —
+    // behind a button whose label promises the opposite.
+    const options: StubOptions = {
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    };
+    const calls = stubApi(options);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cozy" }));
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /change the vibe/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Cozy" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Thrilling" }));
+
+    options.session = { status: 500, body: { error: "Couldn't start that." } };
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    await waitFor(() => expect(calls).toHaveLength(4));
+
+    // Retrying must attempt a fresh session, never re-match the abandoned one.
+    expect(calls[3].url).toBe("/api/movie-sessions");
+    expect(calls[3].body).toMatchObject({ moodVibes: ["Thrilling"] });
+    expect(calls.filter((c) => c.url === "/api/movie-sessions/s1/match")).toHaveLength(1);
+  });
+
+  it("'Try again' still reuses the existing session", async () => {
+    const calls = stubApi({
+      match: { status: 503, body: { error: "The projectionist is having a nap.", kind: "timeout" } },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(3));
+    expect(calls[2].url).toBe("/api/movie-sessions/s1/match");
+    expect(calls.filter((c) => c.url === "/api/movie-sessions")).toHaveLength(1);
   });
 
   it("sends the signed-out visitor home", async () => {

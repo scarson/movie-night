@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MoodScreen, type MoodScreenProps } from "@/components/mood-screen";
+import { MOOD_TAGS, GENRE_TAGS } from "@/config/tags";
 
 function baseProps(overrides: Partial<MoodScreenProps> = {}): MoodScreenProps {
   return {
@@ -101,5 +102,27 @@ describe("MoodScreen", () => {
   it("tells you the picks are unweighted when no mood is chosen", () => {
     render(<MoodScreen {...baseProps({ moodVibes: [] })} />);
     expect(screen.getByText(/surprise us/i)).toBeTruthy();
+  });
+});
+
+describe("MoodScreen vibe ceiling", () => {
+  // The 30-entry cap belongs to POST /api/movie-sessions. This proves the
+  // ceiling is reachable through the composed screen and that the number it
+  // enforces is the server's. It cannot prove the `max` prop is passed —
+  // TagPicker defaults to 30 too, so dropping the prop changes no behaviour.
+  // Pinning that would mean making `max` required, which the plan chose not to
+  // do (§8 G5-1 specifies `max?: number` with a default).
+  const ALL_PRESETS = [...MOOD_TAGS, ...GENRE_TAGS];
+
+  it("refuses a 31st vibe, the ceiling the session endpoint enforces", () => {
+    const onMoodVibesChange = vi.fn();
+    const atCap = [...ALL_PRESETS.slice(0, 29), "rainy sunday"];
+    render(<MoodScreen {...baseProps({ moodVibes: atCap, onMoodVibesChange })} />);
+
+    const vibes = screen.getByRole("group", { name: /tonight/i });
+    fireEvent.click(within(vibes).getByRole("checkbox", { name: ALL_PRESETS[29] }));
+
+    expect(onMoodVibesChange).not.toHaveBeenCalled();
+    expect(within(vibes).getByText("30 is the limit — remove one first.")).toBeTruthy();
   });
 });

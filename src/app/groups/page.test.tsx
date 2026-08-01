@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AuthProvider } from "@/components/auth-provider";
+import { clippingUtilities } from "@/test/clipping";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -116,6 +117,32 @@ describe("Groups page", () => {
     expect(
       screen.getByText(`${window.location.origin}/groups/join/aB23cdEF`)
     ).toBeDefined();
+  });
+
+  it("declares no clipping utility on the invite link, so it wraps (structural guard)", async () => {
+    // 1.4.10 Reflow. At 320px this element's box is 236px and the URL needs
+    // 315px, so `truncate` costs ~25% of it — silently, with no scrollbar and
+    // no title, which is invisible to a document-level `scrollWidth` check.
+    // The link must wrap instead; `copyInvite`'s clipboard-failure fallback
+    // depends on the whole link being readable and selectable by hand.
+    //
+    // jsdom has no layout engine: scrollWidth and clientWidth read 0 for every
+    // element, so this assertion is structural and CANNOT prove the visual fix.
+    // The geometric check — `scrollWidth <= clientWidth` on this element's own
+    // box at 320x800 — lives in the browser runbook at
+    // dev/reports/2026-08-01-authenticated-a11y-verification.md §Part 1.
+    stubApi({ groups: [SUNDAY] });
+    renderGroups();
+
+    const link = await screen.findByText(
+      `${window.location.origin}/groups/join/aB23cdEF`
+    );
+    // Denylist, not just "not truncate": the same clipping re-enters just as
+    // easily spelled `overflow-hidden text-ellipsis whitespace-nowrap`.
+    expect(clippingUtilities(link)).toEqual([]);
+    // A URL has no spaces, so it needs break-all — plain wrapping has nowhere
+    // to break and would overflow the box instead.
+    expect(link.className.split(/\s+/)).toContain("break-all");
   });
 
   it("copies the invite link built from the current origin", async () => {

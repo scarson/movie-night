@@ -9,12 +9,16 @@ import { compactOutlinedButtonClasses } from "@/components/control-classes";
 
 const MAX_TAG_LENGTH = 30;
 const PRESETS: readonly string[] = [...MOOD_TAGS, ...GENRE_TAGS];
+/** Matches the server's per-list ceiling, and the 16 mood + 14 genre presets. */
+const MAX_TAGS = 30;
 
 export interface TagPickerProps {
   selected: string[];
   onChange: (tags: string[]) => void;
   tone?: "amber" | "rose";
   customPlaceholder?: string;
+  /** How many entries the receiving endpoint accepts. */
+  max?: number;
 }
 
 export function TagPicker({
@@ -22,16 +26,26 @@ export function TagPicker({
   onChange,
   tone = "amber",
   customPlaceholder = "Add your own…",
+  max = MAX_TAGS,
 }: TagPickerProps) {
   const [input, setInput] = useState("");
+  const [limitHit, setLimitHit] = useState(false);
   const labelId = useId();
 
+  const atLimit = selected.length >= max;
+
   const toggle = (tag: string) => {
-    onChange(
-      selected.includes(tag)
-        ? selected.filter((t) => t !== tag)
-        : [...selected, tag]
-    );
+    if (selected.includes(tag)) {
+      onChange(selected.filter((t) => t !== tag));
+      setLimitHit(false);
+      return;
+    }
+    // A tap that does nothing and says nothing reads as a broken control.
+    if (atLimit) {
+      setLimitHit(true);
+      return;
+    }
+    onChange([...selected, tag]);
   };
 
   const addCustomTag = () => {
@@ -39,6 +53,10 @@ export function TagPicker({
     if (trimmed.length === 0 || trimmed.length > MAX_TAG_LENGTH) return;
     const lowered = trimmed.toLowerCase();
     if (selected.some((t) => t.toLowerCase() === lowered)) return;
+    if (atLimit) {
+      setLimitHit(true);
+      return;
+    }
     // A custom entry that names a preset (any casing) is that preset — add it in
     // canonical casing so it toggles the preset chip, not a decoupled duplicate.
     const preset = PRESETS.find((p) => p.toLowerCase() === lowered);
@@ -76,6 +94,19 @@ export function TagPicker({
           </div>
         </div>
       ))}
+
+      {/* One live region for the whole picker, between the preset chips and the
+          custom input, so a refusal from either control is in view. */}
+      <p
+        aria-live="polite"
+        className={`text-sm tabular-nums ${limitHit ? "text-ember" : "text-ash"}`}
+      >
+        {limitHit
+          ? `${max} is the limit — remove one first.`
+          : selected.length > 0
+            ? `${selected.length} of ${max} chosen`
+            : ""}
+      </p>
 
       <div>
         <div className="flex gap-sm">

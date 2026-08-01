@@ -8,7 +8,7 @@ This doc is the audit state and the remediation queue. `DESIGN.md` holds the des
 
 | | Count | |
 |---|---|---|
-| ❌ Open — must fix for AA | 2 | 1.4.10 content clipped at 320px on `/groups` and `/tonight`; see Not yet verified. The 1.4.11 / 2.4.2 / 2.4.1 queue was closed on 2026-07-27 |
+| ❌ Open — must fix for AA | 0 | the 1.4.10 clipping on `/groups` and `/tonight` was closed on 2026-08-01; the 1.4.11 / 2.4.2 / 2.4.1 queue was closed on 2026-07-27 |
 | ✅ Verified passing | see below | measured or exercised, not assumed |
 | ➖ Not applicable | 3 | no drag, no help mechanism, no cognitive-function auth test |
 | ❓ Not yet audited | — | full AT/screen-reader pass; see Not yet verified |
@@ -88,6 +88,46 @@ A `SkipLink` is the first focusable element in `<body>` — `sr-only` until focu
 
 ---
 
+## Remediation closed on 2026-08-01
+
+### 1.4.10 Reflow — two content truncations at 320px ✅
+
+Both were `truncate` (`overflow:hidden; text-overflow:ellipsis; white-space:nowrap`) on an
+element with no `title` and no scrollable overflow: content legible at 1280px, silently
+gone at 320px. Both now wrap. Re-measured on the signed-in local build from the Part 1
+runbook, as `element.scrollWidth` vs `element.clientWidth` on the element's own box:
+
+| Element | 320px before | 320px after | 375px after | 1280px after |
+|---|---|---|---|---|
+| `/groups` invite link | 236 / 315 — **79px lost** | 236 / 236 — 0 | 291 / 291 — 0 | 500 / 500 — 0 |
+| `/tonight` member list | **43px lost** (the 2026-08-01 report records the delta only, not the pair) | 190 / 190 — 0 | 233 / 233 — 0 | not re-measured — it was never clipped at this width |
+
+- **The invite link takes `break-all`,** matching what `groups/join/[code]` already does with
+  the raw code. A URL has no spaces, so ordinary wrapping has nowhere to break. Checked
+  against a production-length origin (`https://movienight.scarson.io/...`, 0 clipped, two
+  lines) and an 80-character one (0 clipped, three lines) — the local 21-character origin
+  the original measurement used is the *easy* case, not the representative one.
+- **The member list takes unbounded `break-words`, not `line-clamp-2`.** A clamp still
+  discards whatever exceeds two lines, which is the same loss of information under a
+  different mechanism. Measured with four long names: four lines, 0 clipped, row 140px.
+  `break-words` rather than bare wrapping because a single unbreakable 55-character token
+  otherwise overflows its box — verified it does not (0 clipped, document still 320).
+- Neither change costs a touch target: the picker row measures 100px against the 44px
+  minimum, and the `flex-col … sm:flex-row` invite row drops the Copy button below the link
+  on mobile and keeps it alongside from `sm:` up, which is the intended responsive behaviour.
+- Page-wide on `/groups` and `/tonight` after both, at 320px and 375px: zero overflowing
+  elements and zero ellipsis-clipped elements. That sweep covers those two routes only —
+  `/ritual` still carries one `truncate`, on the current-step label, which is the marginal
+  item listed below and is deliberately left in place.
+
+**The methodological lesson is the durable part.** Three prior reflow passes reported these
+routes clean because they compared the *document's* `scrollWidth` to its `clientWidth`.
+`truncate` produces no scrollbar and no document overflow, so that check cannot see it. The
+sweep that found them walks every node looking for `text-overflow: ellipsis` with
+`scrollWidth > clientWidth`, and that is what a reflow pass has to do.
+
+---
+
 ## ✅ Verified passing
 
 Measured or exercised during Phases 6–8, not assumed:
@@ -96,6 +136,10 @@ Measured or exercised during Phases 6–8, not assumed:
 - **1.4.11 Non-text Contrast — focus indicator** — the global focus ring is amber (9.04:1 on midnight, 7.92:1 on charcoal), far above 3:1. Verified in-browser with real Tab traversal, measured as `rgb(232,168,73)`.
 - **1.4.11 Non-text Contrast — control boundaries** — remediated 2026-07-27, see above. Every interactive resting boundary measured ≥3:1 in-browser against its actual painted backdrop.
 - **1.4.3 / 1.4.11 — the taste-map person colors** — swept on 2026-08-01 across every surface they actually land on, replacing the earlier spot measurement. All five (`person-a` `#6b8cce`, `person-b` `#ce7b8c`, `person-c` `#6fae9f`, `person-d` `#b3a06a`, `overlap` `#9b7ec8`) are painted on one opaque backdrop — `midnight`, the body background — because every use of them (the results-page taste map, the landing vignette, the dealbreaker chips on `/profile` and `/ritual`) renders inside a bare `<main>` with no panel, card or wash between it and `body`. On midnight they measure **5.59 / 6.10 / 7.34 / 7.27 / 5.54**, against 4.5:1 for the 12px tag labels, the 20px member headings and the 16px vignette copy, and 3:1 for the legend swatches and section rules. The one composited surface is the selected dealbreaker chip's own `#ce7b8c20` fill, flattened over midnight to `#271f27`: its 14px `person-b` label reads **5.21:1** there and its border **6.10:1** against the page. Two placement-dependent constraints came out of the sweep and are recorded in DESIGN.md §Accessibility — the rose chip must stay off `charcoal` (**4.45:1**), and person-color text must stay out of an amber-glow wash (`overlap` over `amber-glow`-on-midnight is **4.49:1**). The landing hero's starfield is the only such wash near person-colored text; measured in-browser at 375px and 1280px, its ellipse fades out at y≈263px and y≈235px while the vignette's colored spans begin at y≈434px and y≈432px, so the alpha under them is zero at both widths.
+- **1.4.10 Reflow** — 320 CSS px (the 400%-zoom equivalent against a 1280px reference) has been measured on every route, signed-out (2026-08-01, `dev/reports/2026-08-01-reflow-400pct.md`) and signed-in (2026-08-01, `dev/reports/2026-08-01-authenticated-a11y-verification.md`). Every route reports `scrollWidth === clientWidth === 320` with **zero** overflowing elements and **zero** horizontally-scrollable subregions, measured by walking every node under `body` with `getBoundingClientRect()`. The three surfaces flagged as highest risk are clean: the 30-chip mood/genre grid wraps to 2–3 per row with its rightmost edge at 292.5px (unchanged when chips are selected, despite the heavier font weight); the results tablist fits one row; the taste map has no SVG or canvas, so 1.4.10's 2-D-layout exception never applies anywhere in the app. The two truncations that held this open were closed on 2026-08-01 — see §Remediation closed on 2026-08-01 for the before/after geometry and the methodological lesson.
+  - **The measurement that matters is per-element, not per-document.** Both truncations were produced by Tailwind's `truncate`, which clips with no scrollbar and no document overflow, so three passes comparing `document.scrollingElement.scrollWidth` against its `clientWidth` walked straight past them. Sweep for `text-overflow: ellipsis` descendants whose own `scrollWidth > clientWidth`.
+  - **jsdom cannot check any of this** — it has no layout, so `scrollWidth` and `clientWidth` read 0 for every element. The unit guards in `groups/page.test.tsx` and `group-picker.test.tsx` are class/structure assertions and say so in a comment; the geometry has to be re-measured in a browser via the runbook in `dev/reports/2026-08-01-authenticated-a11y-verification.md` §Part 1.
+  - **Marginal, left as-is:** the `/ritual` current-step label clips 28px at 320px with a 27-character display name. The full string stays in the accessibility tree, and the stepper's `sr-only`-below-`sm:` treatment of the *other* labels is the correct pattern, not a defect.
 - **2.4.11 Focus Not Obscured (Minimum)** *(new in 2.2)* — passes trivially: the app has **no** `position: sticky` or `position: fixed` elements, so nothing can overlay a focused control.
 - **3.3.7 Redundant Entry** *(new in 2.2)* — audited in code on 2026-08-01; the "believed to pass" note was right, for the reason assumed. The ritual's first step is populated from the saved profile (`ritual/page.tsx:75`, `:91`, `:251`), with saved tmdb ids resolved back into named title chips rather than left as something to retype (`lib/session-flow.ts:65-90`), and advancing off that step writes it back (`:132`) so the next run starts filled in. No other member is ever asked for anything — their step says the saved profile is being used and offers only their own private toggle (`:269`, `:273-280`). Everything the mood step collects is per-evening and asked once: vibes, note, discovery and the viewer's own rough-day flag (`:295-311`), with the tag vocabulary offered as presets to select. Across steps, choices are carried rather than re-asked — the group picked on `/tonight` travels in the URL (`tonight/page.tsx:55`, `:84`, `:90`) and an invite code survives the sign-in round trip (`groups/join/[code]/page.tsx:18`, `:113`). Failure paths were the part worth checking: the ritual's match-error screen keeps the mood you entered (`ritual/page.tsx:217-220`) and the results page clears the steering box only on success (`results/[sessionId]/page.tsx:130-137`). Two regression guards in `ritual/page.test.tsx` now exercise stepping back and forward, and returning from a failed match.
   - **The boundary:** in-progress mood answers live in React state only, so a reload or a session expiry mid-ritual starts the mood step blank. Read as a *restarted* process rather than a redundant step within one — the substantive half, the taste profile, is server-persisted either way — but that is a judgment about where a process begins, not a measured fact. The typed `delete` confirmation on the profile page is not re-entry: nothing asked for it earlier.
@@ -117,14 +161,7 @@ Measured or exercised during Phases 6–8, not assumed:
 Be honest about the boundary of what's been checked:
 
 - **No screen-reader pass has been run.** All ARIA work to date was verified structurally (roles, names, live regions in the DOM) — not by listening to VoiceOver/NVDA actually announce a flow. Worth doing once, especially the results page, where the taste map's meaning depends on reading order. The *environment* blocker is gone: `dev/reports/2026-08-01-authenticated-a11y-verification.md` is a runbook for a locally signed-in session against `wrangler dev`, so the authenticated flows are now reachable without deploying. What remains is that judging an announcement needs a human at the keyboard, not an agent.
-- **1.4.10 Reflow — no horizontal scrolling anywhere; two content truncations open.** 320 CSS px (the 400%-zoom equivalent against a 1280px reference) has now been measured on every route, signed-out (2026-08-01, `dev/reports/2026-08-01-reflow-400pct.md`) and signed-in (2026-08-01, `dev/reports/2026-08-01-authenticated-a11y-verification.md`). Every route reports `scrollWidth === clientWidth === 320` with **zero** overflowing elements and **zero** horizontally-scrollable subregions, measured by walking every node under `body` with `getBoundingClientRect()`. The three surfaces flagged as highest risk are clean: the 30-chip mood/genre grid wraps to 2–3 per row with its rightmost edge at 292.5px (unchanged when chips are selected, despite the heavier font weight); the results tablist fits one row; the taste map has no SVG or canvas, so 1.4.10's 2-D-layout exception never applies anywhere in the app.
-
-  **Not closed, because information is still lost at 320px.** Two elements are legible at 1280px and clipped at 320px with no way to reveal them — no scrollbar, no `title`, so a `scrollWidth`-only check misses both:
-  - `/groups` invite link (`src/app/groups/page.tsx`, the `truncate` span) — **79px, ~25% of the URL, clipped** at 320px and still 23px clipped at 375px. This one has teeth: the `copyInvite` fallback comment reasons that a failed clipboard write is safe *because the link is rendered in full*, and at narrow widths it isn't. A production origin longer than the test one makes it worse.
-  - `/tonight` group member list (`src/components/group-picker.tsx`) — 43px clipped at 320px only. Lower severity: descriptive context, not a unique unrecoverable value.
-  - Marginal, listed for completeness: the `/ritual` current-step label clips 28px at 320px with a 27-character display name. The full string stays in the accessibility tree, and the stepper's `sr-only`-below-`sm:` treatment of the *other* labels is the correct pattern, not a defect.
-
-  **1.4.4 Resize Text** is carried on the 320px result as its conventional proxy; browser text-only zoom has not been exercised separately.
+- **1.4.4 Resize Text** is carried on the 1.4.10 320px result as its conventional proxy; browser text-only zoom has not been exercised separately. The two criteria are related but not identical.
 
 ---
 

@@ -210,7 +210,8 @@ export default function Groups() {
       if (mounted.current) setCopied(group.id);
     } catch {
       // Clipboard unavailable (insecure context, denied permission) — the link
-      // is rendered in full above the button, so it stays selectable by hand.
+      // above the button wraps to as many lines as it needs at every width, so
+      // it stays readable and selectable by hand.
     }
   }
 
@@ -285,7 +286,7 @@ export default function Groups() {
                   Invite link
                 </p>
                 <div className="mt-sm flex flex-col gap-sm sm:flex-row sm:items-center">
-                  <span className="min-w-0 flex-1 truncate rounded-control border border-slate bg-midnight px-md py-sm text-sm tracking-wide text-cream">
+                  <span className="min-w-0 flex-1 break-all rounded-control border border-slate bg-midnight px-md py-sm text-sm tracking-wide text-cream">
                     {inviteLink(group.inviteCode)}
                   </span>
                   {/* The button reports its own outcome — no reserved row to

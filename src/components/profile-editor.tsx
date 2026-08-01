@@ -7,6 +7,10 @@ import { Chip } from "@/components/chip";
 import { TagPicker } from "@/components/tag-picker";
 import { TitleSearch, type TitleRef } from "@/components/title-search";
 
+/** The ceilings PUT /api/user/profile enforces on each list it accepts. */
+const MAX_TITLE_ENTRIES = 50;
+const MAX_TAG_ENTRIES = 30;
+
 /** The services Phase 1 asks about. Order is the list users scan, not alphabetical. */
 export const STREAMING_SERVICES = [
   "Netflix",
@@ -78,6 +82,7 @@ export function ProfileEditor({ value, onChange, quickPicks = [] }: ProfileEdito
           onChange={(comfortTitles) => update({ comfortTitles })}
           quickPicks={quickPicks}
           placeholder="Search comfort films…"
+          max={MAX_TITLE_ENTRIES}
         />
       </Section>
 
@@ -89,6 +94,7 @@ export function ProfileEditor({ value, onChange, quickPicks = [] }: ProfileEdito
           selected={value.watchlist}
           onChange={(watchlist) => update({ watchlist })}
           placeholder="Search your watchlist…"
+          max={MAX_TITLE_ENTRIES}
         />
       </Section>
 
@@ -100,6 +106,7 @@ export function ProfileEditor({ value, onChange, quickPicks = [] }: ProfileEdito
           selected={value.vibes}
           onChange={(vibes) => update({ vibes })}
           customPlaceholder="Add your own, e.g. 90s nostalgia"
+          max={MAX_TAG_ENTRIES}
         />
       </Section>
 
@@ -112,6 +119,7 @@ export function ProfileEditor({ value, onChange, quickPicks = [] }: ProfileEdito
           onChange={(dealbreakers) => update({ dealbreakers })}
           tone="rose"
           customPlaceholder="Add your own, e.g. animal death"
+          max={MAX_TAG_ENTRIES}
         />
       </Section>
 
