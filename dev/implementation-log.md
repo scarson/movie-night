@@ -1740,3 +1740,76 @@ Rate-limit correctness is unaffected — the rows removed are already outside th
   more removed ids" case has a 20s timeout and swung between 11.9s and 23.6s on this machine while
   other agents were running suites; it timed out once and passed on every re-run. Not touched — it
   is not in G3's region — but it will flake in CI under contention.
+
+## PREP — test harness + migration plumbing
+
+**Built:** `withFailingStatement()` / `injectedFailureCount()` in `src/test/fake-d1.ts`, a
+`loadMigration()` that concatenates every `migrations/*.sql` in filename order, a `migrate:local`
+that iterates the same sorted glob, and 23 tests in `src/test/fake-d1.test.ts`. Unblocks G1's B4,
+G2's B12 and G3-6, whose interrupted-success paths had no way to fail a single D1 statement, and
+makes any migration past `0001` visible to the test suite.
+
+**Public API — what G1–G4 consume:**
+
+```ts
+withFailingStatement(db: D1Database, injection: FailureInjection): D1Database
+interface FailureInjection { match: string | RegExp; onCall?: number; error?: Error }
+injectedFailureCount(db: D1Database): number
+```
+
+The wrapper fails the matching statement at execution (`run`/`first`/`all`/`raw`/`exec`), never at
+`prepare()`. `bind()` rewraps, so `prepare().bind().run()` — the shape of every statement in this
+codebase — stays gated and shares one `onCall` counter.
+
+**Decisions:**
+- **`bind()` had to rewrap, and that is the whole ballgame.** `FakeD1PreparedStatement.bind()`
+  returns a new instance rather than `this`. Wrapping only what `prepare()` returns would have left
+  every failure-injection test in G1–G4 passing against unfixed code. Proven by mutation: dropping
+  the rewrap fails four tests.
+- **`injectedFailureCount` was added beyond the plan's pinned shape.** Adversarial review found that
+  every way the helper can fail to fire is silent, and the assertions G1–G4 will write are true on
+  the happy path too — a one-character typo in `match`, an `onCall` past the number of matching
+  executions, or a wrapper built after a route's db mock was set all yield a test that passes
+  against the bug it was written to catch. The counter is additive and leaves the pinned signature
+  untouched. **Assert it in any interrupted-success test.**
+- **`batch()` refuses statements not prepared from the same handle**, comparing gate identity rather
+  than class so a second wrapper over the same db is also refused. It would otherwise run them
+  ungated and go green. This is stricter than "passes everything else through unchanged".
+- **`exec()` is gated too**, and it advances the shared `onCall` counter. Fixture setup run through
+  the wrapper therefore consumes matches — relevant because eight test files seed via `db.exec()`.
+- **`migrate:local` stays strict.** A failing file fails the script; the reset step lives in
+  `docs/deploy.md` §2. A loop tolerating "already exists" per file is how a malformed migration goes
+  unnoticed locally.
+
+**Gotchas:**
+- **`src/test/fake-d1.test.ts` already existed** (the plan calls it new). Appended rather than
+  restructured.
+- **The plan's 13-table test cannot distinguish the old `loadMigration` from the new one** while
+  `migrations/` holds one file — it passes against both. The multi-file behavior is covered instead
+  by a temporary-cwd test over a fixture directory, `loadMigration` resolving its directory from
+  `process.cwd()`. The cwd is borrowed for one synchronous call and restored in a `finally` before
+  any assertion runs. Requires vitest's `forks` pool; under `threads`, `process.chdir` is undefined.
+- **The `.sort()` in `loadMigration` is unprovable on macOS.** APFS returns `readdir` results
+  already in byte order, so removing the sort changes nothing locally; ext4 on CI is hash-ordered
+  and would catch it. The test asserts the ordering property either way and says so rather than
+  implying coverage.
+- **Table names cannot start with a digit** — the migration fixture's tables are `t1`..`t4`, not
+  `0001_first`.
+- After rebasing onto `dev`, `loadMigration()` applies `0001` and G7's `0004` for real: `0004`'s
+  `idx_recommendations_created_at` is present and the `idx_recommendations_session` it drops is
+  gone, so ordering holds on actual migrations, not just the fixture.
+
+**Reported, not fixed (outside PREP's ownership):**
+- `createFakeD1().batch()` still accepts statements prepared from a *different* fake and silently
+  runs them against the wrong database. The plan forbids changing `createFakeD1`'s default
+  behavior, so only the wrapper guards this — the same mistake is loud through one handle and silent
+  through the other, in files that will hold both.
+- `npm test -- <file>` runs the whole suite: `--pass-with-no-tests` swallows the following
+  positional, so the filter is ignored. Left alone because sibling groups depend on that script.
+- `src/app/results/[sessionId]/page.test.tsx`'s "never sends more removed ids than the route will
+  accept" times out under load (20 s budget); clean when run unloaded.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 60 files /
+711 passed / 2 skipped, only the 3 pre-existing `vite:dynamic-import-vars` warnings. A 22-mutant
+study over `fake-d1.ts` kills 20; the survivors are the APFS-unkillable `.sort()` and one malformed
+no-op mutant.
