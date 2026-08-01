@@ -977,3 +977,25 @@ today): the rose chip on `charcoal` would be 4.45:1, and `overlap` on an `amber-
 a layout question jsdom cannot answer. Measured the real gradient box and span rects at 375px and
 1280px: the ellipse fades out at y≈263 / y≈235 while the colored spans start at y≈434 / y≈432, so
 the alpha under them is zero at both widths.
+
+## 3.3.7 Redundant Entry audited in code (2026-08-01)
+
+Branch `claude/a11y-verification`. **609 tests passing.**
+
+The last un-audited "believed to pass" item. It does pass, and for the assumed reason: the ritual
+loads the saved profile into step 0 (`ritual/page.tsx:75`, `:91`, `:251`) with tmdb ids resolved
+back into named title chips (`session-flow.ts:65-90`), writes it back on Continue (`:132`), and
+asks the other members for nothing at all (`:269`). Choices carry across steps rather than being
+re-asked: the group travels in the URL from `/tonight`, and an invite code survives the OAuth
+round trip (`groups/join/[code]/page.tsx:113`).
+
+**The failure paths were the part actually worth checking**, and they hold: the match-error screen
+keeps the mood you entered rather than resetting the step, and the results page clears the steering
+box only on a successful round (`results/[sessionId]/page.tsx:130-137`). Both are now regression
+guards in `ritual/page.test.tsx` — stepping back and forward, and returning from a failed match —
+because they are behaviors nothing else would notice losing. `advanceToMood` moved to module scope
+to be shared rather than copied.
+
+**Honest boundary, recorded in the doc:** in-progress mood answers are React state only, so a
+reload mid-ritual starts the mood step blank. Read as a restarted process rather than a redundant
+step within one — but that is a judgment about where a process begins, not a measurement.
