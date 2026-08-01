@@ -854,4 +854,18 @@ describe("getRecommendedTmdbIds", () => {
 
     expect(await getRecommendedTmdbIds(db, sessionId)).toEqual(new Set([42]));
   });
+
+  it("skips a round whose recommendations field is not an array", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedUser(db, "u1", "Sam");
+    await seedGroupWithMembers(db, "grp1", ["u1"]);
+    const sessionId = await newSession(db);
+
+    await seedRawRound(db, sessionId, 1, JSON.stringify({ recommendations: 5 }));
+    await seedRawRound(db, sessionId, 2, roundWithRecommendations([7, 8]));
+
+    const ids = await getRecommendedTmdbIds(db, sessionId);
+
+    expect([...ids].sort((a, b) => a - b)).toEqual([7, 8]);
+  });
 });
