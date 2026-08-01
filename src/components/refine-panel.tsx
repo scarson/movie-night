@@ -108,7 +108,7 @@ export function RefinePanel({
           data-testid="regenerate"
           disabled={spent || busy}
           onClick={onRegenerate}
-          className={`${primaryButtonClasses} border border-transparent disabled:border-slate disabled:bg-transparent disabled:text-ash`}
+          className={primaryButtonClasses}
         >
           {refineButtonLabel(hasRatings, hasFeedback)}
         </button>

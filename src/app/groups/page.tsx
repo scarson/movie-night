@@ -7,7 +7,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
-import { outlinedControlClasses, primaryControlClasses } from "@/components/control-classes";
+import {
+  disabledOutlinedClasses,
+  outlinedControlClasses,
+  primaryControlClasses,
+} from "@/components/control-classes";
 
 interface GroupSummary {
   id: string;
@@ -222,9 +226,9 @@ export default function Groups() {
   // Outline is the default control here; amber fill marks the one primary action
   // on the page, matching the hub's primary/secondary pairing.
   const submitClasses =
-    `min-h-11 shrink-0 px-lg text-base font-medium ${outlinedControlClasses} disabled:opacity-50`;
+    `min-h-11 shrink-0 px-lg text-base font-medium ${outlinedControlClasses}`;
   const primaryClasses =
-    `min-h-11 shrink-0 px-lg text-base font-semibold ${primaryControlClasses} disabled:opacity-50`;
+    `min-h-11 shrink-0 px-lg text-base font-semibold ${primaryControlClasses}`;
 
   return (
     <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
@@ -322,7 +326,7 @@ export default function Groups() {
                           disabled={busy !== null}
                           // Ember carries the destructive signal as the border;
                           // ember *text* on charcoal is only 4.1:1, under AA.
-                          className="min-h-11 rounded-control border border-ember px-md text-sm font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight disabled:opacity-50"
+                          className={`min-h-11 rounded-control border border-ember px-md text-sm font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight ${disabledOutlinedClasses}`}
                         >
                           Yes, leave
                         </button>

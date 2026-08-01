@@ -20,11 +20,13 @@ import {
   subscribeReducedMotion,
   syncReducedMotion,
 } from "@/lib/reduced-motion";
-import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
+import {
+  disabledOutlinedClasses,
+  primaryButtonClasses,
+  secondaryButtonClasses,
+} from "@/components/control-classes";
 
 const CONFIRM_WORD = "delete";
-
-const PRIMARY_BUTTON = `${primaryButtonClasses} disabled:bg-slate disabled:text-ash`;
 
 function Section({
   title,
@@ -178,7 +180,7 @@ export default function ProfilePage() {
               type="button"
               onClick={() => void save()}
               disabled={saveState === "saving"}
-              className={PRIMARY_BUTTON}
+              className={primaryButtonClasses}
             >
               {saveState === "saving" ? "Saving…" : "Save changes"}
             </button>
@@ -261,7 +263,7 @@ export default function ProfilePage() {
                 data-testid="confirm-delete"
                 disabled={confirmWord.trim().toLowerCase() !== CONFIRM_WORD || deleting}
                 onClick={() => void remove()}
-                className="flex min-h-12 items-center justify-center rounded-control border border-ember px-xl text-base font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight disabled:border-slate disabled:text-ash disabled:hover:bg-transparent disabled:hover:text-ash"
+                className={`flex min-h-12 items-center justify-center rounded-control border border-ember px-xl text-base font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight ${disabledOutlinedClasses}`}
               >
                 {deleting ? "Deleting…" : "Delete my account for good"}
               </button>

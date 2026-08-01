@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { googleSignInUrl } from "@/components/auth-provider";
 import { primaryButtonClasses } from "@/components/control-classes";
 
-const PRIMARY_BUTTON = `${primaryButtonClasses} w-full disabled:opacity-50 sm:w-auto`;
+const PRIMARY_BUTTON = `${primaryButtonClasses} w-full sm:w-auto`;
 
 export default function JoinPage({
   params,

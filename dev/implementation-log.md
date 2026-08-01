@@ -1464,3 +1464,51 @@ preserved order too) and exists to pin the property the rewrite could have broke
 interleaves known and unknown ids in non-ascending order, per testing-pitfalls §4.
 
 Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 620 passed / 2 skipped.
+
+### G6-3 — the canonical disabled-control treatment
+
+Eight sites across five files carried six different treatments: `disabled:opacity-50` (four sites),
+`disabled:opacity-60` (one), and two different slate/ash spellings. `DESIGN.md` could not say which
+was right, because it had never said anything.
+
+The rule, now in `DESIGN.md` §Accessibility beside the 2026-07-27 slate decision and in the
+Decisions Log: **a disabled control leaves the amber hierarchy.** Filled controls drop the amber
+fill to slate with an ash label; outlined controls drop the ash boundary to slate with an ash
+label; hover is neutralised; opacity is never used. Two new exports in `control-classes.ts`,
+folded into `primaryControlClasses` and `outlinedControlClasses` so every composed control
+inherits them. All eight bespoke strings deleted, plus `refine-panel.tsx`'s now-vestigial
+`border border-transparent` and `profile/page.tsx`'s `PRIMARY_BUTTON` alias, which had become a
+bare re-export of `primaryButtonClasses` with one use.
+
+The `disabled:hover:*` neutralisers are not decoration: `:hover` still matches a disabled button,
+and Tailwind resolves same-specificity variants by stylesheet order, not class-attribute order.
+
+**Two things the plan predicted wrongly, both caught by running the test rather than trusting the
+numbers** (the plan explicitly says reality wins):
+
+1. The plan predicted `components/control-classes.ts: 4` in the `ALLOWED` map. First run said 5 —
+   a doc comment of mine quoted a class token, and the walker's regex matches prose. Reworded the
+   comment; 4 is correct once no prose names a token.
+2. **The plan did not anticipate that folding the outlined treatment in breaks the existing 1.4.11
+   assertions.** Five of them assert `className` does `not.toContain("border-slate")` on resting
+   controls, and the sanctioned `disabled:border-slate` contains that substring. Only the
+   tag-picker's Add button actually failed (chips, toggles and group rows compose from
+   `outlinedBoundaryClasses`, which is untouched), but the assertion was wrong for all five.
+   Narrowed to `/(^|\s)border-slate\b/` — an unprefixed utility, which is exactly what 1.4.11
+   governs, since it exempts inactive components. Not a weakening: the count-based allowlist is
+   still the global guard, and it is now exact about resting state.
+
+`ALLOWED` changes: added `components/control-classes.ts: 4`; `app/profile/page.tsx` 3 → 1;
+`components/refine-panel.tsx` 2 → 1; `app/groups/page.tsx` unchanged at 5 (its treatments were
+opacity, not slate). Comments beside the two changed counts updated — at a count of 1 the old
+"+ disabled: boundary" text would have been false.
+
+The rendered assertion is on `RefinePanel`, a real call site, not on
+`<button className={primaryButtonClasses}>` — that render would only re-state its own input, the
+derived-prop-as-input anti-pattern the plan's §0.3 Round C names. `control-classes.test.ts` pins
+the constants directly, and a source walk now fails if any file reintroduces `disabled:opacity-`.
+
+**jsdom proves class strings and structure, not pixels.** No visual verification is claimed here:
+jsdom has no cascade, no layout, and no painted colour.
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 627 passed / 2 skipped.
