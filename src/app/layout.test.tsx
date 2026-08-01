@@ -30,11 +30,15 @@ describe("RootLayout", () => {
     expect(markup).toContain("--font-satoshi");
   });
 
-  it("preconnects to the poster origin, with CORS so the poster <img> reuses the connection", () => {
+  it("preconnects to the poster origin in the no-CORS mode the posters use", () => {
     const link = markup.match(/<link[^>]*rel="preconnect"[^>]*>/);
     expect(link).not.toBeNull();
     expect(link![0]).toContain('href="https://image.tmdb.org"');
-    expect(link![0]).toContain("crossorigin");
+    // image.tmdb.org serves no Access-Control-Allow-Origin and Poster renders a
+    // bare <img src>, so the posters are no-CORS requests. Browsers pool CORS
+    // and no-CORS connections separately, so a crossorigin preconnect here would
+    // warm a socket the LCP poster can never reuse.
+    expect(link![0]).not.toContain("crossorigin");
   });
 
   it("renders page content inside the layout", () => {

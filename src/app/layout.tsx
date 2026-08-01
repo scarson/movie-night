@@ -34,12 +34,17 @@ export default function RootLayout({
       <head>
         {/* Posters come from a third-party origin on the results page; the DNS +
             TCP + TLS handshake is otherwise paid on the LCP element itself.
-            crossOrigin is required — poster <img> requests are anonymous
-            CORS-mode, so a preconnect without it warms a connection they cannot
-            reuse. The origin is written out rather than imported from
-            poster.tsx: the root layout should not pull in a component module
-            for a <link>. */}
-        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="" />
+
+            This hint carries no crossOrigin, and must not. image.tmdb.org serves
+            no Access-Control-Allow-Origin, and Poster renders a bare <img src>,
+            so poster requests are no-CORS. Browsers keep CORS and no-CORS
+            connections in separate pools: a crossOrigin preconnect would warm a
+            socket the posters can never reuse, leaving the handshake on the
+            critical path — the opposite of what this hint is for.
+
+            The origin is written out rather than imported from poster.tsx: the
+            root layout should not pull in a component module for a <link>. */}
+        <link rel="preconnect" href="https://image.tmdb.org" />
       </head>
       <body className="flex min-h-dvh flex-col font-body antialiased">
         <ReducedMotionBoot />
