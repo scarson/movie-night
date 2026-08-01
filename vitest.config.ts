@@ -1,5 +1,5 @@
 // ABOUTME: Vitest configuration — node environment, @ alias to src, global test APIs.
-// ABOUTME: Mirrors twin-cities-tee-times' setup minus the a11y-specific matchers.
+// ABOUTME: Runs src/**/*.test.{ts,tsx} and scripts/**/*.test.ts in forked processes with vitest-setup.ts.
 import { defineConfig } from "vitest/config";
 import path from "path";
 

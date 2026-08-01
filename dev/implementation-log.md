@@ -1512,3 +1512,15 @@ the constants directly, and a source walk now fails if any file reintroduces `di
 jsdom has no cascade, no layout, and no painted colour.
 
 Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 627 passed / 2 skipped.
+
+### G6-4 — the two forbidden historical-context comments
+
+CLAUDE.md forbids temporal and historical context in comments. `src/lib/db.ts:2` and
+`vitest.config.ts:2` both opened by naming the project they were ported from, which says nothing
+about what the file does. Both `ABOUTME:` lines now describe the file as it is. No behavioral
+change, so no new test — the existing suite passing unchanged is the whole verification.
+
+`migrations/0001_initial_schema.sql:1` carries a similar clause and was deliberately left alone:
+it has already been applied to the remote database, and the plan scopes this task to two lines in
+two files. The remaining references live in historical plan documents, where provenance is the
+point.

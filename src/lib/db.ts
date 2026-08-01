@@ -1,5 +1,5 @@
 // ABOUTME: Shared D1 database helpers: ISO 8601 timestamp SQL fragments and safe JSON column parsing.
-// ABOUTME: Ported from twin-cities-tee-times; used by every module that reads/writes D1 rows.
+// ABOUTME: Used by every module that reads or writes D1 rows.
 
 /**
  * SQL fragment for ISO 8601 "now" timestamps compatible with JS toISOString().
