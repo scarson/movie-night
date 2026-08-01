@@ -1041,3 +1041,76 @@ framework-phrasing substitutions, so the sibling-sync invariant is mechanical ra
 
 Docs-only: CI's `paths-ignore` covers `**/*.md`, so no jobs run for this change. That fact is now
 written into the CI paragraph, since "no checks" on a docs PR reads as a failure otherwise.
+
+## First performance audit — pre-deployment baseline (2026-08-01)
+
+Full report in `dev/reports/2026-08-01-performance-audit.md`. No application code changed;
+`tsc --noEmit`, `eslint .` and `vitest run` (59 files, 615 passed, 2 skipped) all clean.
+
+**The point of the audit, in one line:** at this app's data scale SQL execution time is
+irrelevant and the number of *sequential D1 round trips* is everything. The heaviest query in the
+codebase runs in 0.095 ms against a 1,000-title catalog; the most expensive path issues up to 20
+of them one after another. Nothing in `src/lib` or `src/app/api` ever runs two D1 reads
+concurrently — `db.batch` is used correctly for writes and never for reads, and there is no
+`Promise.all` in any handler. That costs nothing on localhost and will be the largest source of
+production latency once real network round trips replace in-process calls.
+
+**What could not be measured, and why it matters.** Nothing is deployed, so every number is
+localhost. No Anthropic or TMDB credentials, so the match path's 1–4 model calls and the cron's 200
+TMDB fetches are counted, not timed — and the Anthropic call dominates the match path's latency
+profile. Worker startup time only comes from a real `wrangler deploy`; local first-request latency
+is miniflare bootstrap and is not a valid proxy. FCP/LCP were discarded: a concurrent agent held
+the browser foreground, so the tab was backgrounded and Chrome deferred rendering (first-paint
+3,084 ms against DCL 88.7 ms). Resource Timing, render-blocking classification and font-load status
+are visibility-independent and were kept. All of this is listed explicitly in the report's §1.4
+rather than buried.
+
+**Seed data is synthetic.** `npm run seed:local` needs a TMDB token, so a 1,000-title catalog was
+generated to match what `DEFAULT_PAGES = 50` produces, plus full 50+50 profiles, 41 sessions and 49
+recommendations with realistic ~5 KB `ai_response` blobs. A separate 20,000-title / 50,049-
+recommendation probe answered "which of these degrades". An earlier version of that probe attached
+all 50k recommendations to one session and produced two alarming numbers that were artifacts of an
+impossible distribution (`MAX_ROUNDS_PER_SESSION = 10`); the report records the false alarm so a
+future audit does not re-derive it.
+
+**Findings that were not on anyone's list.** Content-hashed `/_next/static/*` assets are served
+`Cache-Control: public, max-age=0, must-revalidate`, so every repeat visit revalidates ~14
+immutable files — the fix is a three-line `public/_headers`, but it is asserted against
+`wrangler dev` and must be re-checked against the first real deploy. `Satoshi-VariableItalic.woff2`
+(43,844 B, 18.6% of the font payload) is preloaded on every page for exactly one italic `<dd>` in
+`mood-screen.tsx:141`. There is no `preconnect` to `image.tmdb.org` even though the results page
+is entirely third-party posters, and pick #1's poster — the results page's LCP element — is
+`loading="lazy"`.
+
+**Index review found one gap and no surprises.** `countMatchesThisMonth`
+(`movie-sessions.ts:141`) is the only unindexed predicate on a hot path: `SCAN recommendations`,
+executed on every match request, on a table that only grows. Measured 0.004 ms at 49 rows and
+38.0 ms at 50,049; a `created_at` index takes it to 0.180 ms, verified by re-planning and
+re-timing. Proposed, not written — no migration in this change. `idx_movie_sessions_group` serves
+no read in Phase 1 (it backs the `groups` CASCADE that bug B14's fix would start using), and the
+implicit PK/UNIQUE indexes carry more load than the explicit ones, correctly.
+
+**Live confirmation of B7.** While setting up the match-path measurement, `MONTHLY_MATCH_LIMIT=0`
+was written to `.dev.vars` on the assumption it disables matching. `wrangler dev` does not
+hot-reload `.dev.vars`, so one request went the whole way to `api.anthropic.com` and came back
+`401 invalid x-api-key` — no tokens, no cost, and the "key" was the literal string
+`not-set-do-not-call`. The kill switch is unarmed exactly as B7 says. A restart with
+`MONTHLY_MATCH_LIMIT=1` produced the intended `429 monthly_cap` in 3.7 ms with no external call.
+Secondary observation: an Anthropic 401 is outside `MATCHING_ERROR_HTTP`'s taxonomy, so a revoked
+key surfaces as a generic 500 with no distinct signal.
+
+**Bundle numbers, recorded as the baseline to diff against.** Worker upload 5231.68 KiB raw /
+1122.74 KiB gzip — 11% of the Paid 10 MiB limit, so size is not a concern; ~92% of it is Next.js
+and React, and the project's own source compiles to roughly 30 KB. Client shared JS 623,862 B raw /
+184,840 B gzip, dropping to 511,268 / 145,213 for modern browsers once the `noModule` polyfill is
+excluded. One render-blocking resource, a 7,140 B gzip stylesheet. The heaviest route
+(`/ritual`, 13,026 B gzip of route-specific JS) is 8 KB above the lightest — there is no
+code-splitting problem, and no route is disproportionate. Next 16 + Turbopack no longer prints the
+per-route size table, so these were recovered by parsing the prerendered HTML, which is what a
+browser actually fetches.
+
+Ranked recommendations are in the report's §7, split into fix-before-launch, worth-doing, and
+matters-only-at-scale, with the items already owned by the Phase 1 remediation plan (D7, D2, D3,
+B6/D6, B7, B12) referenced rather than re-specified.
+
+Docs-only: CI's `paths-ignore` covers `**/*.md`, so no jobs run for this change.
