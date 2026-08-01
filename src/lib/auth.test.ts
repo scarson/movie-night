@@ -120,6 +120,14 @@ function withWriteAfter(
     batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
       return db.batch<T>(statements);
     },
+    // Delegated so an unseamed call reaches the database rather than failing as
+    // "not a function", which would read as a broken seam.
+    exec(sql: string): Promise<D1ExecResult> {
+      return db.exec(sql);
+    },
+    dump(): Promise<ArrayBuffer> {
+      return db.dump();
+    },
   };
 
   return { db: seamed as unknown as D1Database, firedCount: () => fired };
@@ -293,8 +301,8 @@ describe("authenticateRequest", () => {
     expect(setCookies[0]).toContain("mn-session=");
     expect(setCookies[1]).toContain("mn-refresh=");
 
-    // The spent token is marked rotated rather than removed: the row is what
-    // lets a concurrent loser of the claim still authenticate.
+    // The spent token's row survives, carrying its mark: that row is what lets
+    // a concurrent loser of the claim still authenticate.
     const oldSession = await db
       .prepare("SELECT rotated_at FROM sessions WHERE token_hash = ?")
       .bind(tokenHash)
@@ -610,10 +618,10 @@ describe("authenticateRequest", () => {
   });
 
   it("returns null without clearing cookies once the rotation grace window has elapsed", async () => {
-    // The null this asserts is also what the code returned before the grace
-    // window existed, so on its own it is a boundary guard rather than a
-    // regression test. What it does pin is the far end of the window: paired
-    // with the two tests above, a later widening has to move a test.
+    // A caller past the window is answered exactly as one holding a token that
+    // was never valid, so this null on its own is a boundary guard rather than
+    // a regression test. What it pins is the far end of the window: paired with
+    // the two tests above, a widening has to move a test.
     const { authenticateRequest, sha256 } = await import("./auth");
     const db = createFakeD1(loadMigration());
     await seedUser(db);
@@ -639,8 +647,37 @@ describe("authenticateRequest", () => {
     vi.useRealTimers();
   });
 
+  it("refuses a caller inside the grace window whose session reached its expiry", async () => {
+    // The grace window is bounded by the session's own expiry as well as by the
+    // clock, and only a token spent seconds before its 90-day lifetime ends
+    // separates the two. The seam builds that: the claim is taken, then the row
+    // expires, both after this caller's read.
+    const { authenticateRequest, sha256 } = await import("./auth");
+    const raw = createFakeD1(loadMigration());
+    await seedUser(raw);
+
+    const refreshToken = "valid-refresh-token";
+    const tokenHash = await sha256(refreshToken);
+    await seedSession(raw, { tokenHash, userId: "u1" });
+
+    const rotateThenExpire = async () => {
+      await raw
+        .prepare("UPDATE sessions SET rotated_at = ?, expires_at = ? WHERE token_hash = ?")
+        .bind(new Date().toISOString(), new Date(Date.now() - 1000).toISOString(), tokenHash)
+        .run();
+    };
+
+    const { db, firedCount } = withWriteAfter(raw, "SELECT s.user_id", rotateThenExpire);
+
+    const result = await authenticateRequest(makeRequest({ "mn-refresh": refreshToken }), db, secret);
+
+    expect(firedCount()).toBe(1);
+    expect(result.user).toBeNull();
+    expect(result.headers.has("Set-Cookie")).toBe(false);
+  });
+
   it("removes a spent session row once a later rotation leaves its grace window behind", async () => {
-    // Rotation now accumulates rows — the replacement, plus the spent one kept
+    // Rotation accumulates rows — the replacement, plus the spent one kept
     // alive for its grace window — so something has to remove them
     // (testing-pitfalls §4, cleanup and eviction).
     const { authenticateRequest, sha256 } = await import("./auth");

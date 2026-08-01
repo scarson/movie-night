@@ -2152,10 +2152,15 @@ the winner prunes its own user's out-of-grace spent rows outside the batch.
   satisfies as `undefined` — replaced with a `typeof` check.
 - **Rotation accumulates rows where it used to stay level.** The prune bounds it; both the prune and
   the requirement that a failed prune not roll back the rotation are covered.
-- **`docs/deploy.md`'s `### Pending migrations` subsection already existed** — G7 created it, though
-  the plan assigns that to G1. Appended `0002` in numeric order.
-- **`migrations/` on `dev` is `0001`, `0004`.** G4's `0003` is on an unmerged branch, so the gap is
-  real right now. `loadMigration()` iterates the directory, so nothing depends on contiguity.
+- **`docs/deploy.md`'s `### Pending migrations` subsection already existed** — an earlier group
+  created it, though the plan assigns that to G1, so the "highest-consequence documentation edit in
+  the campaign" reduced to one bullet plus one command under a heading that was already right.
+- **The migration list needed reordering on rebase.** G4's `0003` landed mid-flight, and a plain
+  rebase left `0002` sitting below it. The list is explicitly numeric-order; fixed while resolving.
+- **No fallback on `meta.changes`.** `?? 0` reads an absent count as a loss — but the batch has
+  already committed by then, so the winner would skip `setAuthCookies` and the replacement's
+  plaintext, the only copy, would never reach the client, signing them out 30 s later. `D1Meta.changes`
+  is a required `number`; the type is the contract.
 
 **Reported, not fixed (outside G1's file ownership):**
 - **Logout does not revoke a spent row.** `src/app/api/auth/logout/route.ts:18` deletes only the
@@ -2169,9 +2174,18 @@ the winner prunes its own user's out-of-grace spent rows outside the batch.
   predicate `expires_at > ?` does not match it, so that exact millisecond yields a 401 with cookies
   intact instead of a clean sign-out. Self-healing on the next request. `>` is what the plan pins.
 
+**Review rounds.** Three self-review rounds (correctness against the spec, adversarial/security,
+test quality by mutation) plus one independent fresh-agent round. The independent round found the
+`?? 0` fallback above, the logout residue below, the unasserted expiry bound inside the grace check
+(now covered and mutation-killed), two temporal comments, and that `withWriteAfter` implemented only
+`prepare`/`batch` so an unseamed `exec` would have failed as "not a function". It independently
+reproduced both mutation results and confirmed zero route diffs, no fake concurrency, no secret in
+any log or error, and no account-existence oracle.
+
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 60 files /
-749 passed / 2 skipped (baseline 740), only the 3 pre-existing `vite:dynamic-import-vars` warnings,
-`npx @opennextjs/cloudflare build` clean. **11 tests in the file fail when `src/lib/auth.ts` is
-reverted to its pre-change version** — verified by running the suite against `HEAD~1:src/lib/auth.ts`
-rather than by reasoning about it. A 4-mutant study over the fix kills all 4: pre-claim `rotated_at`,
-the mark's dropped `expires_at`, the prune's `try/catch`, and the prune itself.
+826 passed / 2 skipped (baseline on `origin/dev`: 816), only the 3 pre-existing
+`vite:dynamic-import-vars` warnings, `npx @opennextjs/cloudflare build` clean. **12 of the file's 36
+tests fail when `src/lib/auth.ts` alone is reverted to `origin/dev`** — measured by running the
+suite that way, not reasoned about. A 5-mutant study over the fix kills all 5: the pre-claim
+`rotated_at`, the mark's dropped `expires_at`, the grace check's expiry bound, the prune's
+`try/catch`, and the prune itself.
