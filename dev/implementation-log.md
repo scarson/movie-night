@@ -2488,3 +2488,72 @@ a caller-supplied `sizes`, and one in `title-search.test.tsx` pins the thumbnail
 / 2 skipped, only the pre-existing `vite:dynamic-import-vars` warnings,
 `npx @opennextjs/cloudflare build` clean. Rebased onto `dev` @ d99cf7c and all four re-run there;
 against the a60483f the work started from, the counts were 61 / 840 / 2 (baseline 836, +4 new).
+## Match route: collapsing the independent D1 reads (branch `claude/match-read-batching`)
+
+Acting on **B3** of `dev/reports/2026-08-01-performance-audit.md`, whose thesis is that at this
+app's data scale SQL execution time is irrelevant and the number of sequential D1 round trips is
+everything. The audit found no `Promise.all` and no `db.batch` for reads anywhere in `src/lib` or
+`src/app/api`.
+
+**Measured first, with the statement recorder, not assumed.** One representative second-round match
+request — two members with profile title ids, a first round supplying kept/removed provenance, the
+request keeping one pick and rejecting another — issued **13 D1 round trips**. It now issues **7**.
+The audit's own count (10–20, "5 independent reads") was taken before the live-membership gate and
+the recommended-id provenance read existed, so the pre-change set is six independent reads, not
+five, and the audit's line numbers are stale even where its analysis holds.
+
+**The dependency analysis.** `getSessionForMember` binds only the session id and the caller's user
+id; `isGroupMember` needs `session.groupId`, so those two are a genuine chain and stay sequential
+and ahead of everything else. The next five bind the session id or nothing at all —
+`roundNumberStatement`, `matchesThisMonthStatement` (no bind), `recommendedTmdbIdsStatement`,
+`sessionMembersStatement`, `accumulatedRemovedIdsStatement` — and no mapper reads another's rows.
+They are now one `db.batch` behind `getMatchRoundContext`. Everything downstream depends on that
+batch: `selectCandidates` on the members and the removals, the title hydration on the members plus
+the accepted kept and removed ids.
+
+**`db.batch`, not `Promise.all`, deliberately.** D1 sends a batch as a single request, so the win is
+a round-trip *count*; concurrent statements would still be five requests with only their waiting
+overlapped, and no Cloudflare documentation guarantees that overlap the way `batch()`'s does. The
+price is that a batch is a transaction: the three reads of `recommendations` now share one snapshot
+and can no longer disagree about how many rounds the session has. That is a change in read
+consistency, in the direction of more consistency, and it is the reason the authorization reads stay
+outside the batch — an eager batch runs every statement, and gating reads must keep their own
+failure ordering.
+
+**The other collapse is deduplication, not parallelism.** The route hydrated title names three
+times: the members' lists, then the kept ids, then the removed ids. They are now one `getTitlesMap`
+over the union, and `formatTitleRefs` takes that map instead of a database handle. Same names, same
+order, fewer rows on the wire — the union is never larger than the sum of the parts, so the chunk
+count can only go down.
+
+**Test harness, two supporting fixes.** The fake D1 ran every batched statement through `run()`,
+which executes but discards rows, so any batched read came back empty while real D1 returns its
+results; `batch()` now goes through `all()` and recovers the changes count from the connection's own
+counters. And `recordStatements` recorded on `bind`, which missed `countMatchesThisMonth` (it binds
+nothing) and counted statements that were prepared but never executed; it now records on execution
+and exposes `roundTrips`, where a batch is the single request D1 sends it as.
+
+**The failing test.** `costs one round trip per read the round genuinely needs` asserts
+`expect(roundTrips).toHaveLength(7)` and first failed with
+`AssertionError: expected [ [ { …(2) } ], [ { …(2) } ], …(11) ] to have a length of 7 but got 13`.
+A behaviour test would have passed before and after and proved nothing, so the round-trip count is
+the assertion. The companion test `returns the same round, response and titles it did before the
+reads were collapsed` pins the response body and the prompt's KEEP/exclusion lines and member
+blocks; it passed before the change, which is the point of it.
+
+**What this does not prove.** The fake D1 is synchronous `node:sqlite` and cannot reproduce network
+latency. The test proves the round-trip *count* fell from 13 to 7. It does not measure a wall-clock
+improvement, and none is claimed — the wall-clock saving is six production D1 round trips, whose
+size nobody can state until the app is deployed and the number is recorded.
+
+**Also added:** `PLAT-2` in `docs/pitfalls/implementation-pitfalls.md`, so the pattern is a
+convention rather than a one-off, as the audit asked.
+
+**Not taken:** the audit's B4 (`SELECT *` at `src/app/api/movie-sessions/[id]/route.ts:34`
+over-fetching `candidate_snapshot` and `ai_response`) is a real and trivial win, but that file is
+another agent's and `src/lib/movie-sessions.test.ts` carries a deliberate copy of its query. Left
+for its owner.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 62 files / 845 passed
+/ 2 skipped (baseline 61 / 836 / 2), only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean.
