@@ -161,6 +161,12 @@ describe("runWeeklyRefresh", () => {
     await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, vi.fn());
 
     expect(fetchStub).toHaveBeenCalledTimes(200);
+    // Which 200 survive the cap matters, not just how many: seedTitles gives
+    // every title popularity == its id and no refresh history, so the window is
+    // the 200 most popular and the five least popular are the ones dropped.
+    expect(fetchedIds(fetchStub)).toEqual(
+      Array.from({ length: 200 }, (_, i) => 205 - i)
+    );
   });
 
   it("updates streaming, popularity, vote_count, vote_average, and last_refreshed_at for each refreshed title", async () => {
