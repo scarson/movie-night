@@ -2316,3 +2316,59 @@ also needed the new column in their expected string.
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 835 passed
 / 2 skipped (baseline 832 — the 3 new tests), only the 3 pre-existing `vite:dynamic-import-vars`
 warnings, `npx @opennextjs/cloudflare build` clean.
+## Profile-save enrichment ceiling (2026-08-01)
+
+`PUT /api/user/profile` refused any save carrying more than 10 tmdb ids absent from the local
+`titles` table. `/api/titles/search` merges live TMDB hits into the catalog, so catalog-new titles
+are ordinary search output, and the ritual's "Continue →" is the only way past step 0 — a first
+profile with 11 new titles dead-ended on a 400 that named no remedy.
+
+**What the value was.** Nothing reasoned. Task 5.4 of the Phase 1 plan wrote "Cap: more than 10
+unknown ids in one PUT → 400" with no justification; plan-review round 2 asked only what happens
+*above* the cap, never what the cap should be; the bug hunts and the remediation plan both treated
+the constant as fixed ("Do NOT change `MAX_UNKNOWN_IDS_PER_PUT`" was scope control, not a defence
+of 10).
+
+**What one unknown id costs — measured, via a throwaway probe over the fake D1 with a 50 ms fetch
+stub, not inferred:** exactly 1 TMDB subrequest (`fetchMovieDetail` folds keywords, credits and
+watch/providers into `/movie/{id}?append_to_response=…` — 10 ids produced 10 distinct URLs) and
+exactly 1 D1 write. Max concurrent fetches: 1. Wall time is purely additive: 10 ids × 50 ms =
+519 ms. The existence probe stays at 1 chunked read regardless.
+
+**Which limits bind.** Not subrequests: Workers Paid allows 10,000 per invocation (default,
+raisable to 10M), so the structural worst case of 100 is 1% of the allowance. Not CPU: time spent
+awaiting a fetch is not billed as CPU, and the default ceiling is 30 s. Not duration: HTTP-triggered
+Workers have no wall-clock limit. Not TMDB's rate limit: a sequential loop cannot exceed ~1/RTT.
+What binds is user-visible latency on a blocking button, plus the one platform edge worth recording
+— a runtime update gives in-flight requests a 30 s grace period, so a save that runs longer can be
+terminated. Measured transport floor to `api.themoviedb.org` from this machine: 45–53 ms on a warm
+connection, 84–115 ms cold; a real authenticated detail document is larger and slower than the 401
+that floor was measured against.
+
+**New value: `MAX_UNKNOWN_IDS_PER_PUT = MAX_TITLE_LIST_ENTRIES` (50).** Units are enrichments per
+save — one TMDB round trip plus one D1 write each, taken sequentially. Derived rather than picked:
+validation already bounds the referenced set at 2 × 50 = 100 ids before any TMDB work happens, so
+the enrichment ceiling is half the structural maximum, and holds the enrichment phase to roughly
+8–13 s at a conservative 150–250 ms per id instead of 15–25 s. Reaching it needs a save in which
+more than fifty titles across both lists are new to the catalog; ordinary editing cannot.
+
+Not done, deliberately: the enrichment loop stays sequential. Concurrency is the actual fix for the
+latency this ceiling only bounds, and it belongs with the loop, not with the cap. The performance
+audit already carries this path as the app's most latency-visible request.
+
+The 400 body keeps `unknownIds`; the message now names the limit and a remedy — *"A save can add at
+most 50 titles that aren't in our catalog yet — save some, then add the rest"*. Naming the offending
+titles was considered and rejected: it would need the search endpoint to report catalog membership
+per result.
+
+**Tests.** Two new: a 50-unknown-id save succeeds with 50 fetches, 50 title rows and a saved profile
+(failed before the change with `expected 400 to be 200`); and the 51-id boundary asserts the exact
+message (failed with `expected 'More than 10 unknown titles in one sa…' to be 'A save can add at
+most 50 titles that…'`). The ceiling test absorbed the old >10 test's "profile row is not saved"
+assertion rather than duplicating the branch. The referenced-order test now needs 51+ unknown ids to
+reach the 400, so its fixture is 97 *descending* unknown ids with three known ids spliced between
+them — an ascending fixture would agree with index-ordered D1 results and prove nothing.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 61 files / 833 passed
+/ 2 skipped (baseline 832), only the pre-existing `vite:dynamic-import-vars` warnings,
+`npx @opennextjs/cloudflare build` clean.
