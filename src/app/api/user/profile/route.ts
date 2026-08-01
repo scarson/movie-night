@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
-import { parseJsonColumn } from "@/lib/db";
+import { chunk, D1_IN_CHUNK_SIZE, parseJsonColumn } from "@/lib/db";
 import { fetchMovieDetail, detailToTitle, detailToEnrichment } from "@/lib/tmdb";
 import type { ProfileRow } from "@/types/db";
 
@@ -116,14 +116,20 @@ export async function PUT(request: NextRequest) {
     // Enrich any referenced tmdb id we don't have yet, so candidates and
     // posters always resolve from D1.
     const referenced = [...new Set([...profile.comfortTitles, ...profile.watchlist])];
-    const unknownIds: number[] = [];
-    for (const id of referenced) {
-      const existing = await db
-        .prepare("SELECT 1 FROM titles WHERE tmdb_id = ? AND content_type = 'movie'")
-        .bind(id)
-        .first();
-      if (!existing) unknownIds.push(id);
+    const known = new Set<number>();
+    for (const ids of chunk(referenced, D1_IN_CHUNK_SIZE)) {
+      const placeholders = ids.map(() => "?").join(", ");
+      const { results } = await db
+        .prepare(
+          `SELECT tmdb_id FROM titles WHERE content_type = 'movie' AND tmdb_id IN (${placeholders})`
+        )
+        .bind(...ids)
+        .all<{ tmdb_id: number }>();
+      for (const row of results) known.add(row.tmdb_id);
     }
+    // Filtered against `referenced`, not built from query results: the unknownIds
+    // and failedIds response bodies are order-visible to the client.
+    const unknownIds = referenced.filter((id) => !known.has(id));
 
     if (unknownIds.length > MAX_UNKNOWN_IDS_PER_PUT) {
       return withAuthHeaders(

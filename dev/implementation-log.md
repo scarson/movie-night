@@ -1446,3 +1446,21 @@ the headroom property PLAT-1 actually asks for, rather than "it happens to fit t
 
 Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 618 passed / 2 skipped
 (615 baseline + 3), no new warnings.
+
+### G6-2 — D7: one chunked `IN()` for the profile PUT's existence check
+
+`PUT /api/user/profile` ran `SELECT 1 FROM titles WHERE tmdb_id = ?` once per referenced id in a
+sequential loop — up to 100 D1 round-trips inside the request the ritual's "Continue →" button
+blocks on. Replaced with one chunked `IN()` per `D1_IN_CHUNK_SIZE`, with `content_type = 'movie'`
+as a SQL literal so a 90-item chunk keeps full headroom.
+
+`unknownIds` is built by filtering `referenced` against the resulting `Set`, never from query
+results: it and `failedIds` are order-visible to the client, and `IN()` result order is not the
+caller's order.
+
+The failing test asserts round-trips, which is the actual defect — it failed at
+`expected 100 to be less than or equal to 2`. The order test passes before and after (the old loop
+preserved order too) and exists to pin the property the rewrite could have broken; its fixture
+interleaves known and unknown ids in non-ascending order, per testing-pitfalls §4.
+
+Gates: `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 59 files / 620 passed / 2 skipped.
