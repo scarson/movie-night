@@ -8,6 +8,7 @@ import {
   runMatching,
   selectCandidates,
   MatchingError,
+  PROMPT_VERSION,
   type MatchingErrorKind,
 } from "@/lib/matching";
 import { isGroupMember } from "@/lib/groups";
@@ -21,6 +22,7 @@ import {
   formatTitleRefs,
   getTitlesMap,
   insertRecommendation,
+  type TitleSummary,
 } from "@/lib/movie-sessions";
 
 const MAX_ROUNDS_PER_SESSION = 10;
@@ -197,17 +199,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       context: { groupId: session.groupId, sessionId: id, round },
     });
 
-    await insertRecommendation(db, {
-      sessionId: id,
-      roundNumber: round,
-      aiResponse: response,
-      keptTmdbIds: acceptedKeptIds,
-      removedTmdbIds: acceptedRemovedIds,
-      steeringFeedback,
-      candidateSnapshot: candidates.map((c) => c.tmdbId),
-    });
+    const recommendedIdList = response.recommendations.map((rec) => rec.tmdbId);
+    try {
+      await insertRecommendation(db, {
+        sessionId: id,
+        roundNumber: round,
+        aiResponse: response,
+        keptTmdbIds: acceptedKeptIds,
+        removedTmdbIds: acceptedRemovedIds,
+        steeringFeedback,
+        candidateSnapshot: candidates.map((c) => c.tmdbId),
+      });
+    } catch (err) {
+      // Ids and counts only. The response carries member names, per-member taste
+      // summaries and the conversational write-up, and invocation logs are
+      // retained — this is enough to identify and re-run the round, no more.
+      console.error(
+        JSON.stringify({
+          event: "round_persist_failed",
+          session_id: id,
+          round,
+          tmdb_ids: recommendedIdList,
+          prompt_version: PROMPT_VERSION,
+          message: String(err),
+        })
+      );
+      throw err;
+    }
 
-    const titles = await getTitlesMap(db, response.recommendations.map((rec) => rec.tmdbId));
+    let titles: Record<number, TitleSummary> = {};
+    try {
+      titles = await getTitlesMap(db, recommendedIdList);
+    } catch (err) {
+      // The round is already persisted and paid for. RankedList renders an
+      // unhydrated pick as "pick N", so a sparse map is a degraded response,
+      // not a failed one — and failing here would desync the client's carried
+      // exclusion state from the round the server just stored.
+      console.error("POST /api/movie-sessions/[id]/match titles hydration:", err);
+    }
     return withAuthHeaders(NextResponse.json({ round, response, titles }), headers);
   } catch (err) {
     if (err instanceof MatchingError) {

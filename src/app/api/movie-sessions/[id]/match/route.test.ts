@@ -6,10 +6,11 @@ import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Anthropic, { APIError, APIConnectionError } from "@anthropic-ai/sdk";
 import type { Message } from "@anthropic-ai/sdk/resources/messages";
-import { createFakeD1, loadMigration } from "@/test/fake-d1";
+import { createFakeD1, loadMigration, withFailingStatement, injectedFailureCount } from "@/test/fake-d1";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
 import { leaveGroup } from "@/lib/groups";
+import { PROMPT_VERSION } from "@/lib/matching";
 import type { MatchingResponse } from "@/types/matching";
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -800,6 +801,77 @@ describe("POST /api/movie-sessions/[id]/match", () => {
         submitted: 2,
         accepted: 1,
       });
+    });
+  });
+
+  describe("a D1 failure after the billed call", () => {
+    it("returns the paid round with an empty titles map when hydration fails", async () => {
+      // Not a concurrency test: withFailingStatement makes one already-reached
+      // statement throw, sequentially. The fixture's members have no comfort or
+      // watchlist ids, so getTitlesMap short-circuits everywhere earlier in the
+      // route and the trailing hydration is the first execution of this SQL.
+      const db = createFakeD1(loadMigration());
+      const sessionId = await setup(db);
+      const failing = withFailingStatement(db, {
+        match: "SELECT tmdb_id, title, year, poster_path, genres, streaming",
+      });
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(failing), ctx: {} } as never);
+      const engineResponse = validResponse([27205, 155, 603]);
+      stubAnthropic([apiMessage(JSON.stringify(engineResponse))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+
+      expect(injectedFailureCount(failing)).toBe(1);
+      expect(response.status).toBe(200);
+      const body = await response.json<Record<string, any>>();
+      expect(body.round).toBe(1);
+      expect(body.response).toEqual(engineResponse);
+      expect(body.titles).toEqual({});
+      const { results } = await db
+        .prepare("SELECT * FROM recommendations WHERE session_id = ?")
+        .bind(sessionId)
+        .all();
+      expect(results).toHaveLength(1);
+    });
+
+    it("logs enough to re-run a round it could not persist, and no personal data", async () => {
+      const db = createFakeD1(loadMigration());
+      const sessionId = await setup(db);
+      const failing = withFailingStatement(db, { match: "INSERT INTO recommendations" });
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(failing), ctx: {} } as never);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+      const errorCalls = errorSpy.mock.calls;
+      const errorOutput = errorCalls.map((args) => args.map(String).join(" ")).join("\n");
+      const persistLine = errorCalls
+        .map(([line]) => line)
+        .filter((line): line is string => typeof line === "string" && line.includes("round_persist_failed"))
+        .map((line) => JSON.parse(line));
+      errorSpy.mockRestore();
+
+      expect(injectedFailureCount(failing)).toBe(1);
+      expect(response.status).toBe(500);
+      expect(persistLine).toHaveLength(1);
+      expect(persistLine[0]).toMatchObject({
+        event: "round_persist_failed",
+        session_id: sessionId,
+        round: 1,
+        tmdb_ids: [27205, 155, 603],
+        prompt_version: PROMPT_VERSION,
+      });
+      // Invocation logs are retained, and the response carries member names,
+      // per-member taste summaries and the conversational write-up.
+      expect(errorOutput).not.toContain("Try **Inception**");
+      expect(errorOutput).not.toContain("Sam");
+      expect(errorOutput).not.toContain("Alex");
     });
   });
 
