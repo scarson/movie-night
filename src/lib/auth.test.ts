@@ -603,10 +603,10 @@ describe("authenticateRequest", () => {
   });
 
   it("returns null without clearing cookies once the rotation grace window has elapsed", async () => {
-    // BOUNDARY GUARD, not a regression test: the pre-fix code also returns null
-    // here, because it returned null for every already-claimed token. Its value
-    // is the pair it forms with the grace-window test above — together they pin
-    // where the window ends, so a later widening has to move a test.
+    // The null this asserts is also what the code returned before the grace
+    // window existed, so on its own it is a boundary guard rather than a
+    // regression test. What it does pin is the far end of the window: paired
+    // with the two tests above, a later widening has to move a test.
     const { authenticateRequest, sha256 } = await import("./auth");
     const db = createFakeD1(loadMigration());
     await seedUser(db);
@@ -618,6 +618,12 @@ describe("authenticateRequest", () => {
 
     await authenticateRequest(makeRequest({ "mn-refresh": refreshToken }), db, secret);
     vi.advanceTimersByTime(31_000); // past the 30-second grace window
+
+    // The spent row must still be here, or the null below comes from the
+    // never-valid branch and the window itself is never evaluated.
+    const { results: spent } = await sessionRows(db, "u1");
+    const spentRow = spent.find((row) => row.token_hash === tokenHash);
+    expect(typeof spentRow?.rotated_at).toBe("string");
 
     const result = await authenticateRequest(makeRequest({ "mn-refresh": refreshToken }), db, secret);
     expect(result.user).toBeNull();
