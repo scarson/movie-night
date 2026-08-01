@@ -141,5 +141,8 @@ Run these against the live site in order; each depends on the previous:
   (`docs/accessibility.md`); all ARIA work so far was verified structurally in
   the DOM, never by listening to VoiceOver/NVDA announce a flow. The deployed
   app is the right place to do it — especially the results page, whose meaning
-  depends on reading order. That doc also lists three open AA gaps that are
-  fixable without any credentials.
+  depends on reading order. It needs a signed-in session, which is why it is
+  still open while the rest of the AA queue is closed.
+- **400% zoom (1.4.10 Reflow) is untested**, as is a full sweep of the taste-map
+  person colors across every surface they land on. Neither needs credentials —
+  see `docs/accessibility.md` §Not yet verified.
