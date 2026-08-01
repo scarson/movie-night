@@ -64,6 +64,24 @@ describe("createFakeD1", () => {
     expect(result.meta.changes).toBe(1);
   });
 
+  it("batch() returns each read statement's rows and each write's meta", async () => {
+    const db = createFakeD1(loadMigration());
+    await db
+      .prepare("INSERT INTO users (id, google_id, email, name, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind("u1", "g1", "u1@example.com", "Sam", "2026-01-01T00:00:00.000Z")
+      .run();
+
+    const [count, names, rename] = await db.batch<Record<string, unknown>>([
+      db.prepare("SELECT COUNT(*) as count FROM users"),
+      db.prepare("SELECT name FROM users WHERE id = ?").bind("u1"),
+      db.prepare("UPDATE users SET name = ? WHERE id = ?").bind("Sammy", "u1"),
+    ]);
+
+    expect(count.results).toEqual([{ count: 1 }]);
+    expect(names.results).toEqual([{ name: "Sam" }]);
+    expect(rename.meta.changes).toBe(1);
+  });
+
   it("supports DELETE ... RETURNING (auth refresh-token rotation depends on this)", async () => {
     const db = createFakeD1(loadMigration());
     await db

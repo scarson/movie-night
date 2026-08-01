@@ -26,7 +26,7 @@ This document serves three audiences. Start here, then go directly to the sectio
 
 | § | Section | You're working on... | Entries | Checklist |
 |---|---------|---------------------|---------|-----------|
-| 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1 | §1.C |
+| 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1, PLAT-2 | §1.C |
 | — | [Orchestration](#orchestration) | Parallel subagent dispatch and output persistence | ORCH-1 | §Orchestration.C |
 | A | [Historical Changelog](#appendix-a-historical-changelog) | Provenance, validation dates, review process meta-observations | — | — |
 | B | [Unified Summary Table](#appendix-b-unified-summary-table) | All pitfalls at a glance, with severity and status | — | — |
@@ -62,9 +62,32 @@ The fake D1 now throws at 100 bound params (see testing-pitfalls §7) so this cl
 
 ---
 
+### PLAT-2: Independent D1 reads awaited one at a time each cost a network round trip
+
+**The Flaw:** A handler needs several rows, so it awaits one read, then the next, then the next. Nothing in the later reads consumes an earlier read's result — they are keyed on the same id, or on nothing at all — but each `await` is a separate request to D1 and the handler waits out every one of them in turn.
+
+**Why It Matters:** Locally this is free. `wrangler dev` runs the Worker and D1 in the same process, so a query costs microseconds and the whole chain disappears into the noise. In production every D1 call is a network round trip from the Worker to the database, and Cloudflare's own changelog calls cross-region D1 latency "an outsized latency factor" ([D1 Worker API latency](https://developers.cloudflare.com/changelog/post/2025-01-07-d1-faster-query/)). In Movie Night the heaviest query in the codebase measured 0.095 ms against a 1,000-title catalog while `POST /api/movie-sessions/[id]/match` spent thirteen sequential trips to D1 — the cost was entirely in the trips, not the SQL. The same shape showed up as one statement per referenced id on the profile PUT, where 100 ids cost 16.7 ms locally against 0.001 ms of actual SQL.
+
+**The Fix:** Send the independent reads together. `db.batch()` is one request however many statements it carries ([D1 Database API](https://developers.cloudflare.com/d1/worker-api/d1-database/)), so the saving is a round-trip count and not merely an overlap:
+
+```ts
+const [round, month, members] = await db.batch([
+  roundNumberStatement(db, sessionId),
+  matchesThisMonthStatement(db),
+  sessionMembersStatement(db, sessionId),
+]);
+```
+
+Two things this costs. A batch is a transaction, so the statements share one snapshot — usually what you want for reads of the same table, but a deliberate change in consistency, not a free one. And an eager batch runs every read even when an earlier result would have short-circuited the handler, so a failing read can surface ahead of a cap or authorization response that would otherwise have returned first. Keep reads that gate a response — authorization, membership — out of the batch and ahead of it.
+
+**The Lesson:** Count the `await`s on a hot path before optimising a query. At this app's data scale the number of sequential D1 round trips dominates SQL execution time by two orders of magnitude, and a chain of reads that depend on nothing is the cheapest latency in the codebase to remove. Statement counts are assertable — `src/test/statement-recorder.ts` records round trips — so the budget belongs in a test, not in a comment.
+
+---
+
 ### Review Checklist
 
 - [ ] **PLAT-1** — Every dynamically-built `IN (...)` / multi-bind query whose parameter count grows with a collection is chunked below 100 bound params (via `chunk` + `D1_IN_CHUNK_SIZE`), and the collection is not assumed small.
+- [ ] **PLAT-2** — No hot path awaits two D1 reads in sequence when neither consumes the other's result. Independent reads travel in one `db.batch()`, reads that gate the response stay ahead of it, and the round-trip count is pinned by a test.
 
 ---
 
@@ -108,7 +131,8 @@ TODO — add entries as this document evolves.
 | ID | Title | Severity | Status | Domain |
 |----|-------|----------|--------|--------|
 | ORCH-1 | Analysis Dispatches Must Persist Findings | HIGH | VALIDATED | Orchestration |
-| PREFIX-1 | TODO | TODO | TODO | Section 1 |
+| PLAT-1 | D1 rejects any query binding more than 100 parameters | HIGH | VALIDATED | Section 1 |
+| PLAT-2 | Independent D1 reads awaited one at a time each cost a round trip | MEDIUM | VALIDATED | Section 1 |
 
 Severity levels: `CRITICAL` (production data loss / security), `HIGH` (correctness bug under predictable conditions), `MEDIUM` (correctness bug under edge cases), `LOW` (cleanliness / clarity).
 
