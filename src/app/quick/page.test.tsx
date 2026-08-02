@@ -178,6 +178,14 @@ describe("quick match", () => {
     expect(screen.getByText(/surprise us/i)).toBeTruthy();
   });
 
+  it("does not claim a saved profile it never fetched", async () => {
+    // This screen loads the group and nothing else, so it cannot know whether any
+    // profile has anything in it — and for a new account, none does.
+    stubApi();
+    await renderQuick();
+    expect(screen.queryByText(/saved profiles/i)).toBeNull();
+  });
+
   it("shows the group's members and carries the group id", async () => {
     search = "group=g1";
     const calls = stubApi();

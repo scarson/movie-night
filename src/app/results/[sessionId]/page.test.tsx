@@ -510,6 +510,20 @@ describe("results page", () => {
     expect(matchCalls(calls)).toHaveLength(1);
   });
 
+  it("does not claim every member's profile is filled in on the no-round branch", async () => {
+    // The group payload carries no profile state for anyone, so "everything we
+    // need is saved" is a claim this page cannot check for the caller, let alone
+    // for the rest of the group.
+    stubApi({
+      get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
+    });
+    await renderResults();
+    await screen.findByRole("button", { name: /find our match/i });
+
+    expect(screen.queryByText(/everything we need is saved/i)).toBeNull();
+    expect(screen.getByText(/set up but never matched/i)).toBeTruthy();
+  });
+
   it("leaves a way out of a session that has no round yet", async () => {
     stubApi({
       get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
