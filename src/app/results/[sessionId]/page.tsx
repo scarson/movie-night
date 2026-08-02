@@ -62,6 +62,9 @@ const ERROR_FRAMING = new Map<string, ErrorFraming>([
     { heading: "That was a tough brief — loosen a dealbreaker?", retry: false, loosen: true },
   ],
   ["round_limit", { heading: "That's the evening's last round", retry: false }],
+  // retry: false, unlike the other 429s — the window is a day, not a moment,
+  // and the default framing would offer a retry button that cannot succeed.
+  ["daily_limit", { heading: "That's today's last round", retry: false }],
   ["left_group", { heading: "You've left this group", retry: false }],
 ]);
 

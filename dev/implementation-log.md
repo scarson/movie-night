@@ -2801,3 +2801,58 @@ open (PRs #33 refine-after-leave and #34 next-queue). Merged in; no conflict out
 `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 869 passed / 2 skipped,
 `npx @opennextjs/cloudflare build` clean. GitHub did **not** dispatch CI when PR #35 was opened; the
 merge commit's push did, and all four jobs pass on `bcd4f09`.
+## Abuse surface audit + per-user rate limiting (`claude/abuse-surface`)
+
+**What this closes.** Before this, exactly one entry point in the app limited *requests*:
+group join. Everything else was bounded only by per-request ceilings — `MAX_UNKNOWN_IDS_PER_PUT`
+(50 TMDB fetches per save), `MAX_ROUNDS_PER_SESSION` (10 rounds per session),
+`MAX_RESOLVED_IDS` (100 ids per lookup) — and a per-request ceiling multiplied by unlimited
+requests bounds nothing. The full per-route audit, including the routes deliberately left
+alone, is `docs/security/abuse-surface.md`.
+
+**The worst exposure found.** `POST /api/movie-sessions/[id]/match` spends 1–4 Claude Sonnet
+calls per request, and `MONTHLY_MATCH_LIMIT` is a *global* monthly cap. Sessions are free to
+create, so the 10-round session cap was defeated by starting another session — one signed-in
+account could burn the whole 2000-call allowance in an afternoon, denying every other user.
+
+**What was added.** `src/lib/rate-limit.ts` generalises the `rate_limit_log` mechanism into a
+`RateLimitRule` (scope, max, window) with `withinRateLimit` / `recordRateLimitHit`, carrying
+over D4's per-(scope, key) prune and its deliberate non-batching verbatim. The group-join
+limiter moved onto it rather than being copied; `src/lib/groups.ts` no longer touches
+`rate_limit_log` at all. `RATE_LIMITS` is the whole app's ledger of limits, and
+`rate-limit.test.ts` asserts the literal numbers so a policy change fails a test first.
+
+Three routes gained limits: match at 30/24h per user (two full 10-round evenings plus half
+again; caps one account near $1.20/day typical and makes draining the monthly budget take 67
+days rather than one afternoon), profile PUT at 20/10min (one explicit save every 30s
+sustained), and title search at 120/10min. Justifications are written into `RATE_LIMITS` and
+the doc, not left as bare constants.
+
+**Two design decisions worth keeping.** Match spend is recorded *before* the model call, not
+after — the round is billed the moment we ask, whether or not it returns usable — and a test
+pins that a failed round still consumes a slot. And title search meters only the TMDB half:
+the check sits inside the `< 3 local hits` branch, so a local-catalog hit neither counts
+toward the limit nor pays the limiter's three round trips, and over the limit the route
+degrades to local results rather than 429ing a typeahead mid-word.
+
+**No IP keying, on purpose.** Every rule is keyed on a user id, so the key space is bounded by
+the user table (≤180 rows per user across all four rules) and the existing per-key prune is a
+sufficient sweeper. IP keys are attacker-chosen and unbounded, and since pruning only fires
+when a key is written again, rows from one-shot IPs would never be collected — the limiter
+would become the amplifier. Unauthenticated routes belong behind Cloudflare's own edge rules;
+that is item 4 of the doc's decision list.
+
+**The failing test.** Match route first, before `rate-limit.ts` existed:
+`expect(response.status).toBe(429)` → `AssertionError: expected 200 to be 429` with 30 `match`
+rows already seeded for `u1`. Its sibling — "records the caller's spend before the model call"
+— failed alongside on `expected +0 to be 1`. The third test in the group (other users' and
+out-of-window rows don't count) passed from the start by design: it is a guard against an
+over-broad implementation, not a red.
+
+**Gotcha:** the limiter costs three D1 round trips per limited request, which moved the match
+route's round-trip budget test from 7 to 10 (reason written into the test). Folding the count
+into `getMatchRoundContext`'s existing `db.batch()` would return it to 8, but that is
+`src/lib/movie-sessions.ts` — owned by another agent during this pass, so noted, not done.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 64 files / 878
+passed / 2 skipped (baseline 63 / 865 / 2), `npx @opennextjs/cloudflare build` clean.

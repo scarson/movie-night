@@ -505,6 +505,66 @@ describe("/api/user/profile", () => {
     expect(row?.dealbreakers).toBe('["Gore"]');
   });
 
+  describe("per-user save rate limit", () => {
+    function seedSaves(db: D1Database, key: string, count: number, at: string) {
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        rows.push(
+          db
+            .prepare("INSERT INTO rate_limit_log (scope, key, at) VALUES ('profile_save', ?, ?)")
+            .bind(key, at)
+            .run()
+        );
+      }
+      return Promise.all(rows);
+    }
+
+    it("returns 429 without enriching once the caller has saved 20 times in the last 10 minutes", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1", "Sam");
+      await seedSaves(db, "u1", 20, new Date(Date.now() - 60 * 1000).toISOString());
+      const fetchStub = vi.fn();
+      vi.stubGlobal("fetch", fetchStub);
+
+      const { PUT } = await import("./route");
+      const response = await PUT(await authedPut("u1", validBody({ comfortTitles: [27205] })));
+
+      expect(response.status).toBe(429);
+      expect(fetchStub).not.toHaveBeenCalled();
+      const saved = await db.prepare("SELECT * FROM profiles WHERE user_id = 'u1'").first();
+      expect(saved).toBeNull();
+    });
+
+    it("does not count another user's saves, or this user's from outside the window", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1", "Sam");
+      await seedSaves(db, "u2", 20, new Date(Date.now() - 60 * 1000).toISOString());
+      await seedSaves(db, "u1", 20, new Date(Date.now() - 15 * 60 * 1000).toISOString());
+
+      const { PUT } = await import("./route");
+      const response = await PUT(await authedPut("u1", validBody({ vibes: ["Cozy"] })));
+
+      expect(response.status).toBe(200);
+    });
+
+    it("does not spend a save slot on a request it rejects as invalid", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1", "Sam");
+
+      const { PUT } = await import("./route");
+      const response = await PUT(await authedPut("u1", validBody({ vibes: [1, 2, 3] })));
+
+      expect(response.status).toBe(400);
+      const row = await db
+        .prepare("SELECT COUNT(*) as count FROM rate_limit_log WHERE scope = 'profile_save'")
+        .first<{ count: number }>();
+      expect(row?.count).toBe(0);
+    });
+  });
+
   it("PUT leaves the response untouched when nothing needed enriching", async () => {
     const db = createFakeD1(loadMigration());
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);

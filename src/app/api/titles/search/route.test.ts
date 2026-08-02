@@ -215,6 +215,98 @@ describe("GET /api/titles/search", () => {
     expect(String(errorSpy.mock.calls[0][1])).toContain("500");
     errorSpy.mockRestore();
   });
+  describe("per-user TMDB fallback rate limit", () => {
+    function seedFallbacks(db: D1Database, key: string, count: number, at: string) {
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        rows.push(
+          db
+            .prepare("INSERT INTO rate_limit_log (scope, key, at) VALUES ('title_search', ?, ?)")
+            .bind(key, at)
+            .run()
+        );
+      }
+      return Promise.all(rows);
+    }
+
+    function countFallbacks(db: D1Database, key: string) {
+      return db
+        .prepare("SELECT COUNT(*) as count FROM rate_limit_log WHERE scope = 'title_search' AND key = ?")
+        .bind(key)
+        .first<{ count: number }>();
+    }
+
+    it("serves local results without calling TMDB once the caller has spent 120 fallbacks in 10 minutes", async () => {
+      // Degrade rather than 429: the picker already renders a TMDB outage as
+      // local-only results, and a typeahead that starts erroring mid-word is a
+      // worse answer than a shorter list.
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1");
+      await seedTitle(db, 1, "Alien");
+      await seedFallbacks(db, "u1", 120, new Date(Date.now() - 60 * 1000).toISOString());
+      const fetchStub = vi.fn();
+      vi.stubGlobal("fetch", fetchStub);
+
+      const response = await search("alien");
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        results: [{ tmdbId: 1, title: "Alien", year: 2020, posterPath: "/p.jpg" }],
+      });
+      expect(fetchStub).not.toHaveBeenCalled();
+    });
+
+    it("meters only searches that actually reach TMDB, not local-catalog hits", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1");
+      await seedTitle(db, 1, "Alien");
+      await seedTitle(db, 2, "Aliens");
+      await seedTitle(db, 3, "Alien 3");
+      vi.stubGlobal("fetch", vi.fn());
+
+      await search("alien");
+
+      expect((await countFallbacks(db, "u1"))?.count).toBe(0);
+    });
+
+    it("records a hit for a search that does reach TMDB", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1");
+      await seedTitle(db, 1, "Alien");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify(tmdbSearchResponse([{ id: 99, title: "Alien Resurrection" }])), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }))
+      );
+
+      await search("alien");
+
+      expect((await countFallbacks(db, "u1"))?.count).toBe(1);
+    });
+
+    it("does not count another user's fallbacks, or this user's from outside the window", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      await seedUser(db, "u1");
+      await seedTitle(db, 1, "Alien");
+      await seedFallbacks(db, "u2", 120, new Date(Date.now() - 60 * 1000).toISOString());
+      await seedFallbacks(db, "u1", 120, new Date(Date.now() - 15 * 60 * 1000).toISOString());
+      const fetchStub = vi.fn(async () => new Response(JSON.stringify(tmdbSearchResponse([])), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+      vi.stubGlobal("fetch", fetchStub);
+
+      await search("alien");
+
+      expect(fetchStub).toHaveBeenCalled();
+    });
+  });
 });
 
 describe("GET /api/titles/search?ids= (saved-id resolution)", () => {

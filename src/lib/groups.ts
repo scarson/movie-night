@@ -1,8 +1,7 @@
-// ABOUTME: Group lifecycle — create/join/leave, invite-code generation, and join-attempt
-// ABOUTME: rate limiting. "__solo__" is a reserved name for Task 5.4's per-user personal group.
+// ABOUTME: Group lifecycle — create/join/leave and invite-code generation.
+// ABOUTME: "__solo__" is a reserved name for Task 5.4's per-user personal group.
 
 import { customAlphabet } from "nanoid";
-import { sqliteIsoNow } from "@/lib/db";
 
 const generateInviteCode = customAlphabet(
   "23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz",
@@ -10,10 +9,6 @@ const generateInviteCode = customAlphabet(
 );
 
 export const SOLO_GROUP_NAME = "__solo__";
-
-const JOIN_RATE_LIMIT_SCOPE = "group_join";
-const JOIN_RATE_LIMIT_MAX_ATTEMPTS = 10;
-const JOIN_RATE_LIMIT_WINDOW = "-10 minutes";
 
 export interface Group {
   id: string;
@@ -199,44 +194,4 @@ export async function leaveGroup(db: D1Database, userId: string, groupId: string
     .prepare("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")
     .bind(groupId, userId)
     .run();
-}
-
-/** Returns true when fewer than 10 join attempts have been logged for `key` in the last 10 minutes. */
-export async function checkJoinRateLimit(db: D1Database, key: string): Promise<boolean> {
-  const row = await db
-    .prepare(
-      `SELECT COUNT(*) as count FROM rate_limit_log
-       WHERE scope = ? AND key = ? AND at >= ${sqliteIsoNow(JOIN_RATE_LIMIT_WINDOW)}`
-    )
-    .bind(JOIN_RATE_LIMIT_SCOPE, key)
-    .first<{ count: number }>();
-
-  return (row?.count ?? 0) < JOIN_RATE_LIMIT_MAX_ATTEMPTS;
-}
-
-/** Logs a join attempt for `key`, counted by checkJoinRateLimit. */
-export async function logJoinAttempt(db: D1Database, key: string): Promise<void> {
-  await db
-    .prepare("INSERT INTO rate_limit_log (scope, key, at) VALUES (?, ?, ?)")
-    .bind(JOIN_RATE_LIMIT_SCOPE, key, new Date().toISOString())
-    .run();
-
-  // Housekeeping only, and deliberately NOT batched with the insert above: D1's
-  // batch() is a transaction, so a failed prune would roll back the rate-limit
-  // record while the caller proceeds to join anyway. Scoped to (scope, key) so
-  // it uses idx_rate_limit_scope_key and so a future 'match' scope with a
-  // different window is unaffected. Rows older than the window are already
-  // invisible to checkJoinRateLimit; this discards the only record of
-  // invite-code enumeration outside the window, which nothing reads today.
-  try {
-    await db
-      .prepare(
-        `DELETE FROM rate_limit_log
-         WHERE scope = ? AND key = ? AND at < ${sqliteIsoNow(JOIN_RATE_LIMIT_WINDOW)}`
-      )
-      .bind(JOIN_RATE_LIMIT_SCOPE, key)
-      .run();
-  } catch {
-    // A failed prune must never fail a rate-limit record.
-  }
 }

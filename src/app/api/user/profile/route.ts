@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
 import { chunk, D1_IN_CHUNK_SIZE, parseJsonColumn } from "@/lib/db";
+import { RATE_LIMITS, withinRateLimit, recordRateLimitHit } from "@/lib/rate-limit";
 import { fetchMovieDetail, detailToTitle, detailToEnrichment, TmdbError } from "@/lib/tmdb";
 import type { ProfileRow } from "@/types/db";
 import type { SkippedTitle } from "@/types/profile";
@@ -118,6 +119,21 @@ export async function PUT(request: NextRequest) {
   const profile = body as unknown as ProfileBody;
 
   try {
+    // MAX_UNKNOWN_IDS_PER_PUT bounds one save's TMDB fan-out; nothing bounded
+    // how many saves. Checked after validation so a request we reject for free
+    // never spends a slot, and before the enrichment loop so a refused save
+    // costs one indexed count instead of 50 sequential fetches.
+    if (!(await withinRateLimit(db, RATE_LIMITS.profileSave, user.userId))) {
+      return withAuthHeaders(
+        NextResponse.json(
+          { error: "You're saving faster than we can keep up — give it a minute" },
+          { status: 429 }
+        ),
+        headers
+      );
+    }
+    await recordRateLimitHit(db, RATE_LIMITS.profileSave, user.userId);
+
     // Enrich any referenced tmdb id we don't have yet, so candidates and
     // posters always resolve from D1.
     const referenced = [...new Set([...profile.comfortTitles, ...profile.watchlist])];
