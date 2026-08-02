@@ -2794,3 +2794,10 @@ Recorded as a decision rather than left as an omission: **executing Phase 2 is d
 next five.** Building the rating loop before anyone has used the recommender would build on an
 unvalidated base, and the plan's hardest questions are product judgments that need Sam. It should
 follow his review of the design doc and the app actually shipping.
+
+**Post-merge addendum (`claude/tier2-cleanup`).** `dev` advanced to `81a5eb5` while this branch was
+open (PRs #33 refine-after-leave and #34 next-queue). Merged in; no conflict outside
+`dev/implementation-log.md`, which the `union` driver resolved. Gates after the merge:
+`npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 63 files / 869 passed / 2 skipped,
+`npx @opennextjs/cloudflare build` clean. GitHub did **not** dispatch CI when PR #35 was opened; the
+merge commit's push did, and all four jobs pass on `bcd4f09`.
