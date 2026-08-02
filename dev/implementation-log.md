@@ -3017,3 +3017,68 @@ DESC` returns `[12..3]`; the expectation was corrected, not the ordering.
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 66 files / **930
 passed** / 2 skipped (baseline 865, +65 new), `npx @opennextjs/cloudflare build` clean.
+---
+
+## Cloudflare Workers AI spike — cost/quality research (2026-08-01)
+
+`dev/research/2026-08-01-cloudflare-ai-spike.md` answers Sam's question: could Workers AI replace or
+back up the Anthropic matching call? **Recommendation: stay on Anthropic, don't build a provider
+abstraction yet.** Research only — no production code touched.
+
+**Live bake-off, run against real Workers AI** (wrangler was already OAuth-authenticated with an
+`ai (write)` scope; no new credential was created). Prompt built through the app's own
+`buildMatchingPrompt` with the eval-suite fixtures, replies judged with the app's own
+`isMatchingResponse`/`parseMatchingResponse`. Eight requests, **332 Neurons ≈ $0.0037 incurred**.
+
+**Result: 3 of 4 models failed.** `@cf/openai/gpt-oss-120b` passed twice cleanly (10 s / 15 s, valid
+shape, no dealbreaker or exclusion violations). `kimi-k2.5`, `glm-4.7-flash` and
+`llama-3.3-70b-fp8-fast` all returned upstream HTTP 504 at exactly 60 s; a diagnostic run with lower
+`max_tokens` surfaced the real cause as **`AiError: 3040: Capacity temporarily exceeded`** — capacity,
+not generation length, and not the JSON schema (a no-schema control failed identically).
+
+**Three findings that changed the expected answer:**
+
+1. **Prompt caching is not the free win.** The ~9K-token CANDIDATES block is computed per session and
+   *mutated every round* by `selectCandidates` (dealbreaker genres, `discoverNew`, and a growing
+   `removedIds` filter), so there is no stable prefix. `system` is ~400 tokens — below Sonnet 5's
+   1,024-token cacheable minimum — and carries the per-round refinement/steering notes anyway. Making
+   caching work needs a prompt reorder *plus* moving never-return enforcement from SQL pre-filter to
+   post-filter, for ~20% on multi-round sessions and a net *loss* on single-round ones. Output tokens
+   dominate and caching does nothing for them.
+
+2. **`defaultClientFactory` is a test hook, not a provider seam.** Both its param and return types are
+   Anthropic SDK types, so anything injected must impersonate an Anthropic `Message`. All 17 call
+   sites are in `matching.test.ts`. A real seam (lift `ClaudeCallResult` into a `MatchingProvider`
+   interface) is ~1–2 days, and the cost is the test rewrite, not the source — ~85% of `matching.ts`
+   is already provider-neutral.
+
+3. **The cost problem is already bounded.** `DEFAULT_MONTHLY_MATCH_LIMIT = 2000` caps worst-case spend
+   at ~$105–145/month at published Sonnet 5 rates. That reframes the question from unbounded cost to a
+   budget decision, and `MONTHLY_MATCH_LIMIT` is already an env var.
+
+**Quality risk, honestly stated:** `gpt-oss-120b` produced valid shape and respected every hard
+constraint, but across both runs the picks leaned toward one member of a deliberately-opposed fixture
+pair (top picks Inception 92 / The Matrix 87 for the cerebral profile; only one pick served the
+cozy/romantic profile, with seven suitable candidates passed over). That is the intersection-flavoured
+answer the product exists to avoid. **Two samples, one model, and no same-session Anthropic control —
+signal, not conclusion.** The bake-off also under-tests scale: 1,546 input tokens against a ~9,000
+production prompt, because no 200-title dataset exists offline (seeding needs a TMDB key).
+
+**Gotcha worth keeping:** Workers AI's upstream gateway cuts at 60 s, which is *outside* the app's
+documented 45 s SDK timeout — so on a slow Workers AI call the app's own timeout fires first and the
+user sees a failure rather than a slow success.
+
+**Recommended next step:** an effort sweep (`low`/`medium`/`high`) against the existing live eval
+suite, ~half a day, attacking output tokens without touching the provider. Plus AI Gateway in front of
+the *existing* Anthropic call for spend limits and per-request cost logging (~1 hour, no `matching.ts`
+change). Also flagged: the live adversarial pass in `docs/security/prompt-injection.md` is an open
+launch gate that should be run against Anthropic to establish a baseline — and a second provider would
+have to clear it independently, since the offline corpus proves input-pipeline properties but
+guardrail effectiveness is model-specific.
+
+**Artifact:** `scripts/cf-ai-spike.ts`, ABOUTME-marked as a spike artifact, not imported by production
+code and outside the vitest include globs. The throwaway Worker that carried requests to the AI
+binding lived in the scratchpad and is not committed.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 68 files / 1550 passed /
+2 skipped (rebased onto dev after the injection-hardening and observability work landed).
