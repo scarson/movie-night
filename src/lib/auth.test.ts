@@ -20,16 +20,26 @@ function seedUser(db: D1Database, overrides: Partial<{ id: string; googleId: str
 
 function seedSession(
   db: D1Database,
-  overrides: Partial<{ tokenHash: string; userId: string; expiresAt: string }> = {}
+  overrides: Partial<{
+    tokenHash: string;
+    userId: string;
+    expiresAt: string;
+    createdAt: string;
+    rotatedAt: string;
+  }> = {}
 ) {
   const {
     tokenHash = "hash1",
     userId = "u1",
     expiresAt = new Date(Date.now() + 86400000).toISOString(),
+    createdAt = "2026-01-01T00:00:00.000Z",
+    rotatedAt,
   } = overrides;
   return db
-    .prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
-    .bind(tokenHash, userId, expiresAt, "2026-01-01T00:00:00.000Z")
+    .prepare(
+      "INSERT INTO sessions (token_hash, user_id, expires_at, created_at, rotated_at) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(tokenHash, userId, expiresAt, createdAt, rotatedAt ?? null)
     .run();
 }
 
@@ -799,5 +809,83 @@ describe("authenticateRequest", () => {
     const { results } = await sessionRows(raw, "u1");
     expect(results.map((row) => row.token_hash)).toEqual([tokenHash]);
     expect(results[0].rotated_at).toBeNull();
+  });
+});
+
+describe("enforceSessionLimit", () => {
+  /** Names a live session by its age rank, zero-padded so lexical order is age order. */
+  const liveToken = (rank: number) => `live-${String(rank).padStart(2, "0")}`;
+
+  /** `count` live sessions, oldest first. */
+  async function seedLiveSessions(db: D1Database, count: number) {
+    for (let i = 0; i < count; i++) {
+      await seedSession(db, {
+        tokenHash: liveToken(i),
+        createdAt: `2026-01-01T00:00:${String(i).padStart(2, "0")}.000Z`,
+      });
+    }
+  }
+
+  function liveTokens(rows: { token_hash: string; rotated_at: string | null }[]) {
+    return rows.filter((row) => row.rotated_at === null).map((row) => row.token_hash);
+  }
+
+  it("holds the cap against sessions a rotation has spent", async () => {
+    const { enforceSessionLimit, MAX_SESSIONS } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    await seedUser(db);
+
+    await seedLiveSessions(db, MAX_SESSIONS);
+    // Rotation tombstones the newest device left behind, still inside their
+    // grace window and so newer than every device that signed in earlier.
+    for (let i = 0; i < 2; i++) {
+      await seedSession(db, {
+        tokenHash: `spent-${i}`,
+        createdAt: "2026-01-01T00:01:00.000Z",
+        rotatedAt: "2026-01-01T00:01:00.000Z",
+      });
+    }
+
+    await enforceSessionLimit(db, "u1");
+
+    const { results } = await sessionRows(db, "u1");
+    expect(liveTokens(results)).toEqual(
+      Array.from({ length: MAX_SESSIONS }, (_, i) => liveToken(i))
+    );
+  });
+
+  it("evicts the oldest live session when live sign-ins exceed the cap", async () => {
+    // A spent row older than every device would satisfy an eviction that counted
+    // live rows but deleted by age alone, leaving the cap unenforced.
+    const { enforceSessionLimit, MAX_SESSIONS } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    await seedUser(db);
+
+    await seedSession(db, {
+      tokenHash: "spent-oldest",
+      createdAt: "2025-12-31T00:00:00.000Z",
+      rotatedAt: "2025-12-31T00:00:00.000Z",
+    });
+    await seedLiveSessions(db, MAX_SESSIONS + 1);
+
+    await enforceSessionLimit(db, "u1");
+
+    const { results } = await sessionRows(db, "u1");
+    expect(liveTokens(results)).toEqual(
+      Array.from({ length: MAX_SESSIONS }, (_, i) => liveToken(i + 1))
+    );
+  });
+
+  it("leaves an account under the cap untouched", async () => {
+    const { enforceSessionLimit, MAX_SESSIONS } = await import("./auth");
+    const db = createFakeD1(loadMigration());
+    await seedUser(db);
+
+    await seedLiveSessions(db, MAX_SESSIONS - 1);
+
+    await enforceSessionLimit(db, "u1");
+
+    const { results } = await sessionRows(db, "u1");
+    expect(liveTokens(results)).toHaveLength(MAX_SESSIONS - 1);
   });
 });

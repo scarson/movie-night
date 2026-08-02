@@ -8,11 +8,10 @@ import {
   sha256,
   createJWT,
   decodeJwt,
+  enforceSessionLimit,
   validateReturnTo,
   REFRESH_EXPIRY_DAYS,
 } from "@/lib/auth";
-
-const MAX_SESSIONS = 10;
 
 export async function GET(request: NextRequest) {
   const { env } = await getCloudflareContext();
@@ -159,22 +158,7 @@ export async function GET(request: NextRequest) {
       .bind(tokenHash, actualUserId, expiresAt, now)
       .run();
 
-    // Enforce max sessions per user — delete all excess, not just one
-    const countRow = await db
-      .prepare("SELECT COUNT(*) as count FROM sessions WHERE user_id = ?")
-      .bind(actualUserId)
-      .first<{ count: number }>();
-
-    const excess = (countRow?.count ?? 0) - MAX_SESSIONS;
-    if (excess > 0) {
-      await db
-        .prepare(
-          "DELETE FROM sessions WHERE token_hash IN " +
-            "(SELECT token_hash FROM sessions WHERE user_id = ? ORDER BY created_at ASC LIMIT ?)"
-        )
-        .bind(actualUserId, excess)
-        .run();
-    }
+    await enforceSessionLimit(db, actualUserId);
 
     // Sign JWT
     const jwt = await createJWT({ userId: actualUserId, email }, env.JWT_SECRET);

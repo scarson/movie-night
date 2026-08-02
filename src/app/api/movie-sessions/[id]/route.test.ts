@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createFakeD1, loadMigration } from "@/test/fake-d1";
+import { recordStatements } from "@/test/statement-recorder";
 import { createJWT } from "@/lib/auth";
 import { createMovieSession, insertRecommendation } from "@/lib/movie-sessions";
 import { deleteAccount, DELETED_USER_LABEL } from "@/lib/account";
@@ -330,5 +331,32 @@ describe("GET /api/movie-sessions/[id]", () => {
     expect(body.response.conversational).toBe(`Tonight leans toward ${DELETED_USER_LABEL}.`);
     // The survivor's own record is untouched.
     expect(body.response.tasteMap.members[1].name).toBe("Alex");
+  });
+
+  it("reads only the round columns it serves", async () => {
+    // candidate_snapshot holds the whole ~200-title pool the round was chosen
+    // from and reaches no response field; every reload would carry it over the
+    // wire from D1 for nothing (dev/reports/2026-08-01-performance-audit.md).
+    const base = createFakeD1(loadMigration());
+    const { db, statements } = recordStatements(base);
+    vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+    const sessionId = await setupSession(base);
+    await seedTitle(base, 27205, "Inception");
+    await insertRecommendation(base, {
+      sessionId,
+      roundNumber: 1,
+      aiResponse: sampleResponse([27205]),
+      keptTmdbIds: [],
+      removedTmdbIds: [],
+      steeringFeedback: "",
+      candidateSnapshot: [27205],
+    });
+
+    expect((await get(sessionId, "u1")).status).toBe(200);
+
+    const read = statements.find((statement) => statement.sql.includes("FROM recommendations"));
+    expect(read).toBeDefined();
+    const columns = read!.sql.slice("SELECT ".length, read!.sql.indexOf(" FROM"));
+    expect(columns.split(", ")).toEqual(["round_number", "ai_response"]);
   });
 });
