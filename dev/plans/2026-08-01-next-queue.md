@@ -1,7 +1,7 @@
 # Next queue — items 6–10
 
 **Written:** 2026-08-01, while items 1–5 of the current wave were in flight.
-**Status:** items 6–9 shipped 2026-08-02. Item 10 remains planned and **not started**. Each is scoped to be dispatchable as a single agent.
+**Status:** items 6–10 all shipped 2026-08-02. The queue is complete; follow-on work is tracked in `dev/research/open-decisions.md` and the next handoff.
 
 **Update 2026-08-02.** Items 1–5 all shipped: prompt-injection threat model + corpus (PR #37),
 abuse-surface and rate limits (#36), observability + deploy preflight (#39), Tier-2 cleanup (#35),
@@ -175,7 +175,19 @@ change.
 
 ---
 
-## 10. Cost model and per-session spend projection
+## 10. Cost model and per-session spend projection — **SHIPPED 2026-08-02**
+
+**Outcome:** `dev/research/cost-model.md`, plus `scripts/measure-prompt.mts`. The assembled prompt is
+measured exactly in characters (36,638 representative / 65,253 worst case), with tokens given as a
+band because `count_tokens` needs a key and tiktoken would undercount Claude badly. Three findings
+change the picture: (a) the 3,000-token output estimate is not wrong, it is an **unlabelled thinking
+budget** — the call sends `thinking: adaptive`, so billed output is thinking + JSON, and the measured
+JSON is only ~836 tokens; (b) **prompt caching cannot apply**, because `refinementNote`/`steeringNote`
+are interpolated into `system` (which renders before messages) and the candidate block is filtered by
+a growing `removedIds` — and the system prompt is below Sonnet 5's 1024-token cache minimum anyway;
+(c) the retry ceiling is **2 calls per round, not 4**. A live introductory rate expires 2026-08-31 and
+raises every figure 50%.
+
 
 **Why.** `MONTHLY_MATCH_LIMIT` defaults to 2000 with no stated unit economics, and the abuse-surface
 review (item 2, in flight) will surface per-user spend caps as a decision needing Sam. That decision is
