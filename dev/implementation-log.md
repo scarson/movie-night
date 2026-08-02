@@ -3927,3 +3927,46 @@ representative prompt, but **~30% of the system prompt**, where it is now the lo
 `docs/security/prompt-injection.md` §4's rows 1–5 were specified against a system prompt without it.
 
 Gates green: `tsc` clean, `eslint` clean, **1,586 passed / 3 skipped** (68 files).
+
+---
+
+## open-decisions #12b — a named destructive control level (2026-08-02)
+
+Priority-queue item 2. Three hand-rolled buttons — the leave-group confirm and both delete-account
+controls — shared a near-identical ember string that `control-classes.ts` did not name, and one omitted
+the inert treatment the other two carried. Same shape as the 2026-08-01 disabled-controls
+consolidation: several sites, several strings, nothing able to say which was canonical.
+
+Added `destructiveBoundaryClasses`, `destructiveControlClasses`, `destructiveButtonClasses` and
+`compactDestructiveButtonClasses`, pinned by six new cases in `control-classes.test.ts` including a
+call-site guard (`/border-ember[^"`]*hover:bg-ember/`) against re-spelling the pair. TDD: all six failed
+first, and the call-site guard failed against the three real sites.
+
+**Two things stated precisely, because the looser version would have been wrong:**
+
+- **The omitted inert treatment was latent, not live.** The delete-account *trigger* never sets
+  `disabled` — `{!confirming && …}` unmounts it instead. So the divergence had no rendered consequence.
+  It is worth fixing as the state the previous consolidation was in *before* it acquired one, not as a
+  bug anyone could have hit.
+- **Nothing renders differently.** The composed strings carry the same utilities the call sites spelled
+  out; only order changes, plus `disabled:` variants that are inert on a control that is never disabled.
+  A consolidation with no visual diff to review.
+
+**Why a fourth level rather than a recoloured secondary:** it signals consequence, not rank. It is never
+the counterweight to a primary CTA and never appears twice on a screen. It reuses
+`disabledOutlinedClasses` rather than inventing a fourth inactive vocabulary — "a disabled control
+becomes chrome" is one rule for every outlined level, and that string's
+`disabled:hover:bg-transparent` was written for these ember buttons in the first place.
+
+**Contrast recomputed with `src/test/contrast.ts`, not inherited from the call sites:** ember boundary
+**4.70:1** on midnight and **4.12:1** on charcoal against 1.4.11's 3:1; cream label 16.52:1;
+midnight-on-ember hover fill **4.70:1** against the 4.5:1 text floor — narrow enough that fill and label
+have to travel together, as in `primaryFillClasses`.
+
+**A comment was displaced, not deleted.** `groups/page.tsx` carried *"Ember carries the destructive
+signal as the border; ember text on charcoal is only 4.1:1, under AA."* Removing the hand-rolled string
+removed its home, so the reasoning moved into `destructiveBoundaryClasses`' doc comment with the
+measured figures attached. Per CLAUDE.md a comment may only go when it is provably false; this one is
+true, so it moved.
+
+Gates green: `tsc` clean, `eslint` clean, **1,592 passed / 3 skipped** (68 files).
