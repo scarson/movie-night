@@ -44,6 +44,23 @@ app.
 The offline corpus (603 cases) is green and four real vulnerabilities were fixed. What remains needs a
 real key: 12 specified rows, under $5, one afternoon. Rows 1–5 failing keeps the gate closed.
 
+### 14. The engine invents a taste profile when it has nothing to go on
+**Raised by:** the review of #12, 2026-08-02
+`MATCHING_RESPONSE_SCHEMA` (`src/types/matching.ts`) marks `summary`, `primaryVibes` and
+`genreAffinities` **required** for every member, plus `overlap.summary`, and the call sends
+`output_config.format: json_schema` (`src/lib/matching.ts:580`). For an account with nothing saved the
+member block is five consecutive `None selected` / `None` lines and the mood line is
+`No specific mood` — yet strict structured output leaves the model no way to decline. The solo
+directive compounds it: *"summary restates the viewer's taste in your own words, sharedVibes lists
+their strongest vibes"*, for a viewer who has stated no taste. **There is no empty-profile branch
+anywhere in the engine**, and `thin_results` does not cover it — that fires on fewer than three valid
+ids, which is about id resolution, not input richness.
+
+This is where F1's real defect lives. Fixing it here covers every path in, including the ritual
+abandoner whose saved-but-empty profile a routing change would never have caught. Whether the model
+currently hedges or confabulates is **unmeasured** — one live call with an empty member block settles
+it, and `matching.eval.test.ts` has no empty-profile case among its two live scenarios.
+
 ---
 
 ## Design calls
@@ -80,8 +97,44 @@ than rewriting stored text, landed while there are zero production rounds to bac
 recommended: a stop-word heuristic, which trades a visible garbling bug for a silent privacy-promise
 failure for exactly the users with the commonest names.
 
-### 12. What `/tonight` should offer an account with nothing saved
+### 12. What `/tonight` should offer an account with nothing saved — **SETTLED 2026-08-02**
 **Raised by:** `dev/reports/first-run-experience.md` (queue item 6)
+
+**Answered 2026-08-02** under Sam's delegated authority, after two independent design reviews with
+opposed briefs (one to recommend a change, one to steelman leaving the screen alone). Both are
+summarised in `dev/implementation-log.md`; the decisions are in DESIGN.md's log.
+
+- **(a) Does a first visit route to the ritual? — No.** Declined, and the finding relocated. The
+  motivating claim is that quick match "looks like the product working" for an empty account; the
+  report that makes it also discloses it never saw that screen, because reaching it needs a live
+  Anthropic call. Its supporting evidence does not close the gap either — the match route records the
+  rate-limit hit *before* `runMatching` ("the round is billed the moment we ask"), so 30 `daily_limit`
+  hits are equally consistent with 30 failed calls. Against it: the ritual is 3.77 screens with its
+  Continue at y=2693 and nothing `sticky` anywhere (`dev/reports/mobile-qa.md`); `advance()` at step 0
+  has no validation, so an abandoner saves five empty arrays and lands on the identical prompt having
+  paid that scroll; and the predicate does not exist — `GET /api/user/profile` returns
+  `emptyProfile()` for a missing row, so the "no profile row" this entry originally named is not
+  observable through any API. **`dev/reports/first-run-experience.md` §F1 and
+  `dev/reports/mobile-qa.md` §MQ-2 are findings from the same session pointing opposite ways, and
+  neither cites the other.**
+- **(b) Does "Invite someone" belong on `/tonight`? — Yes.** Both reviewers agreed it is separable and
+  carries none of (a)'s problems. Shipped: it takes the existing footer slot when `groups.length === 0`
+  and the fetch succeeded, as an outlined control, keyed off a fetch the hub already makes.
+- **The two copy strings are fixed** — but *not* as a consequence of (a), which is how this entry
+  originally framed them. Both are reachable without passing through the hub, and both had an honest
+  reword available. `/quick` now reads "No vibe set — surprise us."; the no-round results branch reads
+  "This session was set up but never matched. It just needs a run."
+- **F5 is fixed** — a radiogroup of one is stated rather than offered.
+- **Also fixed, and outside this entry's scope:** the entry CTAs were live before `/api/groups`
+  resolved while `target` was still `""`, so a user with exactly one group who pressed Quick match in
+  that window got a **solo** match, silently.
+
+**What this decision moved rather than closed → see #14.**
+
+**The finding as originally written, retained** — the answer above is the current state, and this is
+what it was answering. Note that its closing claim, that settling (a) also settles the two copy
+strings, is one of the things the reviews corrected:
+
 Measured on a brand-new account: **Quick match** is the amber primary, the full ritual is the outlined
 secondary, and "Groups & invites" is the smallest, lowest-contrast element on the page. Quick match
 reads saved profiles and this account has none — nothing blocks it, and `matching.ts` renders the empty

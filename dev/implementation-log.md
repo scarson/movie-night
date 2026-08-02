@@ -3673,3 +3673,77 @@ OpenRouter key, so there is no TMDB token in this environment to check provider 
 name across the boundary. Re-check when a TMDB token is available.
 
 Gates green before commit: `tsc` clean, `eslint` clean, **1,565 passed / 2 skipped** (68 files).
+## open-decisions #12 — first-run routing on `/tonight` (2026-08-02)
+
+Queue item 1 from `dev/handoff-2026-08-02-night.md`. Settled under Sam's delegated authority after two
+independent design reviews run **with opposed briefs** — one asked to recommend a change and specify it,
+one asked to build the strongest case for leaving the screen alone. That pairing is why this entry is not
+what the queue expected: the adversarial brief found that the finding motivating the change was never
+observed by anyone.
+
+### What the reviews found, and what changed because of it
+
+**F1's premise is unverified in both directions.** `dev/reports/first-run-experience.md:126-128` says an
+empty account gets recommendations that "look like the product working" — and the same report, at
+`:202-204`, discloses that it never reached that screen, because doing so needs a live Anthropic call.
+The evidence it offers instead ("I pressed it and a session was created and a match attempted") does not
+close the gap: `api/movie-sessions/[id]/match/route.ts` records the rate-limit hit **before**
+`runMatching`, with the comment *"the round is billed the moment we ask, whether or not it comes back
+usable"* — so tripping the real 30/24h rule is equally consistent with 30 *failed* model calls. Verified
+against the route, not taken on the reviewer's word.
+
+**Two findings from the same session point opposite ways and neither cites the other.** F1 says route new
+users to the ritual. `dev/reports/mobile-qa.md:78-88` measures that ritual at **3.77 screens** with its
+Continue at **y=2693** and records that **nothing anywhere in the app uses `position: sticky` or
+`fixed`**. Both figures re-checked in the file.
+
+**The ritual guarantees nothing.** `ritual/page.tsx` `advance()` at step 0 has **no validation** — it
+calls `saveProfile(draft)` unconditionally. An abandoner PUTs five empty arrays and reaches the identical
+prompt, having paid the scroll.
+
+**The predicate this entry named does not exist.** `api/user/profile/route.ts` returns `emptyProfile()`
+when there is no row, so a client cannot distinguish "never had a profile" from "a row of empty lists".
+"On a first visit (no profile row)" was not implementable as written. Both reviewers reached this
+independently.
+
+**So the defect was relocated, not dismissed.** `MATCHING_RESPONSE_SCHEMA` marks `summary`,
+`primaryVibes` and `genreAffinities` required per member and the call sends
+`output_config.format: json_schema` (`matching.ts:580`) — strict structured output leaves the model **no
+way to decline** to describe someone it knows nothing about, and no empty-profile branch exists anywhere
+in the engine. That is `open-decisions.md` **#14**, filed under *Blocking a public launch* because it is
+visible on first use, with its unmeasured status stated. Fixing it there covers the ritual abandoner too,
+which a routing change never would.
+
+### Shipped
+
+| Commit | What |
+|---|---|
+| `ad51cdf` | **A bug outside this entry's scope.** Both entry CTAs encode the selected group, and `target` is `""` until `/api/groups` resolves — but the skeleton covered only the picker, so the buttons were live throughout. A user with exactly one group who pressed Quick match in that window got a **solo** match, silently. They now wait behind a skeleton of the same shape. |
+| `72d4864` | F5, and decision (b). The one-option radiogroup is replaced by a stated line; "Invite someone" takes the footer slot when there are no groups. |
+| `39f67cc` | Both false copy strings. |
+
+**Decision (a) — declined.** Recorded in DESIGN.md's log with the reasoning, because a conditional class
+string with no recorded rationale is exactly the mechanism this project's failure mode runs on.
+
+**`groupsFailed` is load-bearing in two places.** The catch sets `groups` to `[]`, so an emptiness test
+alone conflates "no groups" with "we could not find out". The picker therefore **stays** on failure
+(falling back to solo is a claim about who the match is for) and the invite is **suppressed** (we cannot
+promise a first group to someone who may already have several). Both pinned by tests.
+
+**The copy strings were not a consequence of (a),** which is how this entry originally framed them. Both
+screens are reachable without passing through the hub and both had an honest reword.
+
+### One existing test was rewritten, not deleted
+
+`"starts on solo when the user has no groups"` asserted a checked radio that resolving F5 removes. The
+invariant it guarded — solo is the selection, and neither CTA carries a group — still holds and is still
+asserted; only its expression moved from a radio to a stated line.
+
+### A test of my own that could not have failed
+
+The first version of `"hides the single-option group picker"` waited on the Quick match link, which is on
+screen *before* groups resolve — when the picker is legitimately absent anyway. It passed against
+unfixed code. It now waits on the invite link, which only exists once the fetch has resolved empty.
+Caught before commit, and it is the same defect class `docs/pitfalls/testing-pitfalls.md` exists for.
+
+Gates green at each commit: `tsc` clean, `eslint` clean, **1,572 passed / 2 skipped** (68 files), +8.
