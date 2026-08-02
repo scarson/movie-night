@@ -12,6 +12,7 @@ import { RankedList, type Rating } from "@/components/ranked-list";
 import { ConversationalView } from "@/components/conversational-view";
 import { RefinePanel } from "@/components/refine-panel";
 import { primaryButtonClasses } from "@/components/control-classes";
+import { framingFor } from "@/lib/match-errors";
 import {
   fetchSessionResults,
   runMatchRound,
@@ -32,47 +33,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
-
-interface ErrorFraming {
-  heading: string;
-  retry: boolean;
-  loosen?: boolean;
-}
-
-/**
- * The matching error taxonomy, as the person waiting experiences it. The body
- * copy is always the server's own string; this only picks the framing and the
- * way out, so the two can never drift apart.
- *
- * A Map, not an object literal: `kind` arrives over the wire, and a plain index
- * lookup would resolve inherited keys like "constructor" to something truthy
- * and skip the fallback entirely.
- */
-const ERROR_FRAMING = new Map<string, ErrorFraming>([
-  ["timeout", { heading: "Our movie brain is having a lie-down", retry: true }],
-  ["overloaded", { heading: "Our movie brain is having a lie-down", retry: true }],
-  // Indistinguishable from a transient outage on this side, and an operator
-  // rotating a key back is the far commoner case than one that stays revoked.
-  ["provider_auth", { heading: "Our movie brain is having a lie-down", retry: true }],
-  ["rate_limited", { heading: "Everyone picked tonight", retry: true }],
-  ["monthly_cap", { heading: "Everyone picked tonight", retry: true }],
-  ["malformed", { heading: "That came back garbled", retry: true }],
-  [
-    "thin_results",
-    { heading: "That was a tough brief — loosen a dealbreaker?", retry: false, loosen: true },
-  ],
-  ["round_limit", { heading: "That's the evening's last round", retry: false }],
-  // retry: false, unlike the other 429s — the window is a day, not a moment,
-  // and the default framing would offer a retry button that cannot succeed.
-  ["daily_limit", { heading: "That's today's last round", retry: false }],
-  ["left_group", { heading: "You've left this group", retry: false }],
-]);
-
-const DEFAULT_FRAMING: ErrorFraming = { heading: "That didn't work", retry: true };
-
-function framingFor(kind: string | null): ErrorFraming {
-  return ERROR_FRAMING.get(kind ?? "") ?? DEFAULT_FRAMING;
-}
 
 function Results({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
@@ -269,14 +229,22 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
             <p className="mt-2xs max-w-[62ch] break-words text-base text-cream">{refineError.message}</p>
           </div>
         )}
-        <button
-          type="button"
-          disabled={leftGroup}
-          onClick={() => void runRound({ keptTmdbIds: [], removedTmdbIds: [], steeringFeedback: "" })}
-          className={`${primaryButtonClasses} mt-xl w-full sm:w-auto`}
-        >
-          Find our match →
-        </button>
+        <div className="mt-xl flex flex-col gap-sm sm:flex-row sm:items-center">
+          <button
+            type="button"
+            disabled={leftGroup}
+            onClick={() => void runRound({ keptTmdbIds: [], removedTmdbIds: [], steeringFeedback: "" })}
+            className={`${primaryButtonClasses} w-full sm:w-auto`}
+          >
+            Find our match →
+          </button>
+          <Link
+            href="/tonight"
+            className="inline-flex min-h-12 items-center text-base font-medium text-amber hover:text-warm-white"
+          >
+            Back to tonight
+          </Link>
+        </div>
       </main>
     );
   }

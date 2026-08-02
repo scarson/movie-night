@@ -119,9 +119,23 @@ export default function JoinPage({
           )}
 
           {error && (
-            <p role="alert" className="mt-lg text-base text-ember">
-              {error}
-            </p>
+            <>
+              <p role="alert" className="mt-lg text-base text-ember">
+                {error}
+              </p>
+              {/* An invite that doesn't resolve is a cold arrival with nowhere
+                  to go — pressing the same button again is the one thing that
+                  cannot help. */}
+              <p className="mt-md max-w-[42ch] text-base text-ash">
+                Check the link with whoever sent it, or start your own group.
+              </p>
+              <Link
+                href="/groups"
+                className="mt-md inline-flex min-h-12 items-center text-base font-medium text-amber hover:text-warm-white"
+              >
+                Your groups
+              </Link>
+            </>
           )}
         </>
       )}

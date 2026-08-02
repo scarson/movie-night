@@ -221,14 +221,20 @@ export async function startSession(
   return { sessionId, error: sessionId === null ? (error ?? GENERIC_ERROR) : null };
 }
 
-/** Runs a matching round. Returns the server's user-facing error, or null on success. */
-export async function requestMatch(sessionId: string): Promise<string | null> {
-  const { error } = await send(
+/**
+ * Runs a matching round. Returns the server's user-facing error and its `kind`,
+ * or `{ error: null }` on success. The kind decides which of the failure's ways
+ * out can actually work, so the caller has to see it.
+ */
+export async function requestMatch(
+  sessionId: string
+): Promise<{ error: string | null; kind: string | null }> {
+  const { error, kind } = await send(
     `/api/movie-sessions/${encodeURIComponent(sessionId)}/match`,
     "POST",
     {}
   );
-  return error;
+  return { error, kind };
 }
 
 /** One matching round's payload, from either the session GET or a match POST. */

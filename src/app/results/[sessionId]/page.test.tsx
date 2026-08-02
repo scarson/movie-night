@@ -483,6 +483,20 @@ describe("results page", () => {
     expect(matchCalls(calls)).toHaveLength(1);
   });
 
+  it("leaves a way out of a session that has no round yet", async () => {
+    stubApi({
+      get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
+    });
+    await renderResults();
+    await screen.findByRole("button", { name: /find our match/i });
+
+    // Both sibling load-failure branches offer this; running the match is not
+    // the only thing someone who lands here might want.
+    expect(screen.getByRole("link", { name: /back to tonight/i }).getAttribute("href")).toBe(
+      "/tonight"
+    );
+  });
+
   it("mentions weighting only to the person who asked for it", async () => {
     stubApi({
       get: {
