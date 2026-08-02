@@ -3,7 +3,7 @@
 
 import { runWithCloudflareRequestContext } from "./.open-next/cloudflare/init.js";
 import { handler } from "./.open-next/server-functions/default/handler.mjs";
-import { runWeeklyRefresh } from "./src/lib/cron-handler";
+import { runScheduled } from "./src/lib/cron-handler";
 
 const worker = {
   async fetch(request: Request, env: any, ctx: any) {
@@ -12,17 +12,11 @@ const worker = {
     });
   },
 
-  // Do not hand this promise to ctx.waitUntil: a rejection there still reports
-  // the invocation successful to Cloudflare's cron metrics. Awaiting and
-  // rethrowing marks it failed. Cron invocations get a 15-minute budget, so
-  // awaiting the whole refresh is safe.
+  // The awaited call, its logging and its rethrow live in runScheduled so they
+  // are reachable from a test — this file imports build-time OpenNext artifacts
+  // and cannot itself be imported by one.
   async scheduled(event: any, env: any) {
-    try {
-      await runWeeklyRefresh(env);
-    } catch (err) {
-      console.log(JSON.stringify({ event: "cron_failed", message: String(err) }));
-      throw err;
-    }
+    await runScheduled(event, env);
   },
 };
 

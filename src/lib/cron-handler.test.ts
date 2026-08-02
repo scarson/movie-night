@@ -2,7 +2,7 @@
 // ABOUTME: an injected fetch stub (no network), and an injected log spy (pristine output).
 import { describe, expect, it, vi } from "vitest";
 import { createFakeD1, loadMigration, withFailingStatement } from "@/test/fake-d1";
-import { runWeeklyRefresh } from "./cron-handler";
+import { runScheduled, runWeeklyRefresh } from "./cron-handler";
 
 const OLD_TIMESTAMP = "2020-01-01T00:00:00.000Z"; // > 7 days stale under any reasonable "now"
 const RECENT_TIMESTAMP = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago: fresh
@@ -284,7 +284,13 @@ describe("runWeeklyRefresh", () => {
     expect(failed!.last_refreshed_at).toBe(OLD_TIMESTAMP);
 
     const summary = JSON.parse(log.mock.calls[0][0]);
-    expect(summary).toEqual({ event: "cron_refresh", refreshed: 1, fetch_errors: 1, write_errors: 0 });
+    expect(summary).toEqual({
+      event: "cron_refresh",
+      refreshed: 1,
+      fetch_errors: 1,
+      write_errors: 0,
+      failed_tmdb_ids: [1],
+    });
   });
 
   it("logs a structured cron_refresh summary line with refreshed/error counts, even when nothing is stale", async () => {
@@ -549,6 +555,7 @@ describe("runWeeklyRefresh", () => {
       refreshed: 0,
       fetch_errors: 1,
       write_errors: 1,
+      failed_tmdb_ids: [1],
     });
   });
 
@@ -569,6 +576,80 @@ describe("runWeeklyRefresh", () => {
       refreshed: 0,
       fetch_errors: 3,
       write_errors: 0,
+      failed_tmdb_ids: [3, 2, 1],
     });
+  });
+
+  it("names the titles that failed, capped so a total outage cannot bloat the line", async () => {
+    const db = createFakeD1(loadMigration());
+    await seedTitles(db, 12);
+
+    const fetchStub = vi.fn(() => Promise.resolve(new Response("Server error", { status: 500 })));
+    const log = vi.fn();
+
+    await runWeeklyRefresh(fakeEnv(db), fetchStub as unknown as typeof fetch, log);
+
+    const summary = JSON.parse(log.mock.calls[0][0]);
+    expect(summary.fetch_errors).toBe(12);
+    // Candidate order is popularity DESC, and popularity equals the id here.
+    expect(summary.failed_tmdb_ids).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
+  });
+
+  it("omits failed_tmdb_ids entirely from a clean run", async () => {
+    const db = createFakeD1(loadMigration());
+    const log = vi.fn();
+
+    await runWeeklyRefresh(fakeEnv(db), vi.fn() as unknown as typeof fetch, log);
+
+    expect(JSON.parse(log.mock.calls[0][0])).not.toHaveProperty("failed_tmdb_ids");
+  });
+});
+
+describe("runScheduled", () => {
+  const controller = { cron: "0 9 * * 1", scheduledTime: Date.parse("2026-08-03T09:00:00.000Z") };
+
+  it("logs cron_started before doing any work, naming the schedule that fired", async () => {
+    const db = createFakeD1(loadMigration());
+    const log = vi.fn();
+
+    await runScheduled(controller, fakeEnv(db), vi.fn() as unknown as typeof fetch, log, vi.fn());
+
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: "cron_started",
+      cron: "0 9 * * 1",
+      scheduled_time: "2026-08-03T09:00:00.000Z",
+    });
+  });
+
+  it("logs cron_failed and rethrows so Cloudflare records the invocation as failed", async () => {
+    // The documented first-deploy failure: 0003 unapplied, so the staleness
+    // SELECT names a column that does not exist.
+    const db = createFakeD1(loadMigration());
+    const broken = withFailingStatement(db, {
+      match: "FROM titles",
+      error: new Error("no such column: last_refresh_attempt_at"),
+    });
+    const log = vi.fn();
+    const logError = vi.fn();
+
+    await expect(
+      runScheduled(controller, fakeEnv(broken), vi.fn() as unknown as typeof fetch, log, logError)
+    ).rejects.toThrow("no such column: last_refresh_attempt_at");
+
+    expect(JSON.parse(logError.mock.calls[0][0])).toEqual({
+      event: "cron_failed",
+      cron: "0 9 * * 1",
+      scheduled_time: "2026-08-03T09:00:00.000Z",
+      message: "Error: no such column: last_refresh_attempt_at",
+    });
+  });
+
+  it("logs nothing on the error sink for a run that completes", async () => {
+    const db = createFakeD1(loadMigration());
+    const logError = vi.fn();
+
+    await runScheduled(controller, fakeEnv(db), vi.fn() as unknown as typeof fetch, vi.fn(), logError);
+
+    expect(logError).not.toHaveBeenCalled();
   });
 });
