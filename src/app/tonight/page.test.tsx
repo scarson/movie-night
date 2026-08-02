@@ -54,8 +54,8 @@ function stubApi({
 }
 
 /**
- * Same as `stubApi`, but `/api/groups` hangs until the returned `resolve` is
- * called — the only way to observe the window where auth has settled and the
+ * Same as `stubApi`, but `/api/groups` hangs until the returned `release` is
+ * called, so a test can assert on the window where auth has settled and the
  * group choice has not.
  */
 function stubApiWithPendingGroups(body: unknown) {
@@ -124,15 +124,17 @@ describe("Tonight hub", () => {
 
   it("starts on solo when the user has no groups", async () => {
     // Solo is still the selection; with no groups to choose between it is stated
-    // rather than offered as a radiogroup of one.
+    // rather than offered as a radiogroup of one. Both hrefs are what actually
+    // pin `selected === null` now that there is no radio to read it off.
     stubApi({
       me: { status: 200, body: ALICE },
       groups: { status: 200, body: { groups: [] } },
     });
     renderHub();
-    expect(await screen.findByText(/just you tonight/i)).toBeDefined();
+    await screen.findByText(/just you tonight/i);
     expect(screen.getByRole("link", { name: /quick match/i }).getAttribute("href")).toBe("/quick");
     expect(screen.getByRole("link", { name: /full ritual/i }).getAttribute("href")).toBe("/ritual");
+    expect(screen.queryByRole("radio")).toBeNull();
   });
 
   it("auto-selects the only group and carries it into both CTAs", async () => {
@@ -171,8 +173,9 @@ describe("Tonight hub", () => {
   });
 
   it("withholds the entry CTAs until the group choice has loaded", async () => {
-    // `target` is "" until /api/groups resolves, so a CTA pressed in this window
-    // silently starts a solo match for someone who has exactly one group.
+    // The defect this guards: `target` is "" until /api/groups resolves, so while
+    // the CTAs were live in that window, pressing one silently started a solo
+    // match for someone who has exactly one group.
     const { release } = stubApiWithPendingGroups({ groups: [SUNDAY] });
     renderHub();
     await screen.findByRole("heading", { name: /^Alice,/ });
@@ -210,8 +213,8 @@ describe("Tonight hub", () => {
   });
 
   it("withholds the invite when the groups request failed", async () => {
-    // The catch sets groups to [], so an emptiness test alone would promise a
-    // first group to someone who may already have several.
+    // The catch sets groups to [], so an emptiness test alone would pitch starting
+    // a group to someone who may already have several.
     stubApi({
       me: { status: 200, body: ALICE },
       groups: { status: 500, body: { error: "Failed to fetch groups" } },
@@ -235,8 +238,8 @@ describe("Tonight hub", () => {
   });
 
   it("keeps the picker when the groups request fails", async () => {
-    // Falling back to solo is a claim about who the match is for, so the choice
-    // has to stay on screen even though `groups` is [] here too.
+    // `groups` is [] here too, but we don't know that's the truth. Stating "just
+    // you" would assert something we failed to check, so the choice stays.
     stubApi({
       me: { status: 200, body: ALICE },
       groups: { status: 500, body: { error: "Failed to fetch groups" } },

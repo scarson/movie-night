@@ -46,15 +46,22 @@ real key: 12 specified rows, under $5, one afternoon. Rows 1–5 failing keeps t
 
 ### 14. The engine invents a taste profile when it has nothing to go on
 **Raised by:** the review of #12, 2026-08-02
-`MATCHING_RESPONSE_SCHEMA` (`src/types/matching.ts`) marks `summary`, `primaryVibes` and
-`genreAffinities` **required** for every member, plus `overlap.summary`, and the call sends
-`output_config.format: json_schema` (`src/lib/matching.ts:580`). For an account with nothing saved the
-member block is five consecutive `None selected` / `None` lines and the mood line is
-`No specific mood` — yet strict structured output leaves the model no way to decline. The solo
-directive compounds it: *"summary restates the viewer's taste in your own words, sharedVibes lists
-their strongest vibes"*, for a viewer who has stated no taste. **There is no empty-profile branch
-anywhere in the engine**, and `thin_results` does not cover it — that fires on fewer than three valid
-ids, which is about id resolution, not input richness.
+For an account with nothing saved the member block is five consecutive `None selected` / `None` lines
+(`src/lib/matching.ts:378-382`) and the mood line is `No specific mood` (`:385`). **There is no
+empty-profile branch anywhere in the engine**, and `thin_results` does not cover it — that fires on
+fewer than three surviving ids (`:518`), which is about id resolution, not input richness.
+
+**The pressure is the prompt directive, not the schema — an earlier draft of this entry had it
+backwards and would have sent the next reader to fix the wrong file.** The solo directive at
+`src/lib/matching.ts:355` instructs: *"summary restates the viewer's taste in your own words,
+sharedVibes lists their strongest vibes"* — an imperative to describe a taste that has not been
+stated. The schema's contribution is narrower than it first looks: `MATCHING_RESPONSE_SCHEMA`
+(`src/types/matching.ts:52`, `:63`) marks `summary`, `primaryVibes`, `genreAffinities` and
+`overlap.summary` **required**, and the call sends `output_config.format: json_schema`
+(`src/lib/matching.ts:580-583`) — but there is **no `minItems` or `minLength` anywhere in the file**.
+So the model can satisfy the schema exactly with `primaryVibes: []` and a `summary` that says there is
+nothing to go on. Structured output compels the fields to be *present*; it does not compel their
+contents. No schema change fixes this.
 
 This is where F1's real defect lives. Fixing it here covers every path in, including the ritual
 abandoner whose saved-but-empty profile a routing change would never have caught. Whether the model

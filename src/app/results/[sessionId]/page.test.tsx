@@ -510,10 +510,10 @@ describe("results page", () => {
     expect(matchCalls(calls)).toHaveLength(1);
   });
 
-  it("does not claim every member's profile is filled in on the no-round branch", async () => {
-    // The group payload carries no profile state for anyone, so "everything we
-    // need is saved" is a claim this page cannot check for the caller, let alone
-    // for the rest of the group.
+  it("states what happened without a claim about what is stored", async () => {
+    // "Everything we need is saved" reads as a claim about stored data, and which
+    // data is ambiguous: the session settings genuinely are saved, the profiles it
+    // will be run against may be empty. Stating the fact drops the ambiguity.
     stubApi({
       get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
     });

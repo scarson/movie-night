@@ -3733,17 +3733,117 @@ promise a first group to someone who may already have several). Both pinned by t
 **The copy strings were not a consequence of (a),** which is how this entry originally framed them. Both
 screens are reachable without passing through the hub and both had an honest reword.
 
+**Also changed, and initially undisclosed:** the explanatory line ("Quick match reads the saved profiles
+and goes…") moved from *below* the CTA row to *above* it, so the sentence distinguishing the two buttons
+is read before them rather than after. Focus order is unaffected — it is a non-focusable `<p>` and the
+link order is unchanged — but the visible reading order did change and the first write-up of this work
+did not mention it. A reviewer found the omission.
+
 ### One existing test was rewritten, not deleted
 
 `"starts on solo when the user has no groups"` asserted a checked radio that resolving F5 removes. The
 invariant it guarded — solo is the selection, and neither CTA carries a group — still holds and is still
 asserted; only its expression moved from a radio to a stated line.
 
-### A test of my own that could not have failed
+### Tests of mine that could not have failed — 3 of 8, not the 1 I first claimed
 
 The first version of `"hides the single-option group picker"` waited on the Quick match link, which is on
-screen *before* groups resolve — when the picker is legitimately absent anyway. It passed against
-unfixed code. It now waits on the invite link, which only exists once the fetch has resolved empty.
-Caught before commit, and it is the same defect class `docs/pitfalls/testing-pitfalls.md` exists for.
+screen *before* groups resolve — when the picker is legitimately absent anyway. I caught that one before
+commit and this section originally reported it as the only instance.
 
-Gates green at each commit: `tsc` clean, `eslint` clean, **1,572 passed / 2 skipped** (68 files), +8.
+**The review measured it and I was wrong.** A reviewer built a worktree at `d19f8d4`, copied all eight new
+tests in and ran them: **five fail against unfixed code, three pass** — `"keeps the group-management link
+instead of the invite once a group exists"`, `"withholds the invite when the groups request failed"` and
+`"keeps the picker when the groups request fails"`. All three are negative assertions that hold vacuously
+against a component that had no invite at all and rendered the picker unconditionally.
+
+They are not worthless: each was mutation-tested against HEAD and each is killed by a targeted mutation
+(dropping `!groupsFailed`, dropping `|| groupsFailed`, dropping `groups.length === 0`). So they are
+legitimate regression guards — they just do not demonstrate the change that introduced them, and saying
+"the tests fail first" of the set as a whole would have been false. Kept, with this recorded.
+
+### What the dual review found in this work
+
+Run per `dev/handoff-2026-08-02-night.md` §The review pattern: codex over `git diff -- src/`, an Opus
+subagent over the diff plus these docs with a named list of claims to verify. **They overlapped on three
+findings and each found things the other missed**, which is the second time that has held.
+
+Fixed in `HEAD` after verifying each against the code:
+
+1. **`open-decisions.md` #14 attributed the wrong mechanism** — the worst finding, because it would have
+   sent the next reader to fix the wrong file. I wrote that strict structured output leaves the model "no
+   way to decline" to describe an empty profile. `grep -c "minItems\|minLength" src/types/matching.ts`
+   returns **0**: the model can satisfy the schema with `primaryVibes: []` and an honest summary. The
+   schema compels field *presence*, not contents. The real pressure is the solo directive at
+   `matching.ts:355`. Rewritten.
+2. **The `hasGroups` comment claimed a symmetry the code does not have.** "Both reads exclude it" was
+   false — `showInvite` excludes the failed fetch; `hasGroups` merely happens to be false under it, and
+   the picker branch then deliberately *re-includes* failure via `|| groupsFailed`. A wrong justification
+   sitting directly above the line contradicting it.
+3. **DESIGN.md justified removing the one-option radiogroup as "debris", then kept that identical control
+   on the failure path.** The distinguishing reason is not operability, it is that stating "just you
+   tonight" asserts something a failed fetch never established. Reworded.
+4. **A focus-loss regression I introduced.** "Groups & invites" was focusable during the groups fetch and
+   was then *replaced* by the invite branch, dropping focus to `<body>`. The whole fetch-dependent region
+   now settles together, so nothing there is focusable until it does.
+5. **The `/quick` copy justification was wrong.** I wrote that the screen "cannot know" whether a profile
+   holds anything. It does not need to: the match path *does* read profiles (`movie-sessions.ts` joins
+   every member). The clause was not wrong in general, it was wrong for an empty account — and the screen
+   cannot tell which it is addressing. Same deletion, honest reason.
+6. **The `/results` copy justification over-claimed.** Two reviewers independently read "everything we
+   need is saved" as referring to the *session* — which genuinely is saved — so calling it false was a
+   contested reading presented as fact. The rewrite is a clarity fix, not a falsehood fix, and now says so.
+7. **`docs/accessibility.md` carried three stale line citations** into `tonight/page.tsx` for 3.3.7
+   Redundant Entry. Repointed.
+8. **The DESIGN.md row title over-reached** — "The hub keeps one shape" is falsified by the two rows
+   directly beneath it. Scoped to the CTAs, with the exception stated in the row.
+9. **The CTA skeleton reserved the wrong width** at `sm` and above (a flat `w-40` against two
+   content-sized buttons), and the loading text was `sr-only` with no `role="status"` despite DESIGN.md
+   §Accessibility naming `aria-live="polite"` for loading.
+
+**Caught by the repo's own guard, not by review:** duplicating the footer's `border-t border-slate` into
+the skeleton branch broke `control-contrast.test.tsx`'s slate allowlist (`tonight/page.tsx` 1 → 2). The
+divider now renders once, outside the branch. That test earning its keep is worth recording.
+
+Gates green: `tsc` clean, `eslint` clean, **1,572 passed / 2 skipped** (68 files), +8.
+
+### Verified in a browser, not only in tests
+
+Local `wrangler dev` on the OpenNext build with real D1 and a minted session, per the runbook in
+`dev/reports/2026-08-01-authenticated-a11y-verification.md` (which still works exactly as written).
+Measured at 1280×800 on a `user-new` account with no profile:
+
+| State | Result |
+|---|---|
+| No groups | "Just you tonight.", **0 radiogroups**, both CTAs `/quick` `/ritual`, "Invite someone" → `/groups` |
+| One group | Picker with 2 radios (group pre-selected), both CTAs `?group=grp-1`, footer back to "Groups & invites" |
+| Groups fetch 500 | Picker **kept**, invite **suppressed**, `role="alert"` shown, CTAs carry no group |
+| Loading | **0 focusable elements**, `role="status"` announces "Loading tonight's options…" |
+
+**Contrast recomputed in-page from the live palette, not recalled:** ash on midnight 6.21:1, ember on
+midnight 4.70:1, amber 9.04:1, cream 16.52:1. The invite control's boundary is `ash` at **6.21:1**
+against 1.4.11's 3:1, and it measures **129.6 × 44px**.
+
+**Reduced motion flipped on the same DOM** (`data-reduced-motion="true"`): `animation-name: none`,
+`opacity: 1`, `transform: none`. No inert-utility (UI-1) problem — nothing sits beside
+`animate-rise-fade` for the cascade to override.
+
+**Two things the browser corrected that reading could not.**
+
+1. **The skeleton widths.** Codex flagged the flat `sm:w-40` CTA placeholder as not matching two
+   content-sized buttons. Correct in principle — but the buttons measure **156.6px** and **159.3px**,
+   so one `w-40` is within 3.4px of both, and the "more precise" pair I wrote in response (168px /
+   184px) measured *worse*. Reverted, with the measurement in the comment so it is not re-fixed on
+   theory. This is UI-2 in the other direction: a source reading proved a mismatch that is real and
+   negligible.
+2. **The layout shift.** A reviewer projected that replacing the picker with a one-line statement
+   roughly doubled the first-run settle, and my own arithmetic said ~144px. **Measured, it is 8px**
+   for a solo account and 88px for a one-group account with one 80px block; two blocks would trade
+   that for 96px and 0px. One block, chosen for the account this screen was reworked for. Both
+   estimates were wrong and the measurement is in the code comment.
+
+**A trap worth recording:** an entrance animation read in a *backgrounded* tab reports
+`playState: "running"` with `currentTime` frozen at 0, so `animate-rise-fade` computes to `opacity: 0`
+and `translateY(8px)` — i.e. permanently invisible content. It is not: `document.visibilityState` was
+`"hidden"` and a screenshot renders it correctly. Check `visibilityState` before believing an
+animation-state measurement.

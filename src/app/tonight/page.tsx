@@ -58,8 +58,10 @@ export default function Tonight() {
   const firstName = user.name.trim().split(" ")[0];
   const target = selected === null ? "" : `?group=${encodeURIComponent(selected)}`;
 
-  // A failed fetch also leaves `groups` empty, so emptiness alone would promise a
-  // first group to someone who may already have several. Both reads exclude it.
+  // The catch leaves `groups` as [] with `groupsFailed` set, so an empty list means
+  // either "none" or "we couldn't find out". The two reads part company there: the
+  // invite has to know there are none before it offers a first group, while the
+  // picker is kept whenever solo can't be stated as a fact.
   const hasGroups = groups !== null && groups.length > 0;
   const showInvite = groups !== null && !groupsFailed && groups.length === 0;
 
@@ -69,11 +71,15 @@ export default function Tonight() {
         {firstName ? `${firstName}, who's watching tonight?` : "Who's watching tonight?"}
       </h1>
 
+      {/* This region loads to 168px with one group (two picker rows) and 24px with
+          none, so no single placeholder fits both. Measured at 1280px, one 80px
+          block settles 8px for a solo account and 88px for a one-group account;
+          two blocks would trade that for 96px and 0px. One block, because the
+          account with no groups is the one this screen was reworked for. */}
       <div className="mt-xl">
         {groups === null ? (
           <div className="space-y-sm">
-            <p className="sr-only">Loading tonight&apos;s options…</p>
-            <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
+            <p role="status" className="sr-only">Loading tonight&apos;s options…</p>
             <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
           </div>
         ) : (
@@ -94,38 +100,51 @@ export default function Tonight() {
         )}
       </div>
 
-      <p className="mt-2xl max-w-[46ch] text-sm text-ash">
-        Quick match reads the saved profiles and goes. The full ritual walks
-        through them first — comfort films, dealbreakers, tonight&apos;s mood.
-      </p>
-
-      {/* Both CTAs carry the chosen group, and `target` is empty until the groups
-          fetch resolves — live buttons here would silently match solo for someone
-          who has one. They wait on the same load the picker does. */}
+      {/* Everything below depends on the groups fetch: both CTAs encode the chosen
+          group and `target` is empty until it resolves, and the footer swaps
+          between two controls. Settling them together keeps a live control from
+          being replaced under a focused ring, and keeps the explanatory line from
+          describing buttons that are not on screen yet. */}
       {groups === null ? (
-        <div aria-hidden="true" className="mt-md flex flex-col gap-sm sm:flex-row">
-          <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
-          <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
+        <div aria-hidden="true">
+          <div className="mt-2xl h-10 w-full max-w-[46ch] rounded-control bg-charcoal" />
+          {/* Measured at 1280px, not estimated: the buttons render 156.6px and
+              159.3px wide and 48px tall, so one w-40 is within 3.4px of both.
+              They are content-sized, so this cannot be exact — it is close enough
+              that a "more precise" pair of widths measured worse. */}
+          <div className="mt-md flex flex-col gap-sm sm:flex-row">
+            <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
+            <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
+          </div>
         </div>
       ) : (
-        <div className="mt-md flex flex-col gap-sm sm:flex-row">
-          <Link
-            href={`/quick${target}`}
-            className={primaryButtonClasses}
-          >
-            Quick match
-          </Link>
-          <Link
-            href={`/ritual${target}`}
-            className={secondaryButtonClasses}
-          >
-            The full ritual
-          </Link>
-        </div>
+        <>
+          <p className="mt-2xl max-w-[46ch] text-sm text-ash">
+            Quick match reads the saved profiles and goes. The full ritual walks
+            through them first — comfort films, dealbreakers, tonight&apos;s mood.
+          </p>
+
+          <div className="mt-md flex flex-col gap-sm sm:flex-row">
+            <Link
+              href={`/quick${target}`}
+              className={primaryButtonClasses}
+            >
+              Quick match
+            </Link>
+            <Link
+              href={`/ritual${target}`}
+              className={secondaryButtonClasses}
+            >
+              The full ritual
+            </Link>
+          </div>
+        </>
       )}
 
       <div className="mt-3xl border-t border-slate pt-lg">
-        {showInvite ? (
+        {groups === null ? (
+          <div aria-hidden="true" className="h-11 w-40 rounded-control bg-charcoal" />
+        ) : showInvite ? (
           <>
             <p className="max-w-[46ch] text-sm text-ash">
               Watching with someone else? Start a group and send them the link —
