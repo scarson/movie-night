@@ -3082,3 +3082,67 @@ binding lived in the scratchpad and is not committed.
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 68 files / 1550 passed /
 2 skipped (rebased onto dev after the injection-hardening and observability work landed).
+## Phase 2 design + implementation plan (docs only)
+
+**Built:** `dev/plans/phase-2-design.md` and `dev/plans/phase-2-implementation-plan.md`. No feature
+code, no migrations written, no schema changes. Base `origin/dev` @ `f09d375`.
+
+**What this covers.** The post-watch rating loop — the feature `watch_history`, `watch_ratings` and
+`tension_axes` were reserved for in `0001`. Nothing in `src/` references any of the three today
+(verified by grep), so Phase 1 is a one-shot recommender and the design doc's own success criterion
+*"after 4+ sessions the matching visibly improves"* is currently unachievable by construction.
+
+**The framing, and why it matters.** `CLAUDE.md` requires brainstorming before creative work, and
+brainstorming is a dialogue with Sam. He was away, so it could not happen. The design document says
+so at the top and is written as **input to that conversation**: positions taken where the code or an
+approved document implies an answer, nine genuine product judgments left open with stated defaults so
+the plan stays executable. (`CLAUDE.md`'s skill-routing rule also says to ask which of superpowers /
+gstack to use when both cover a domain — brainstorming is such a domain, and that question could not
+be asked either.)
+
+**One position contradicts an approved decision.** The design doc's Taste Autopsy asks *"what
+surprised you about your partner's reaction"*. That stores one member's evaluation of another and
+feeds it to a model. The recommendation is to keep the column and ask about the film instead — but it
+is flagged as a challenge for Sam, not resolved, because he approved the original.
+
+**Decisions of substance.** Ratings are captured on the next `/tonight` visit, never at logging time.
+Simultaneous reveal, gated on every eligible member having a non-`NULL` rating; no timeout reveal.
+`rating IS NULL` means *skipped*, which is what makes the prompt loop terminate and what makes a skip
+indistinguishable from silence. Watched titles leave the candidate pool in code, with a comfort-list
+exception that inverts the removed-ids rule directly above it. Tension axes are computed by the
+existing weekly cron and are prompt input only in Phase 2 — nothing renders them.
+
+**Schema.** Two migrations pre-allocated: `0005_watch_loop.sql` (a uniqueness index on
+`watch_ratings(watch_history_id, user_id)`, `rated_at`, a partial unique index on `watch_history`,
+two supporting indexes) and `0006_tension_axes.sql`. **No foreign keys are added** — `session_members.user_id`
+has none either, deliberately, because `deleteAccount` rewrites those columns to a sentinel and a FK
+would forbid exactly the anonymization the privacy policy promises.
+
+**Review: four rounds, three self and one independent, two lanes.** The independent pass found two
+blockers the self-review missed, and both were the same shape as the project's worst prior bug:
+
+1. **An unrevealed rating could reach shared prose.** The design said reveal state never gates the
+   prompt, because "the model is not a group member". It is not — but its output is *delivered to*
+   group members, and in a couple "you two didn't get on with it" is attributable by elimination to
+   whoever did not answer. Fixed by withholding rating values until the pair completes, at a real and
+   stated product cost.
+2. **Private notes were feeding the tension-axis generator**, whose output is attributed prose about a
+   named person. Notes are now excluded from that prompt entirely.
+
+It also found a **backwards technical justification** in the design (a claim that the reveal gate
+needed a `users` join to avoid stranding the survivor — `group_members.user_id` is
+`ON DELETE CASCADE`, so the cascade had already done it, and the prescribed test would have passed
+either way), and **four prescribed tests that could not fail before their fix**, one of them in the
+plan's own load-bearing privacy set. Two tests that genuinely cannot fail are now labelled as
+regression guards rather than removed — §0.3 asks implementers to report unfailable tests, and a plan
+that ships two silently is not entitled to ask.
+
+**Plan shape:** 26 tasks, six groups, declared file ownership down to the function, a fixed merge
+order, pre-allocated migration numbers, and per-task "failing-first proof" text stating the exact
+reason each test must fail before its change. Standing order §0.3 carries the Phase 1 campaign's
+hardest-won lesson: a class of defect survives adversarial plan review and surfaces only when someone
+runs the test or checks a justification, so implementers are told to report plan defects rather than
+silently comply or silently fix.
+
+**Checks:** documentation only — no `tsc`, `lint`, `test` or build run, and none applicable. CI skips
+docs-only changes by `paths-ignore`, so this PR will show no checks, which is expected.
