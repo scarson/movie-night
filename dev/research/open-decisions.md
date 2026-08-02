@@ -12,7 +12,13 @@ date, and update the doc that raised it.
 ## Blocking a public launch
 
 ### 1. Lower `MONTHLY_MATCH_LIMIT` before sharing
-**Raised by:** `docs/security/abuse-surface.md`
+**Raised by:** `docs/security/abuse-surface.md`; arithmetic now in `dev/research/cost-model.md`
+**Update 2026-08-02.** The missing input is supplied. At the standard rate a round costs **~$0.076**
+(input measured, output assuming the old 3,000-token figure), so the 2000 cap ceilings at
+**$152/month** — $100 until the introductory rate lapses on 2026-08-31, and **$236** if thinking runs
+hotter than assumed. The argument for lowering it is headroom, not dollars: 2,000 rounds is ~250
+couples using the app weekly. A cap of **200** bounds exposure to ~$15/month and still supports ~25
+couples. Sam picks the number; the arithmetic is now there to pick against.
 The default is 2000 matches/month, which **models out** to roughly $80/month typical and $320 worst
 case. That was never a considered number, and neither is the model precise: it rests on a per-round
 output size of ~3,000 tokens that is **estimated, not measured** (see #11). Published input/output
@@ -138,6 +144,11 @@ loses more than it saves. Guardrail effectiveness is also model-specific, so a s
 clear the injection gate independently, forever.
 
 ### 11. The one measurement that would firm up every cost table
+**Update 2026-08-02.** Sharpened by `dev/research/cost-model.md`: the 3,000-token output figure is
+not an estimate of the *response*, it is an unlabelled **thinking** budget. The call sends
+`thinking: adaptive` at `effort: "medium"`, so billed output is thinking + JSON, and the JSON alone
+measures at ~836 tokens. What one served match reveals via `tokens_out` is therefore the thinking
+volume — the only genuinely unknown term left in the cost model.
 `ANTHROPIC_API_KEY` unblocks four things at once: the `effort` sweep against Anthropic, real
 `tokens_out` to replace the **estimated** 3,000-output-token figure that every cost table pivots on,
 the live eval suite (stale since `PROMPT_VERSION` moved to `p1.2`), and the injection launch gate.

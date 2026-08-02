@@ -3561,3 +3561,41 @@ commit on any ref. The only matches are deliberate placeholders.
 **Said plainly as not done:** no transitive licence audit (direct deps are all MIT), no provenance or
 signature verification, and no general runtime SBOM — the sharp claim is direct evidence about that
 one package, not an inventory.
+
+---
+
+## Queue item 10 — cost model (2026-08-02)
+
+`dev/research/cost-model.md`, built from `scripts/measure-prompt.mts`. No Anthropic call made.
+
+**Method note that matters more than the numbers:** the prompt is measured **exactly in characters**
+(36,638 representative, 65,253 worst case) and tokens are given as a band across 3.2/3.6/4.0
+chars-per-token. `count_tokens` needs a key we don't have, and tiktoken is not a substitute — it is
+OpenAI's tokenizer and undercounts Claude by 15-20% on prose and worse on structured text, which is
+what 93% of this prompt is. One `count_tokens` call closes the gap the day a key exists.
+
+**Three findings that change the picture:**
+
+- **The 3,000-token output estimate is not wrong — it is an unlabelled thinking budget.**
+  `matching.ts:579` sends `thinking: { type: "adaptive" }` at `effort: "medium"`, and thinking bills
+  as output. The schema-conformant response JSON measures at only ~836 tokens typical, so the ~2,164
+  token gap is thinking. What one served match's `tokens_out` reveals is therefore *thinking volume*,
+  not response size — the response side is now measured and closed.
+- **Prompt caching cannot apply, structurally.** Three independent blockers, each verified:
+  `refinementNote`/`steeringNote` are interpolated into `system`, which renders *before* messages, so
+  a refinement round invalidates the whole request; `selectCandidates` filters by a growing
+  `removedIds`, so the candidate block changes each round too; and the system prompt is 358-468
+  tokens, below Sonnet 5's **1024-token** cache minimum, so it would silently not cache even if
+  frozen. Making it work would require dropping the SQL exclusion pre-filter for a prompt
+  instruction — the exact trade the bug hunt showed is unsafe (a glm-4.7-flash sample returned an
+  excluded title *and* a dealbreaker-genre title, both passing the parser). Recorded so the question
+  isn't reopened as an oversight.
+- **The retry ceiling is 2 calls per round, not 4.** The queue's scoping note said 4;
+  `matching.ts:651` sets `MAX_ATTEMPTS = 2` and only retries `malformed`.
+
+**Also surfaced:** `claude-sonnet-5` is on an **introductory rate ($2/$10) that expires 2026-08-31** —
+nine days out. Every figure rises 50% on 2026-09-01, so a cap chosen this month against the intro
+rate is half what it looks like. Both rate tables are in the doc.
+
+**The candidate block is 93.3% of the prompt.** Any conversation about input cost is a conversation
+about `CANDIDATE_CAP = 200`.
