@@ -18,7 +18,9 @@ export default function JoinPage({
   const { code } = use(params);
   const { user, loading } = useAuth();
   const [joined, setJoined] = useState<{ id: string; name: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // `terminal` separates "this code will never work" from "that didn't work just
+  // now". Only the first earns advice about the link itself.
+  const [error, setError] = useState<{ message: string; terminal: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const successRef = useRef<HTMLHeadingElement>(null);
 
@@ -46,10 +48,15 @@ export default function JoinPage({
       if (res.ok && body.id && body.name) {
         setJoined({ id: body.id, name: body.name });
       } else {
-        setError(body.error ?? "Couldn't join right now — try again.");
+        // 404 is the only answer about the code; 403 is about this account.
+        // A 429 or a 5xx says nothing about either and may well work next time.
+        setError({
+          message: body.error ?? "Couldn't join right now — try again.",
+          terminal: res.status === 404 || res.status === 403,
+        });
       }
     } catch {
-      setError("Couldn't join right now — try again.");
+      setError({ message: "Couldn't join right now — try again.", terminal: false });
     } finally {
       setBusy(false);
     }
@@ -121,20 +128,25 @@ export default function JoinPage({
           {error && (
             <>
               <p role="alert" className="mt-lg text-base text-ember">
-                {error}
+                {error.message}
               </p>
               {/* An invite that doesn't resolve is a cold arrival with nowhere
-                  to go — pressing the same button again is the one thing that
-                  cannot help. */}
-              <p className="mt-md max-w-[42ch] text-base text-ash">
-                Check the link with whoever sent it, or start your own group.
-              </p>
-              <Link
-                href="/groups"
-                className="mt-md inline-flex min-h-12 items-center text-base font-medium text-amber hover:text-warm-white"
-              >
-                Your groups
-              </Link>
+                  to go, and the button above it cannot help. A transient failure
+                  is the opposite: that button is exactly the way out, and this
+                  advice would send someone to chase a link that works. */}
+              {error.terminal && (
+                <>
+                  <p className="mt-md max-w-[42ch] text-base text-ash">
+                    Check the link with whoever sent it, or start your own group.
+                  </p>
+                  <Link
+                    href="/groups"
+                    className="mt-md inline-flex min-h-12 items-center text-base font-medium text-amber hover:text-warm-white"
+                  >
+                    Your groups
+                  </Link>
+                </>
+              )}
             </>
           )}
         </>

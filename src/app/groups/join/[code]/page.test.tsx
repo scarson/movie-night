@@ -158,4 +158,24 @@ describe("Join by invite page", () => {
       await screen.findByText("Too many join attempts — try again later")
     ).toBeDefined();
   });
+
+  it("does not send a rate-limited joiner off to chase their invite link", async () => {
+    // "Check the link with whoever sent it" is only true when the code itself is
+    // the problem. A 429, a 500 or a dropped connection all mean try again in a
+    // moment, and telling that person their invite is wrong sends them to bother
+    // someone else about a link that works.
+    stubApi({
+      signedIn: true,
+      join: {
+        status: 429,
+        body: { error: "Too many join attempts — try again later" },
+      },
+    });
+    await renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /join this group/i }));
+    await screen.findByText("Too many join attempts — try again later");
+
+    expect(screen.queryByText(/check the link/i)).toBeNull();
+    expect(screen.queryByRole("link", { name: /groups/i })).toBeNull();
+  });
 });
