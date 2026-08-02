@@ -21,7 +21,7 @@ import {
   syncReducedMotion,
 } from "@/lib/reduced-motion";
 import {
-  disabledOutlinedClasses,
+  destructiveButtonClasses,
   primaryButtonClasses,
   secondaryButtonClasses,
 } from "@/components/control-classes";
@@ -234,7 +234,7 @@ export default function ProfilePage() {
               ref={deleteTriggerRef}
               type="button"
               onClick={() => setConfirming(true)}
-              className="flex min-h-12 items-center justify-center rounded-control border border-ember px-xl text-base font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight"
+              className={destructiveButtonClasses}
             >
               Delete my account
             </button>
@@ -280,7 +280,7 @@ export default function ProfilePage() {
                 data-testid="confirm-delete"
                 disabled={confirmWord.trim().toLowerCase() !== CONFIRM_WORD || deleting}
                 onClick={() => void remove()}
-                className={`flex min-h-12 items-center justify-center rounded-control border border-ember px-xl text-base font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight ${disabledOutlinedClasses}`}
+                className={destructiveButtonClasses}
               >
                 {deleting ? "Deleting…" : "Delete my account for good"}
               </button>

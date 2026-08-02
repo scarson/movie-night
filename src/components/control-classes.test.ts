@@ -13,6 +13,10 @@ import {
   primaryButtonClasses,
   disabledFillClasses,
   disabledOutlinedClasses,
+  destructiveBoundaryClasses,
+  destructiveControlClasses,
+  destructiveButtonClasses,
+  compactDestructiveButtonClasses,
 } from "@/components/control-classes";
 
 const SRC = path.resolve(__dirname, "..");
@@ -159,6 +163,60 @@ describe("disabled control classes", () => {
       .filter(([, src]) => /disabled:opacity-/.test(src))
       .map(([file]) => file);
     expect(opacitySites).toEqual([]);
+  });
+});
+
+describe("destructive control classes", () => {
+  it("carry the ember boundary and the filled hover it inverts to", () => {
+    // Measured, not assumed: ember on midnight is 4.70:1 and on charcoal 4.12:1,
+    // both clear of 1.4.11's 3:1 for a boundary. The hover inverts to a filled
+    // ember with a midnight label at 4.70:1, which clears the 4.5:1 text floor —
+    // narrowly, so the fill and its label travel together like the amber pair.
+    expect(destructiveBoundaryClasses).toContain("border-ember");
+    expect(destructiveBoundaryClasses).toContain("hover:bg-ember");
+    expect(destructiveBoundaryClasses).toContain("hover:text-midnight");
+  });
+
+  it("keep shape and size out of the boundary", () => {
+    expect(destructiveBoundaryClasses).not.toMatch(/rounded-/);
+    expect(destructiveBoundaryClasses).not.toMatch(/min-h-/);
+  });
+
+  it("build both sizes from the same definition", () => {
+    for (const variant of [destructiveButtonClasses, compactDestructiveButtonClasses]) {
+      expect(variant).toContain(destructiveControlClasses);
+      expect(variant).toContain(destructiveBoundaryClasses);
+    }
+    expect(destructiveButtonClasses).toContain("min-h-12");
+    expect(compactDestructiveButtonClasses).toContain("min-h-11");
+  });
+
+  it("carry the inert treatment on every size", () => {
+    // The defect this level exists to close: of the three hand-rolled ember
+    // buttons, one omitted the disabled string the other two carried, so the
+    // same control had two inactive renderings depending on the call site.
+    for (const variant of [
+      destructiveControlClasses,
+      destructiveButtonClasses,
+      compactDestructiveButtonClasses,
+    ]) {
+      expect(variant).toContain(disabledOutlinedClasses);
+    }
+  });
+
+  it("stay out of the amber hierarchy", () => {
+    // Destructive is a fourth level, not a recoloured secondary: it must never
+    // pick up the ash boundary or the amber fill.
+    for (const variant of [destructiveButtonClasses, compactDestructiveButtonClasses]) {
+      expect(variant).not.toContain("border-ash");
+      expect(variant).not.toContain("bg-amber");
+    }
+  });
+});
+
+describe("no call site re-spells the destructive treatment", () => {
+  it("nothing spells out the ember boundary-plus-hover pair outside the module", () => {
+    expect(callSitesSpelling(/border-ember[^"`]*hover:bg-ember/)).toEqual([]);
   });
 });
 

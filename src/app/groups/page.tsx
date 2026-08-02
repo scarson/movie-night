@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
 import {
+  compactDestructiveButtonClasses,
   disabledOutlinedClasses,
   outlinedControlClasses,
   primaryControlClasses,
@@ -324,9 +325,7 @@ export default function Groups() {
                           ref={confirmRef}
                           onClick={() => void leaveGroup(group.id)}
                           disabled={busy !== null}
-                          // Ember carries the destructive signal as the border;
-                          // ember *text* on charcoal is only 4.1:1, under AA.
-                          className={`min-h-11 rounded-control border border-ember px-md text-sm font-medium text-cream transition-colors duration-100 hover:bg-ember hover:text-midnight ${disabledOutlinedClasses}`}
+                          className={compactDestructiveButtonClasses}
                         >
                           Yes, leave
                         </button>

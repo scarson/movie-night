@@ -54,6 +54,46 @@ export const secondaryButtonClasses = `flex min-h-12 items-center justify-center
 export const compactOutlinedButtonClasses = `min-h-11 px-md text-sm font-medium ${outlinedControlClasses}`;
 
 /**
+ * The destructive level: leaving a group, deleting an account. A fourth level
+ * beside the amber hierarchy's three rather than a recoloured secondary, because
+ * what it signals is consequence, not rank — it is never the counterweight to a
+ * primary CTA, and there is never more than one on a screen.
+ *
+ * Ember carries the *boundary* and never the label, which is the whole reason the
+ * level looks the way it does: ember text on charcoal is 4.12:1, under the 4.5:1
+ * AA floor, so DESIGN.md forbids it. As a boundary the same 4.12:1 (and 4.70:1 on
+ * midnight) clears 1.4.11's 3:1 with room, and the label stays cream at 16.52:1.
+ *
+ * Hover inverts to a filled ember with a midnight label at 4.70:1 — clearing the
+ * text floor narrowly enough that the fill and its label have to travel together,
+ * exactly as `primaryFillClasses` does. Ember is the backdrop there, not the text,
+ * so the rule above is still honoured.
+ *
+ * Carries no radius or size, for the reason on `outlinedBoundaryClasses`.
+ */
+export const destructiveBoundaryClasses = "border-ember hover:bg-ember hover:text-midnight";
+
+/**
+ * The destructive treatment for a standalone control. Reuses
+ * `disabledOutlinedClasses` rather than defining a fourth inactive vocabulary:
+ * DESIGN.md says a disabled control leaves the hierarchy it belongs to and
+ * becomes chrome, and that is one rule for every outlined level. Its
+ * `disabled:hover:bg-transparent` was already written for these ember buttons.
+ */
+export const destructiveControlClasses = `rounded-control border ${destructiveBoundaryClasses} text-cream transition-colors duration-100 ${disabledOutlinedClasses}`;
+
+/** Standard destructive button, at the 48px height of its siblings. */
+export const destructiveButtonClasses = `flex min-h-12 items-center justify-center px-xl text-base font-medium ${destructiveControlClasses}`;
+
+/**
+ * Compact destructive button for an inline row — the leave-group confirm sits in
+ * a list item, where a 48px control crowds the row. Compose from
+ * `destructiveControlClasses` rather than appending to this, for the reason on
+ * `compactOutlinedButtonClasses`.
+ */
+export const compactDestructiveButtonClasses = `min-h-11 px-md text-sm font-medium ${destructiveControlClasses}`;
+
+/**
  * The amber fill of DESIGN.md's top level, with the label colour its contrast is
  * measured against: midnight on amber is 9.04:1 (`docs/accessibility.md`), and hover
  * lifts the fill to warm-white, which only stays legible because the label is dark.

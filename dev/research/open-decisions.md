@@ -175,8 +175,25 @@ line saying why; (b) does "Invite someone" belong on `/tonight` rather than behi
 Settling (a) also settles two copy strings that currently assert a profile that isn't there — `/quick`'s
 "from your saved profiles" and the no-round results branch's "Everything we need is saved".
 
-### 12b. Does the design system get a named destructive control level?
+### 12b. Does the design system get a named destructive control level? — **SETTLED 2026-08-02: yes**
 **Raised by:** `dev/reports/design-qa.md` (queue item 7)
+
+**Answered 2026-08-02.** `destructiveBoundaryClasses`, `destructiveControlClasses`,
+`destructiveButtonClasses` and `compactDestructiveButtonClasses` now live in `control-classes.ts`,
+pinned by `control-classes.test.ts` including a call-site guard against re-spelling the ember pair.
+DESIGN.md's log carries the reasoning. Two corrections to how this was originally framed:
+
+- **The omitted inert treatment was latent, not live.** The delete-account trigger at
+  `profile/page.tsx` never sets `disabled` — it is unmounted by `{!confirming && …}` instead. So the
+  divergence had no rendered consequence yet, which is precisely the state the 2026-08-01
+  consolidation was in before it acquired one.
+- **Nothing renders differently.** The composed strings carry the same utilities the three call sites
+  spelled out, so this is consolidation with no visual change to review.
+
+Contrast recomputed rather than inherited: ember boundary **4.70:1** on midnight and **4.12:1** on
+charcoal against 1.4.11's 3:1; cream label 16.52:1; midnight-on-ember hover fill **4.70:1** against the
+4.5:1 text floor. Ember never carries the label — that same 4.12:1 fails as text, which is why the
+level is an outline that inverts on hover rather than a fill.
 Three hand-rolled buttons — the leave confirm and both delete-account controls — share a
 near-identical string that `control-classes.ts` does not name, and one of the three omits the inert
 treatment the other two carry. That is the same shape as the 2026-08-01 consolidation (eight sites,
