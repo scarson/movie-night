@@ -510,6 +510,20 @@ describe("results page", () => {
     expect(matchCalls(calls)).toHaveLength(1);
   });
 
+  it("states what happened without a claim about what is stored", async () => {
+    // "Everything we need is saved" reads as a claim about stored data, and which
+    // data is ambiguous: the session settings genuinely are saved, the profiles it
+    // will be run against may be empty. Stating the fact drops the ambiguity.
+    stubApi({
+      get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },
+    });
+    await renderResults();
+    await screen.findByRole("button", { name: /find our match/i });
+
+    expect(screen.queryByText(/everything we need is saved/i)).toBeNull();
+    expect(screen.getByText(/set up but never matched/i)).toBeTruthy();
+  });
+
   it("leaves a way out of a session that has no round yet", async () => {
     stubApi({
       get: { status: 200, body: { session: SESSION, round: 0, response: null, titles: {} } },

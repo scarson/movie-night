@@ -178,6 +178,17 @@ describe("quick match", () => {
     expect(screen.getByText(/surprise us/i)).toBeTruthy();
   });
 
+  it("promises only what is true for an account with nothing saved", async () => {
+    // The match really does read saved profiles (movie-sessions.ts joins every
+    // member to `profiles`), so the old clause was not wrong in general — it was
+    // wrong for an empty account, and this screen has no way to tell which one it
+    // is talking to. Without the clause the sentence holds in every state.
+    stubApi();
+    await renderQuick();
+    expect(screen.queryByText(/saved profiles/i)).toBeNull();
+    expect(screen.getByText(/surprise us/i)).toBeTruthy();
+  });
+
   it("shows the group's members and carries the group id", async () => {
     search = "group=g1";
     const calls = stubApi();

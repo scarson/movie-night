@@ -213,8 +213,7 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           Nothing picked yet
         </h1>
         <p className="mt-md max-w-[62ch] text-base text-cream">
-          This session was set up but never matched. Everything we need is saved —
-          it just needs a run.
+          This session was set up but never matched. It just needs a run.
         </p>
         {refineError !== null && (
           <div role="alert" className="mt-lg">

@@ -264,7 +264,7 @@ function Quick() {
           {limitHit
             ? `${MAX_QUICK_TAGS} is the limit — remove one first.`
             : moodVibes.length === 0
-              ? "No vibe set — surprise us, from your saved profiles."
+              ? "No vibe set — surprise us."
               : `${moodVibes.length} of ${MAX_QUICK_TAGS} chosen`}
         </p>
       </div>
