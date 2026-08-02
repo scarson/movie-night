@@ -77,7 +77,16 @@ sees must come from a browser, not a test.
 
 ---
 
-## 7. Design-system QA sweep against DESIGN.md
+## 7. Design-system QA sweep against DESIGN.md — **SHIPPED 2026-08-02**
+
+**Outcome:** `dev/reports/design-qa.md`. Radii, type scale, spacing, touch targets, focus and the
+anti-pattern list all came back clean — the 2026-08-01 centralisation is why. Two contrast failures
+fixed: a removed pick's `opacity-50` that only ever applied under reduced motion (and put a live
+control's boundary at 2.46:1), and ember text on charcoal at 4.12:1 in the `/groups` leave alert. The
+opacity ban is now swept repo-wide. Decisions #5 and #6 are presented with evidence, not resolved;
+#6 gained a third option. A recommendation to name a destructive control level is
+`dev/research/open-decisions.md` #12b.
+
 
 **Why.** More than twenty PRs touched UI today — a new disabled treatment, a primary-button extraction,
 `srcset`, an `aria-live` notice, two truncation fixes, chip caps. Each was locally correct and reviewed
