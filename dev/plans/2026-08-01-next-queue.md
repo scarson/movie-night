@@ -1,11 +1,24 @@
 # Next queue — items 6–10
 
 **Written:** 2026-08-01, while items 1–5 of the current wave were in flight.
-**Status:** planned, not started. Each item is scoped to be dispatchable as a single agent.
+**Status:** items 6–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
 
-Items 1–5 (in flight at time of writing): prompt-injection threat model + corpus; abuse-surface and
-rate-limit review; observability + deploy preflight; Tier-2 correctness cleanup; Phase 2 design +
-plan.
+**Update 2026-08-02.** Items 1–5 all shipped: prompt-injection threat model + corpus (PR #37),
+abuse-surface and rate limits (#36), observability + deploy preflight (#39), Tier-2 cleanup (#35),
+Phase 2 design + plan (#40). Two later results change the *context* for items below, not the items:
+
+- **Item 10 (cost model) is now half-answered, and cheaper than scoped.** Four provider spikes landed
+  (`dev/research/2026-08-01-cloudflare-ai-spike.md`, `-openrouter-spike.md`,
+  `-subscription-arm-bakeoff.md`, `-gpt56-effort-sweep.md`) and establish the per-round comparison,
+  concluding *stay on Anthropic direct*. What item 10 still owes is the **Anthropic-side** number: the
+  3,000-output-token figure every cost table pivots on is an estimate, and only real `tokens_out` from
+  the `matching_call` log line replaces it. Scope item 10 to that, not to a model built from scratch.
+- **Item 7 (design QA) has two named inputs waiting.** Both open colour questions are catalogued in
+  `dev/research/open-decisions.md` (#5 the 30-chip grid on charcoal, #6 the `text-amber` notice) — the
+  sweep should present them with screenshots rather than resolve them.
+
+The queue's sequencing note still holds, and its precondition is now met: item 7 was to start after the
+design-adjacent PRs landed, and they have.
 
 ---
 

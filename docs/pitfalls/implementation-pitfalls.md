@@ -26,7 +26,7 @@ This document serves three audiences. Start here, then go directly to the sectio
 
 | § | Section | You're working on... | Entries | Checklist |
 |---|---------|---------------------|---------|-----------|
-| 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1, PLAT-2 | §1.C |
+| 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1, PLAT-2, PLAT-3 | §1.C |
 | — | [Orchestration](#orchestration) | Parallel subagent dispatch and output persistence | ORCH-1 | §Orchestration.C |
 | A | [Historical Changelog](#appendix-a-historical-changelog) | Provenance, validation dates, review process meta-observations | — | — |
 | B | [Unified Summary Table](#appendix-b-unified-summary-table) | All pitfalls at a glance, with severity and status | — | — |
@@ -84,10 +84,30 @@ Two things this costs. A batch is a transaction, so the statements share one sna
 
 ---
 
+### PLAT-3: D1 refuses `pragma_*` table-valued functions joined across every table
+
+**The Flaw:** Introspection code wants each table's columns, so it joins `sqlite_master` against `pragma_table_info(m.name)` in one statement. It works against a single named table, so the approach looks sound; run unfiltered across the whole schema and D1 rejects it with `not authorized: SQLITE_AUTH`.
+
+**Why It Matters:** The failure mode is worse than a plain rejection because the *narrow* form succeeds. A first spike written against one table passes, the code is generalised to all tables, and it fails only against real D1 — not under `node:sqlite`, which has no such restriction, so no unit test catches it. Found 2026-08-01 while building `scripts/preflight.ts`, whose entire job is to detect unapplied migrations before a deploy; the check that was supposed to prevent a broken deploy was itself broken in a way only the real platform reveals.
+
+**The Fix:** Read the DDL instead of asking the engine to introspect. `sqlite_master.sql` carries the `CREATE TABLE` text, and parsing column names out of it needs no table-valued function and no elevated authorization:
+
+```ts
+const { results } = await db
+  .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'")
+  .all<{ name: string; sql: string }>();
+// derive columns from each row's CREATE TABLE text
+```
+
+**The Lesson:** SQLite features that depend on the authorizer — `pragma_*` table-valued functions, some `ATTACH` forms — are where D1 diverges most sharply from a local SQLite, and the divergence is invisible to the fake. Any introspection that must run against production should be exercised against real D1 with `--remote` before it is trusted, not merely unit-tested. See also `docs/deploy.md` §Pending migrations, which documents the same constraint at the operational level.
+
+---
+
 ### Review Checklist
 
 - [ ] **PLAT-1** — Every dynamically-built `IN (...)` / multi-bind query whose parameter count grows with a collection is chunked below 100 bound params (via `chunk` + `D1_IN_CHUNK_SIZE`), and the collection is not assumed small.
 - [ ] **PLAT-2** — No hot path awaits two D1 reads in sequence when neither consumes the other's result. Independent reads travel in one `db.batch()`, reads that gate the response stay ahead of it, and the round-trip count is pinned by a test.
+- [ ] **PLAT-3** — No query joins a `pragma_*` table-valued function across the whole schema. Schema introspection reads `sqlite_master.sql`, and anything that must run against production D1 has been exercised with `--remote`, not only against the fake.
 
 ---
 
@@ -133,6 +153,7 @@ TODO — add entries as this document evolves.
 | ORCH-1 | Analysis Dispatches Must Persist Findings | HIGH | VALIDATED | Orchestration |
 | PLAT-1 | D1 rejects any query binding more than 100 parameters | HIGH | VALIDATED | Section 1 |
 | PLAT-2 | Independent D1 reads awaited one at a time each cost a round trip | MEDIUM | VALIDATED | Section 1 |
+| PLAT-3 | D1 refuses `pragma_*` table-valued functions joined across every table | MEDIUM | VALIDATED | Section 1 |
 
 Severity levels: `CRITICAL` (production data loss / security), `HIGH` (correctness bug under predictable conditions), `MEDIUM` (correctness bug under edge cases), `LOW` (cleanliness / clarity).
 
