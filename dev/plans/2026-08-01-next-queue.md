@@ -1,7 +1,7 @@
 # Next queue — items 6–10
 
 **Written:** 2026-08-01, while items 1–5 of the current wave were in flight.
-**Status:** items 6, 7 and 8 shipped 2026-08-02. Items 9–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
+**Status:** items 6–9 shipped 2026-08-02. Item 10 remains planned and **not started**. Each is scoped to be dispatchable as a single agent.
 
 **Update 2026-08-02.** Items 1–5 all shipped: prompt-injection threat model + corpus (PR #37),
 abuse-surface and rate limits (#36), observability + deploy preflight (#39), Tier-2 cleanup (#35),
@@ -145,7 +145,17 @@ this; do not accept a jsdom test as evidence for a touch or layout claim.
 
 ---
 
-## 9. Dependency and supply-chain review
+## 9. Dependency and supply-chain review — **SHIPPED 2026-08-02**
+
+**Outcome:** `docs/security/dependencies.md`. The installed Next carried **nine advisories**, all
+fixed in `16.2.11` — we were on `16.2.10`, one patch step away. Bumped to 16.2.12 (inside the
+existing range, so a lockfile move) and every gate plus the OpenNext build re-verified. Seven of the
+nine are unreachable here (no Server Actions, no rewrites, no locales, no image optimization); the two
+cache-confusion ones plausibly are, and every write path in this app is a POST with a body. All other
+in-range updates applied, including `jose` 6.2.3 -> 6.2.7 on the credential path. What remains is
+`sharp`, measured as absent from the shipped `worker.js`; `wrangler` stays exact-pinned for the
+documented workers-types v5 peer conflict. No secret in 299 commits across every ref.
+
 
 **Why.** The app is about to be shared publicly and holds Google OAuth tokens, session material, and
 an Anthropic key. Its dependency tree has never been reviewed. This is cheap and the right side of the

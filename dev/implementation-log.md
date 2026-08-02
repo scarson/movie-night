@@ -3517,3 +3517,47 @@ Chrome); the flexbox reasoning behind `min-w-11`; every contrast figure, recompu
 three decimals; the `requestMatch` caller audit; and — the check this repo most needs — **all nine
 tests added across the three items, replayed against a worktree at the pre-fix commit, where exactly
 those nine failed.** No test in this batch was one that could already pass.
+
+---
+
+## Queue item 9 — dependency and supply-chain review (2026-08-02)
+
+Report: `docs/security/dependencies.md`.
+
+**The finding worth acting on: `next@16.2.10` carried nine advisories, and every one of them is fixed
+in `16.2.11`.** Seven are unreachable in this app and I checked each rather than assuming — no
+`"use server"` anywhere in `src/`, an empty `next.config.ts` (so no rewrites, no locales), and no
+`next/image` (poster.tsx uses a plain `<img>` because optimization is unavailable on Workers). The two
+**cache-confusion** advisories (GHSA-68g3-v927-f742, GHSA-4633-3j49-mh5q) are the ones that stop this
+being paperwork: every write path here is a POST with a body, and a cache that confuses response
+bodies between such requests means one couple's recommendations served to another. I did not prove it
+reachable through OpenNext's cache adapter, and did not need to — the fix was a patch away.
+
+Bumped `next` + `eslint-config-next` to 16.2.12, inside the existing `^16.2.10` range. `npm update`
+took every other in-range move, including **`jose` 6.2.3 -> 6.2.7**, which is the single most
+security-relevant package in the tree. Gates green and OpenNext build clean after both.
+
+**What stays, with reasons rather than a shrug:**
+
+- **`sharp` does not ship.** `grep -o sharp .open-next/worker.js | wc -l` is **0**, and the package is
+  absent from `.open-next/server-functions/default/node_modules`. The one `require("sharp")` in the
+  tree sits in Next's `image-optimizer.js` inside the *intermediate* build directory — bundler input,
+  not output. It is also a native module and could not execute on Workers regardless.
+- **`wrangler` stays exact-pinned at 4.105.0.** The reason was already recorded in this log: >=4.108.0
+  declares a peer dep on `@cloudflare/workers-types@^5.x`, which ERESOLVEs against the pinned v4 line.
+  Clearing a dev-only advisory in a package that cannot run on the target platform is not worth a
+  coordinated platform-types major on the eve of a first deploy.
+- **`npm audit fix --force` would install `next@9.3.3`** — a seven-major downgrade of the framework.
+  Recorded in the doc because it is the trap sitting behind an inviting command.
+
+**Install scripts:** this npm gates them and none is approved in this project — `fsevents`, `esbuild`,
+`workerd`, `sharp`, `unrs-resolver` all warn on every install. Three download platform binaries. That
+posture is correct and the doc says not to run `npm approve-scripts --all`.
+
+**History:** all 299 commits across every ref scanned for `sk-ant-`, `GOCSPX-`, `AKIA`, `ghp_` and PEM
+headers. No `.dev.vars`, `.env*`, `*.pem`, `*.key` or `wrangler.toml` has ever been added in any
+commit on any ref. The only matches are deliberate placeholders.
+
+**Said plainly as not done:** no transitive licence audit (direct deps are all MIT), no provenance or
+signature verification, and no general runtime SBOM — the sharp claim is direct evidence about that
+one package, not an inventory.
