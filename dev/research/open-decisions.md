@@ -79,6 +79,15 @@ line saying why; (b) does "Invite someone" belong on `/tonight` rather than behi
 Settling (a) also settles two copy strings that currently assert a profile that isn't there — `/quick`'s
 "from your saved profiles" and the no-round results branch's "Everything we need is saved".
 
+### 12b. Does the design system get a named destructive control level?
+**Raised by:** `dev/reports/design-qa.md` (queue item 7)
+Three hand-rolled buttons — the leave confirm and both delete-account controls — share a
+near-identical string that `control-classes.ts` does not name, and one of the three omits the inert
+treatment the other two carry. That is the same shape as the 2026-08-01 consolidation (eight sites,
+five strings, nothing able to say which was canonical). Not done in the sweep, because naming a
+fourth control level extends DESIGN.md's decisions log rather than applying it. Recommendation:
+`destructiveButtonClasses` + a compact sibling, pinned like the other four.
+
 ### 13. Should the pre-results screens adopt the per-kind error headings?
 **Raised by:** PR for queue item 6
 The error *behaviour* is now consistent across all three screens — no screen offers a retry that cannot

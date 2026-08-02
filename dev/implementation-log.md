@@ -3365,3 +3365,46 @@ a motionless screen on the slowest path, before any throttling.
 repeatedly failed to dispatch (three times), and a naive "click then assert" read as *the feature is
 broken* rather than *the click didn't land*. Confirm the click fired — a network request, a state
 change — before drawing any conclusion from what the page shows afterwards.
+
+---
+
+## Queue item 7 — design-system QA sweep (2026-08-02)
+
+Source-wide sweep of every `.tsx` for token drift, then a browser pass on what the sweep implicated.
+Report: `dev/reports/design-qa.md`.
+
+**Most of it came back clean, and that is the finding.** Zero raw radii (all four semantic tokens),
+every type size on the documented ramp, three off-scale spacing values (all benign), no touch-target
+misses, one global focus rule, no anti-patterns. The 2026-08-01 centralisation into
+`control-classes.ts` plus the two pinned contrast tests is why — most of what a sweep like this
+normally finds can no longer be written.
+
+**Two contrast failures fixed (`1d13f12`), both measured from painted values:**
+
+- **A removed pick's `opacity-50` had never dimmed anything, except for reduced-motion users.** The
+  same element carries `animate-rise-fade`, whose `both` fill holds `opacity: 1`, and animation
+  declarations outrank author-normal ones — so the utility was inert. Reduced motion sets
+  `animation: none !important`, which removes the animation declaration and lets the utility win.
+  Verified by flipping `data-reduced-motion` on the same DOM: removed row goes 1 → 0.5 while its
+  siblings stay at 1. For those users `ash` metadata read 2.46:1 and the row's own still-live Keep
+  button drew its boundary at 2.46:1, under 1.4.11's 3:1 — and nothing in that row is inactive, so
+  the exemption does not apply. Removal is already carried by the struck title and the ember line.
+- **Ember text on charcoal in the `/groups` leave alert** — `#c4653a` on `#1a1f2e` at 14px, 4.12:1,
+  read live. The confirm block thirty lines above it already keeps ember to its border *with the
+  ratio in the comment*, then the alert below did the forbidden thing. Now cream at 14.47:1.
+
+**Guard added:** DESIGN.md's opacity-as-state ban is now swept repo-wide with an empty allowlist,
+alongside the existing `-slate` sweep in `control-contrast.test.tsx`. The existing `contrast.test.ts`
+only asserted the *token* relationship for ember; nothing checked a call site's backdrop, which is
+why DQ-2 survived.
+
+**Decisions #5 and #6 presented, not resolved,** per the queue item. #6 gained a third option: the
+sweep classified all 18 `text-amber` sites and found "amber is otherwise links-only" is not quite
+true — the invite-code display already uses amber as static emphasis at 28px and nobody reads it as
+a link. The distinguishing variable looks like type treatment rather than colour.
+
+**Guardrail worth carrying:** a Tailwind utility sitting beside `animate-rise-fade` may be silently
+inert, because the animation origin outranks author-normal declarations — and reduced motion, which
+strips the animation, is what switches it back on. Any state expressed as a plain declaration on an
+animated element has two different renderings depending on a user's motion preference, and only one
+of them is ever reviewed.
