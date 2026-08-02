@@ -1,0 +1,67 @@
+{
+  "tasteMap": {
+    "members": [
+      {
+        "userId": "iris",
+        "name": "Iris",
+        "summary": "Iris is drawn to films that make you work a little: layered plots, unreliable realities, and tension that builds rather than announces itself. She's comfortable with dark subject matter as long as it isn't horror.",
+        "primaryVibes": ["Cerebral", "Suspenseful", "Mind-Bending"],
+        "genreAffinities": ["Science Fiction", "Thriller", "Drama", "Crime"]
+      },
+      {
+        "userId": "theo",
+        "name": "Theo",
+        "summary": "Theo gravitates toward warmth: character-driven romances and comedies with a gentle, hopeful register. He wants to feel good at the end of the night and steers away from war stories.",
+        "primaryVibes": ["Cozy", "Feel-Good", "Romantic"],
+        "genreAffinities": ["Romance", "Comedy", "Drama", "Music"]
+      }
+    ],
+    "overlap": {
+      "summary": "Iris and Theo don't share a genre so much as a respect for careful construction - she wants a plot that rewards attention, he wants characters worth caring about, and the films that satisfy both tend to combine a clever structure or ticking-clock tension with real emotional warmth or humor.",
+      "sharedVibes": ["Meticulous storytelling", "Character-driven stakes", "Wit alongside tension"],
+      "tensionPoints": [
+        "Iris wants tonight's pick to deliver real suspense; Theo wants to end the night feeling good rather than unsettled.",
+        "Theo's dealbreaker is war themes and Iris's is horror, which rules out some of the darker, higher-tension titles on the list.",
+        "Iris's favorites lean toward moral ambiguity and cold plotting; Theo's lean toward sincerity, so anything too cynical risks losing him."
+      ]
+    }
+  },
+  "recommendations": [
+    {
+      "tmdbId": 496243,
+      "matchScore": 88,
+      "explanation": "Already one of Iris's comfort watches, and it delivers exactly the slow-burn, class-tension suspense she's in the mood for tonight. It's dark but not horror, and its dry, escalating comedy gives Theo a way in that pure thriller wouldn't."
+    },
+    {
+      "tmdbId": 120467,
+      "matchScore": 87,
+      "explanation": "A caper built on disguises, narrow escapes, and precisely timed reveals - the kind of plotting Iris enjoys chasing. Its whimsical tone and affectionate ensemble keep it squarely in Theo's comfort zone too."
+    },
+    {
+      "tmdbId": 19913,
+      "matchScore": 84,
+      "explanation": "Already on Theo's watchlist. Its shuffled, out-of-order timeline plays the same game with audience expectation that Iris's favorites do, while the story underneath is still a heartfelt, if bittersweet, romance."
+    },
+    {
+      "tmdbId": 194,
+      "matchScore": 80,
+      "explanation": "One of Theo's comfort films, and its narrator's web of quiet schemes gives it a puzzle-box quality that should appeal to Iris's love of careful plotting, all without turning dark."
+    },
+    {
+      "tmdbId": 27205,
+      "matchScore": 78,
+      "explanation": "A direct hit for Iris - this is one of her comfort films and matches tonight's suspenseful, mind-bending mood better than anything else on the list. The emotional thread about Cobb's marriage is the clearest bridge to Theo's taste, even if the film overall runs cooler than his usual picks."
+    },
+    {
+      "tmdbId": 603,
+      "matchScore": 72,
+      "explanation": "A discovery pick that trades on the same reality-questioning suspense Iris gravitates toward. It's further from Theo's comfort zone, but its clear moral stakes and underdog romance thread keep it from being purely cerebral spectacle."
+    },
+    {
+      "tmdbId": 550,
+      "matchScore": 68,
+      "explanation": "On Iris's own watchlist and a strong match for a mind-bending, high-tension night. Worth flagging as the riskiest pick here for Theo - its tone is more confrontational than cozy, so treat it as an optional swap rather than the safe choice."
+    }
+  ],
+  "conversational": "Iris and Theo are working from pretty different playbooks tonight - Iris wants a film that keeps her guessing, Theo wants one that leaves him warm. Here's a fresh set that steers clear of anything you've already ruled out.\n\n**Parasite** tops the list because it's already a favorite of Iris's and it delivers real suspense through slow-building class tension, but its dark comedy gives Theo an entry point rather than shutting him out. **The Grand Budapest Hotel** is close behind - a caper full of the precise plotting Iris likes, wrapped in the kind of whimsical warmth Theo responds to. **(500) Days of Summer** is already on Theo's watchlist, and its scrambled timeline plays the same structural game Iris enjoys while staying a heartfelt romance at its core.\n\nFrom there, **Amelie** brings Theo's comfort-zone charm with just enough of a puzzle-box narrative to hold Iris's interest, and **Inception** is the strongest match for tonight's suspenseful mood specifically, even though it leans more toward Iris's side of the table. **The Matrix** and **Fight Club** round things out as bigger swings - both lean into the cerebral, high-tension territory Iris loves, but they ask more of Theo, so treat them as the adventurous picks of the night rather than the safe bet."
+}

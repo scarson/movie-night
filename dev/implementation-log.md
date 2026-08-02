@@ -3203,3 +3203,28 @@ guarantee from a SQL pre-filter to a prompt instruction.
 **Check results:** `npx tsc --noEmit` clean; `npm run lint` clean; `npm test` 68 files, 1550 passed,
 2 skipped.
 
+
+---
+
+## Subscription-arm bake-off — frontier control for the provider spikes (2026-08-01)
+
+`dev/research/2026-08-01-subscription-arm-bakeoff.md`. The OpenRouter spike measured three cheap
+models with no frontier control, which is why its quality finding was labelled signal rather than
+conclusion. This supplies the control at no marginal cost: 8 blind Claude Code subagents on Sonnet
+and 8 `codex exec` runs on `gpt-5.6-sol`, against the byte-identical committed prompt files.
+
+Both frontier models balance the deliberately-opposed fixture pair (GPT 59% / Sonnet 64% toward the
+under-served member); `deepseek-v4-flash` collapsed 73% toward one member and returned none of the
+other's comfort titles in any round.
+
+The more useful finding is the control condition: with the JSON Schema removed from the prompt, both
+frontier models scored 0/8, free-forming the member objects. `output_config.format` is doing
+load-bearing work, and a provider swap that loses strict structured-output enforcement loses more than
+it saves.
+
+Two harness bugs were found and fixed mid-run rather than shipped as results. The first arm gave the
+subscription models no schema while the OpenRouter arm had `strict:true` — an unfair comparison that
+would have read as "Sonnet fails validation 8/8 while a cheap model passes 7/8", exactly backwards.
+The second was `codex exec` blocking on stdin under a non-TTY background job, which produced empty
+transcripts; `< /dev/null` fixes it. Sonnet's three remaining parse failures truncate at a consistent
+~4.2-4.8k characters and are scored unusable but recorded as a harness artifact, not a model result.
