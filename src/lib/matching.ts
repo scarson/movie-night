@@ -484,7 +484,8 @@ export interface ParsedMatching {
  * Parses model output text into a validated MatchingResponse: clamps
  * matchScores to 0-100, drops recommendations whose tmdbId isn't a known
  * candidate (reported via droppedIds), strips angle brackets from every
- * string field, and throws thin_results if fewer than 3 recommendations survive.
+ * string field, sorts the surviving recommendations by matchScore descending,
+ * and throws thin_results if fewer than 3 recommendations survive.
  */
 export function parseMatchingResponse(text: string, validTmdbIds: Set<number>): ParsedMatching {
   let raw: unknown;
@@ -516,6 +517,14 @@ export function parseMatchingResponse(text: string, validTmdbIds: Set<number>): 
   if (recommendations.length < MIN_SURVIVING_RECOMMENDATIONS) {
     throw new MatchingError("thin_results");
   }
+
+  // The prompt asks for descending matchScore and ranked-list.tsx prints array
+  // position as the rank, so the order has to be true here rather than trusted.
+  // Sorted on the clamped score: an out-of-range score reads as its boundary
+  // value everywhere else, so it must rank as that value too. Sort stability is
+  // load-bearing — tied scores keep the model's own preference between them, and
+  // clamping manufactures ties that the model never expressed.
+  recommendations.sort((a, b) => b.matchScore - a.matchScore);
 
   const response = sanitizeStrings<MatchingResponse>({ ...shaped, recommendations });
   return { response, droppedIds };
