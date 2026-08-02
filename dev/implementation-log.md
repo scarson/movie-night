@@ -2856,3 +2856,68 @@ into `getMatchRoundContext`'s existing `db.batch()` would return it to 8, but th
 
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 64 files / 878
 passed / 2 skipped (baseline 63 / 865 / 2), `npx @opennextjs/cloudflare build` clean.
+## `claude/injection-hardening` — the adversarial prompt-injection pass (offline half)
+
+Task D5 hardened the prompt path; nobody had attacked it. This branch is the attack, plus the
+threat model and the checklist that lets the live half of the gate be an afternoon's work.
+
+**The corpus.** `src/lib/matching.injection.test.ts` — 603 cases. 37 payloads crossed with the 15
+surfaces attacker-influenced text reaches the prompt through (555), plus targeted cases for the
+private weighting note, per-surface clamp boundaries, list-length caps, field containment, and
+`parseMatchingResponse` under JSON/markdown structure injection. Every assertion is on the
+**assembled system/user strings**, compared against a benign-value prompt of the same shape — not
+on a function returning without throwing.
+
+**193 of 603 failed on the first run.** First failure:
+
+```
+FAIL src/lib/matching.injection.test.ts > prompt-injection corpus > member name [partner-controlled] > neutralises rtl-override
+AssertionError: expected 'You are a movie recommendation engine…' not to match /[\p{Cc}\p{Cf}]/u
+```
+
+**Four defects, all in `src/lib/matching.ts`:**
+
+- **150 cases — format characters and C1 controls survived.** The sanitizer stripped C0-and-DEL and
+  collapsed `\s+`, which misses U+0085 NEL (a line break to plenty of consumers, matching neither),
+  the bidi override/isolate/mark family, the zero-width family, the BOM and the soft hyphen. Now
+  `\p{Cc}` → space and `\p{Cf}` → deleted.
+- **15 cases — clamps could leave a lone surrogate.** `.slice(0, max)` cuts an astral character in
+  half and the ill-formed string reaches the API request body. A partner picking a display name
+  that straddles the boundary breaks *the group's* match, not their own. Surrogate-safe
+  `clampChars`, used by `firstSentence` too (it sliced outside the sanitizer).
+- **27 cases — the favoured member's name was interpolated into the private rough-day weighting
+  note.** That note is the one directive in the prompt asking the model to keep a secret, which
+  makes it the most valuable position an injected instruction could hold, and a 50-char
+  user-controlled name landed mid-sentence inside it. The note now points at the member
+  positionally ("the 2nd member listed above") — no user text in it at all.
+- **1 case — `streamingServices` was clamped per entry but not per list.** The one profile list
+  whose length the prompt layer did not bound.
+
+`PROMPT_VERSION` → `p1.2` for the weighting-note rewording.
+
+**What passed first time is labelled a regression guard, not a win:** newline and pipe stripping,
+the length clamps, the unquoted free-text interpolations, the guardrail sitting above the two
+user-derived strings interpolated into the *system* prompt, and the response parser rejecting
+fenced or prose-wrapped JSON. That is D5's work holding; it is not this branch's.
+
+**The honest limit, stated in the test header and in the doc.** Nothing here calls Anthropic. The
+corpus proves the input pipeline behaves — structure unforgeable, length bounded, text well-formed,
+no control or format characters — and proves nothing about whether the model resists the payloads.
+A payload surviving as inert content inside its own field is a PASS by design.
+
+**Files outside this branch's ownership, touched deliberately:** `src/lib/movie-sessions.test.ts`
+and `src/app/api/movie-sessions/[id]/match/route.test.ts` each hardcode `prompt_version: "p1.1"`.
+One token each, changed to `p1.2`. Reported rather than fixed: nothing caps group membership
+(`src/app/api/groups/join/route.ts`), so prompt size and the volume of attacker-authored text in it
+are both unbounded — the fix belongs at the join route, since silently dropping a member's profile
+from the prompt would be a correctness bug wearing a security hat.
+
+**Deliverable:** `docs/security/prompt-injection.md` — threat model with entry points ranked by
+risk, the corpus's coverage and its explicit limits, a 12-row runnable checklist for the live pass
+(with the gate criteria, the ~$5 budget, and the two traps: never index `content[0].text` on an
+adaptive-thinking response, and assert on the claim rather than on a name token), and six residual
+risks consciously accepted.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 64 files / 1465
+passed / 2 skipped (baseline 63 / 862 / 2), only the pre-existing `vite:dynamic-import-vars`
+warnings.
