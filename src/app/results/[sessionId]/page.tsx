@@ -272,7 +272,9 @@ function Results({ params }: { params: Promise<{ sessionId: string }> }) {
           .slice(0, MAX_VIBES_IN_STRAPLINE)
           .join(", ")
           .toLowerCase()} mood.`
-      : "Read from your saved profiles.";
+      : // No payload on this page carries profile state for anyone, and for an
+        // account that has saved nothing the old wording was plainly false.
+        "No vibe set for tonight.";
 
   return (
     <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
