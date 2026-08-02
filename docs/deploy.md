@@ -5,7 +5,8 @@ Target: `movienight.scarson.io` on Cloudflare Workers via OpenNext.
 This document exists because Phase 8 could not run the deployment itself — the
 build environment had no TMDB token, no Anthropic API key, and no Google OAuth
 client. Everything below is written to be executed in order by someone holding
-those credentials. Steps 1–6 are one-time setup; step 7 is every subsequent deploy.
+those credentials. Steps 1–6 are one-time setup; steps 7–8 are every subsequent
+deploy.
 
 ## Prerequisites
 
@@ -49,8 +50,18 @@ three are Phase 2 tables, created empty by design.
 ### Pending migrations — not yet applied to the remote database
 
 Section 2 is marked DONE for `0001` only. Everything listed here still has to be
-applied by hand, in numeric order, before the deploy that depends on it. Add one
-bullet and one command line per new migration.
+applied by hand, in numeric order, before the deploy that depends on it.
+
+**The checkboxes below are notes, not the mechanism.** `npm run preflight --
+--remote` reads the DDL out of `migrations/` and compares it against the target
+database's `sqlite_master`, so it reports what is genuinely unapplied and prints
+the command for each. Trust it over this list. Add prose here to explain *why* a
+migration matters; the preflight covers a new file the moment it lands in
+`migrations/`, with nothing to remember to update.
+
+Measured against the remote database on 2026-08-01, the preflight reports `0002`,
+`0003` and `0004` unapplied and `titles` empty — which agrees with the checkboxes
+below.
 
 - [ ] `0002_session_rotated_at.sql` — adds `sessions.rotated_at`, the single-winner
       mark for refresh-token rotation. Without the column every token refresh
@@ -164,7 +175,37 @@ dashboard → Workers & Pages → movie-night → Settings → Domains & Routes)
 Cloudflare provisions the certificate. Do this before the first real sign-in so
 the OAuth redirect URI matches from the start.
 
-## 7. Deploy
+## 7. Preflight
+
+```bash
+npm run preflight -- --remote     # or --local, for a wrangler dev run
+```
+
+Five checks, each printing what to run when it fails. Exits non-zero if any
+fails, so it can gate a script. It reads secret **names** only and never a value.
+
+| Check | What it reads |
+|---|---|
+| `DB` binding configured | `d1_databases` in `wrangler.jsonc`, including a non-empty `database_id` |
+| cron trigger registered | `triggers.crons` matches the weekly schedule the refresh is sized for, and `worker.ts` still exports `scheduled` |
+| secrets set | `wrangler secret list` (remote) or the keys in `.dev.vars` plus the environment (local) |
+| migrations applied | every table, column and index the DDL in `migrations/` declares, against `sqlite_master` — including indexes a migration *drops*, which is how an unapplied `0004` is visible at all |
+| titles catalog non-empty | `SELECT COUNT(*) FROM titles` |
+
+The migration check is the one that earns its keep. It parses the DDL rather
+than tracking applied files, so it needs no ledger table and cannot drift from
+the migration set: add `0005_*.sql` and it is checked on the next run. It reads
+columns out of `sqlite_master.sql` — SQLite rewrites that text in place on
+`ALTER TABLE … ADD COLUMN` — because D1 refuses `pragma_table_info` across every
+table in one statement with `not authorized: SQLITE_AUTH`.
+
+The cron check is against the config, deliberately: `wrangler deploy` replaces
+the Worker's triggers with whatever `triggers.crons` holds
+([Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)),
+so the config is what registers the trigger. Confirm it landed afterwards — see
+§Post-deploy verification step 2.
+
+## 8. Deploy
 
 ```bash
 npm run deploy    # opennextjs-cloudflare build && wrangler deploy
@@ -172,6 +213,11 @@ npm run deploy    # opennextjs-cloudflare build && wrangler deploy
 
 CI (`.github/workflows/ci.yml`) runs type-check, lint, test, and build on pushes
 to `dev` and `main`; deployment is manual via this command.
+
+**Record the "Worker Startup Time" wrangler prints** in
+`dev/reports/2026-08-01-performance-audit.md` §4.1. It is the cold-start baseline
+that audit could not measure, and a 5.1 MiB script is parsed against a 400 ms
+startup-CPU limit.
 
 ## Plan tier — ✅ Workers Paid
 
@@ -209,31 +255,148 @@ this code reasoned from that stale number and reached opposite conclusions about
 `STALE_TITLES_LIMIT`. Read the limits from the Cloudflare docs before acting on
 them, as `CLAUDE.md` requires.
 
+## Observability
+
+**Workers Logs and tracing are already enabled** in `wrangler.jsonc` —
+`observability.enabled`, `logs.invocation_logs`, `head_sampling_rate: 1` and
+`traces.enabled`. Nothing to turn on. Logs are retained 7 days, a log line is
+capped at 256 KB, and tracing is free during its beta
+([Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/),
+[Traces](https://developers.cloudflare.com/workers/observability/traces/)).
+`invocation_logs` is what publishes CPU and wall time per invocation, which is
+why no event below carries its own duration.
+
+### The convention
+
+`src/lib/log.ts` exports one function. Use it for anything an operator would
+need in production:
+
+```ts
+import { logEvent } from "@/lib/log";
+
+logEvent("cron_refresh", { refreshed, fetch_errors: fetchErrors });
+logEvent("provider_auth_failed", { status: err.status }, console.error);
+```
+
+- **One line of JSON, `event` first.** Stable event names — an event name is an
+  interface, so rename one only as deliberately as you would rename a route.
+- **Flat scalar fields only.** The `LogValue` type refuses objects, so a whole
+  user row or header set cannot reach a log by accident.
+- **`undefined` fields are dropped**, so an absent value costs nothing.
+- **Never log a token, an auth session id or token hash, an API key, or a
+  user's email.** User ids are fine; personal names are not — the taste map and
+  the conversational write-up carry both, so never log a response body.
+  `logEvent` replaces the value of any field whose *name* contains `token`,
+  `secret`, `password`, `credential`, `api_key`, `apikey`, `authorization`,
+  `cookie`, `jwt` or `email` with `[redacted]`. That catches naming, not
+  content: a field called `message` will still print whatever you put in it.
+- **Pass `console.error` as the third argument** for operator-actionable
+  conditions; Workers Logs records the level.
+- `session_id` in these events is a *movie session* id, not an auth session.
+
+### Event catalogue
+
+| Event | Emitted by | Fields | What its presence proves |
+|---|---|---|---|
+| `matching_call` | `src/lib/matching.ts` | `group_id`, `session_id`, `round`, `member_count`, `candidate_count`, `model`, `prompt_version`, `latency_ms`, `tokens_in`, `tokens_out`, `response_valid`, `dropped_ids` | One completed Anthropic call. This is the line that costs money — count it to reconcile spend. |
+| `provider_auth_failed` | `src/lib/matching.ts` | `status` | A 401/403 from Anthropic. Its **absence** is positive evidence that no outbound provider call was made — the technique `dev/reports/2026-08-01-e2e-smoke-verification.md` used to prove the cost kill-switch closes before the network. |
+| `removed_ids_filtered` | `src/app/api/movie-sessions/[id]/match/route.ts` | `session_id`, `submitted`, `accepted` | A client sent ids this session never recommended. |
+| `round_persist_failed` | same route | `session_id`, `round`, `tmdb_ids`, `prompt_version`, `message` | A round was paid for and not stored. Enough to re-run it, no more. |
+| `corrupt_ai_response` | `src/app/api/movie-sessions/[id]/route.ts` | `session_id`, `round` | A stored round failed validation and the page degraded instead of crashing. |
+| `scrub_unparseable_round`, `scrub_name_shared_with_member` | `src/lib/account.ts` | `recommendationId` | Account deletion scrubbing decisions. |
+| `cron_started` | `src/lib/cron-handler.ts` | `cron`, `scheduled_time` | The schedule fired. With no following `cron_refresh` or `cron_failed`, the run died mid-flight — that is the only way to tell it apart from a trigger that was never registered. |
+| `cron_refresh` | `src/lib/cron-handler.ts` | `refreshed`, `fetch_errors`, `write_errors`, `failed_tmdb_ids` (up to 10, omitted when clean) | The weekly run completed. The named ids separate "these titles are gone upstream" from "TMDB is down". |
+| `cron_failed` | `src/lib/cron-handler.ts` | `cron`, `scheduled_time`, `message` | The run threw and was rethrown, so Cloudflare's cron metrics record it as failed. |
+
+Watch them live:
+
+```bash
+npx wrangler tail --format json | grep -E 'matching_call|cron_|provider_auth_failed'
+```
+
+### Converted, and not yet converted
+
+`logEvent` is used by `src/lib/cron-handler.ts` (`cron_started`, `cron_refresh`,
+`cron_failed`) and reached from `worker.ts`. **Every other event above still
+builds its line with `JSON.stringify` by hand.** They already follow the shape,
+so nothing is broken — but they do not get the redaction guard or the field-type
+restriction. A follow-up should convert exactly these call sites:
+
+| File | Line | Event |
+|---|---|---|
+| `src/lib/matching.ts` | ~538 | `provider_auth_failed` |
+| `src/lib/matching.ts` | ~616 | `matching_call` |
+| `src/app/api/movie-sessions/[id]/match/route.ts` | ~149 | `removed_ids_filtered` |
+| `src/app/api/movie-sessions/[id]/match/route.ts` | ~216 | `round_persist_failed` |
+| `src/app/api/movie-sessions/[id]/route.ts` | ~49 | `corrupt_ai_response` |
+| `src/lib/account.ts` | 65, 90 | `scrub_*` (also: rename `recommendationId` to `recommendation_id` for consistency) |
+
+Auth failures are the one gap worth naming. Every route's `catch` currently ends
+in an unstructured `console.error("GET /api/…:", err)`, and
+`src/app/api/auth/google/callback/route.ts` logs its three failure branches
+(`exchangeErr`, `tokenErr`, D1) the same way. A failed sign-in in production is
+therefore a prose line with no event name to filter on. Converting those to
+`logEvent("auth_failed", { stage, user_id })` — **stage and user id only, never
+the email, the OAuth code, or the id token** — is the highest-value remaining
+conversion. It was left undone here because those files were owned by other
+work in flight.
+
 ## Post-deploy verification
 
-Run these against the live site in order; each depends on the previous:
+Start with the automated pass, then walk the signed-in steps in order. Each step
+states what you should observe; if you do not observe it, stop rather than
+continuing to the next.
 
-1. `/` renders the landing page signed-out, no console errors.
-2. Sign in with Google → lands on `/tonight`.
-3. `/profile` → search a title (exercises TMDB + the seeded catalog), save.
-4. `/quick` → run a match. This is the first real Anthropic call — watch
-   `npx wrangler tail` for the `matching_call` structured log line and confirm
-   `response_valid: true`.
-5. On the results page, run one refinement round; confirm the round counter
-   advances and removed titles do not return.
-6. Create a group, open the invite link in a second browser with a second Google
-   account, join, then run a two-person match and confirm the taste map names
-   both people.
-7. `curl -I https://<host>/_next/static/chunks/<any-hashed-chunk>.js` and confirm
-   `Cache-Control: public, max-age=31536000, immutable`. `public/_headers` sets
-   this so content-hashed assets stop being revalidated on every repeat visit.
-   The rule was observed to parse and apply under `wrangler dev` (the chunk and
-   the woff2 both flip to `immutable`, the HTML keeps its `s-maxage=31536000`),
-   so a miss here points at a platform difference rather than a syntax error.
-   What is unverified is production's *default*: the `max-age=0, must-revalidate`
-   this corrects was only ever observed under `wrangler dev`. If production was
-   already sending `immutable` before `public/_headers` existed, the finding
-   evaporates and the file can be removed. Record which it was.
+```bash
+npm run smoke                              # defaults to https://movienight.scarson.io
+npm run smoke -- http://127.0.0.1:8787     # or any other origin
+```
+
+It checks three things and exits non-zero on any failure:
+
+1. **`GET /` returns 200 and HTML.** A 500 here means watch `npx wrangler tail`
+   and reload.
+2. **`GET /api/auth/me` with no cookie returns `401 {"error":"Unauthorized"}`.**
+   A 200 means the gate is open — do not share the URL. A 500 is what a schema
+   behind the code looks like from outside, because `authenticateRequest` runs
+   ahead of each route's own error handling; run the preflight.
+3. **A content-hashed `/_next/static/*` asset, discovered from the HTML the site
+   just served, carries `Cache-Control: … immutable`.** Record the value it
+   prints. `public/_headers` sets this, and the `max-age=0, must-revalidate` it
+   corrects has only ever been observed under `wrangler dev` — if production was
+   already sending `immutable` beforehand, the finding evaporates and the file
+   can be removed. Note which it was, here.
+
+Then, by hand:
+
+1. **`/` in a browser, signed out.** The landing page renders; the console is
+   clean.
+2. **The cron trigger is live.** Cloudflare dashboard → the Worker → Triggers
+   shows `0 9 * * 1`. Trigger changes take up to 15 minutes to propagate. There
+   is no way to force a scheduled run in production; the first real evidence is
+   a `cron_started` line the following Monday, so put a note in the calendar to
+   check for it. (Locally, `npx wrangler dev --test-scheduled` plus
+   `curl "http://127.0.0.1:8787/cdn-cgi/handler/scheduled?cron=0+9+*+*+1"`
+   exercises the same handler — verified working on 2026-08-01.)
+3. **Sign in with Google.** Lands on `/tonight`. A `redirect_uri_mismatch` here
+   is Google's error, not the app's — recheck step 3's redirect URIs.
+4. **`/profile` → search a title, save.** The search dropdown returns results
+   (this is the first real TMDB call) and the save round-trips: reload and the
+   title is still there.
+5. **`/quick` → run a match.** The first real Anthropic call. In
+   `npx wrangler tail`, expect exactly one `matching_call` with
+   `response_valid: true` and no `provider_auth_failed`. Note `latency_ms`,
+   `tokens_in` and `tokens_out` — no measurement of any of the three exists yet
+   (`dev/reports/2026-08-01-performance-audit.md` §1.4), and they dominate both
+   the latency profile and the cost model.
+6. **One refinement round on the results page.** The round counter advances, the
+   removed titles do not come back, and a second `matching_call` appears with
+   `round: 2`. If you removed a title the round never recommended you will also
+   see `removed_ids_filtered`; that is correct behaviour, not a fault.
+7. **Two-person match.** Create a group, open the invite link in a second
+   browser with a second Google account, join, run a match. The taste map names
+   both people, and `matching_call` reports `member_count: 2`.
+8. **Sign out.** Cookies are cleared and `/api/auth/me` returns 401 again.
 
 ## Known deferrals
 
