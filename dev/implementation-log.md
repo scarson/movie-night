@@ -3847,3 +3847,83 @@ against 1.4.11's 3:1, and it measures **129.6 × 44px**.
 and `translateY(8px)` — i.e. permanently invisible content. It is not: `document.visibilityState` was
 `"hidden"` and a screenshot renders it correctly. Check `visibilityState` before believing an
 animation-state measurement.
+
+---
+
+## open-decisions #14 — the engine's empty-profile directive (2026-08-02)
+
+The defect the #12 reviews relocated. For an account with nothing saved, the solo taste-map directive
+told the model to *"restate the viewer's taste in your own words, sharedVibes lists their strongest
+vibes"* — an imperative to characterise someone it has no data about — and no empty-profile branch
+existed anywhere in the engine.
+
+**What this is and is not.** It removes an instruction that is wrong on its face. It does **not** repair
+a behaviour anyone observed: whether the model confabulated, and whether it now stops, needs
+`ANTHROPIC_API_KEY`, which this environment does not have. `matching.eval.test.ts` now carries a
+`solo with nothing saved` case (skipped) so the bump and the measurement land together. Saying more than
+that would be this project's failure mode in the very commit that exists to fix an instance of it.
+
+**Why the prompt and not the schema.** The schema *permits* the honest answer — `grep -c
+"minItems\|minLength" src/types/matching.ts` returns 0, so empty arrays plus a summary saying so are
+valid — but JSON Schema cannot require a summary to be honest about an absence. An earlier draft of #14
+had this backwards and would have sent the next reader to fix the wrong file.
+
+### What the dual review found, all verified before acting
+
+Codex over the diff, an Opus subagent over the diff plus the docs. Both independently found the
+raw-array predicate and the contradiction; each found things the other missed.
+
+1. **The predicate read array length, the prompt renders sanitized values.** `vibes: [""]` — storable,
+   because `validateTagList` enforces a type and a maximum but no minimum — suppressed the marker *and*
+   the whole rule, while rendering `- Vibes: ` (an empty field, which reads as *answered with nothing*,
+   strictly worse than the `None selected` it replaced). A zero-width space does the same and survives
+   `trim()`, since `sanitizePromptText` deletes it and `trim()` does not. The predicate now asks what the
+   prompt will render. Not reachable through the UI (`tag-picker.tsx` trims and rejects blanks); an API
+   client can.
+2. **The rough-day weighting could favour a member marked NOTHING SAVED** — an order to weight
+   preferences the prompt had just said do not exist, and the one place that actively *pressures*
+   invention. Covered in the rule, without touching `computeWeightNote` or the privacy invariant.
+3. **Ranking a contradiction is worse than not creating one.** The first version stated
+   "restate their taste", then added "this rule outranks anything above about restating a member's
+   taste". That qualifier covered one of four contradicted clauses — `sharedVibes lists their strongest
+   vibes` and `overlap describes where their tastes converge` are not "restating". `tasteMapNote` was
+   already a conditional; adding an emptiness dimension emits no contradiction and no override clause.
+4. **The marker was falsified inside its own block.** "told us nothing about their taste" sat two lines
+   above `- Streaming services: MUBI`, the field the predicate deliberately excludes. Now "no taste
+   preferences".
+5. **`scripts/openrouter-spike.ts` hardcoded `p1.2`** in a manifest that also claims the prompt is
+   unmodified and reproduces byte-for-byte. Re-run after a bump it emits a false label. Reads the
+   constant now.
+6. **A third site of #12's copy-string class.** `results/[sessionId]/page.tsx` said "Read from your saved
+   profiles." with no vibe set — the same claim #12 fixed at `/quick` and the no-round branch, missed at
+   the picks view. This is UI-2's shape again: two sites found, a third left.
+
+**A reviewer claim that did not hold.** One report said `docs/security/prompt-injection.md` carried a
+stale `p1.2` header and a "a `PROMPT_VERSION` bump reopens it" line. Neither string exists in that file
+(`grep -rni "prompt version" docs/security/prompt-injection.md` → nothing). Checked before editing;
+nothing changed. The handoff's rule holds — neither reviewer's output is taken at face value.
+
+**Caught by the repo's own guard, not by review.** The marker was first written quoted, as
+`"- NOTHING SAVED:"`. `matching.test.ts` pins benign system prompts at **zero** `"` characters, so an
+injected quote still stands out — the two literals broke it for every empty profile. The marker is now
+unquoted, with a test pinning the invariant. Second time today a pre-existing guard caught a real
+regression that neither reviewer flagged.
+
+**Where suppression is tested, and where it is deliberately not.** `expectStructureIntact` in the
+injection corpus now pins the `- NOTHING SAVED: ` line count against the benign build, so no payload can
+add or move one. Payloads that *sanitize to nothing* were tried there and removed: every payload in that
+corpus is compared against a benign value of the same shape, and an empty value legitimately changes a
+member's shape — it makes them an empty profile, which correctly adds a line. Bending the corpus to
+accept that would have weakened its central invariant to accommodate a case that is not a forgery. It
+lives in `matching.test.ts` as four blank-entry cases instead.
+
+**Two of the original six tests passed vacuously** against pre-change code (both reviewers measured it
+independently): the all-populated guard and the forge test, both absence assertions on a token that did
+not exist yet. Kept as regression guards, recorded rather than claimed as TDD.
+
+**Token cost, measured in characters:** the rule is 657 and the marker 68 per member — ~2% of a
+representative prompt, but **~30% of the system prompt**, where it is now the longest paragraph.
+~$0.0006/round. Instruction-weight dilution is the cost that matters and is unquantified;
+`docs/security/prompt-injection.md` §4's rows 1–5 were specified against a system prompt without it.
+
+Gates green: `tsc` clean, `eslint` clean, **1,586 passed / 3 skipped** (68 files).

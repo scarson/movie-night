@@ -44,12 +44,20 @@ app.
 The offline corpus (603 cases) is green and four real vulnerabilities were fixed. What remains needs a
 real key: 12 specified rows, under $5, one afternoon. Rows 1–5 failing keeps the gate closed.
 
-### 14. The engine invents a taste profile when it has nothing to go on
+### 14. The engine invents a taste profile when it has nothing to go on — **PROMPT FIXED, OUTCOME UNMEASURED**
 **Raised by:** the review of #12, 2026-08-02
-For an account with nothing saved the member block is five consecutive `None selected` / `None` lines
-(`src/lib/matching.ts:378-382`) and the mood line is `No specific mood` (`:385`). **There is no
-empty-profile branch anywhere in the engine**, and `thin_results` does not cover it — that fires on
-fewer than three surviving ids (`:518`), which is about id resolution, not input richness.
+
+**Status 2026-08-02.** The instruction is fixed (`PROMPT_VERSION` `p1.2` → `p1.3`); **whether the model
+ever confabulated, and whether it now stops, is still unmeasured.** That distinction is the whole of
+this entry's honesty: what shipped removes a directive that is wrong on its face, it does not repair a
+behaviour anyone observed. `src/lib/matching.eval.test.ts` now carries a `solo with nothing saved` case
+asserting empty `primaryVibes`/`genreAffinities` and a summary that admits the absence — it is skipped
+until `ANTHROPIC_API_KEY` exists, and it is the measurement this entry is waiting on.
+
+**What the problem was.** For an account with nothing saved the member block rendered three
+`None selected` values and two `None` ones, and the mood line `No specific mood` — an absence that reads
+as a description. There was no empty-profile branch anywhere in the engine, and `thin_results` does not
+cover it: that fires on fewer than three surviving ids, which is about id resolution, not input richness.
 
 **The pressure is the prompt directive, not the schema — an earlier draft of this entry had it
 backwards and would have sent the next reader to fix the wrong file.** The solo directive at
@@ -63,10 +71,22 @@ So the model can satisfy the schema exactly with `primaryVibes: []` and a `summa
 nothing to go on. Structured output compels the fields to be *present*; it does not compel their
 contents. No schema change fixes this.
 
-This is where F1's real defect lives. Fixing it here covers every path in, including the ritual
-abandoner whose saved-but-empty profile a routing change would never have caught. Whether the model
-currently hedges or confabulates is **unmeasured** — one live call with an empty member block settles
-it, and `matching.eval.test.ts` has no empty-profile case among its two live scenarios.
+This is where F1's real defect lives, and fixing it here covers every path in — including the ritual
+abandoner whose saved-but-empty profile a routing change would never have caught, since the predicate
+reads `PromptMember`, downstream of every entry path.
+
+**What shipped.** A `NOTHING SAVED:` marker line the builder alone writes; a taste-map directive built
+for the members present rather than stated and then overridden; a predicate that reads what the prompt
+will *render* rather than array length (`validateTagList` enforces a type and a maximum but no minimum,
+so `vibes: [""]` is storable and would otherwise have suppressed the marker); and coverage of the
+rough-day weighting, which could otherwise favour a member the prompt had just declared has no
+preferences. The marker is unquoted because the injection corpus pins benign system prompts at zero
+double quotes — that test caught the first wording.
+
+**The cost, measured in characters:** the rule is 657 chars and the marker 68 per member, ~2% of a
+representative prompt but **~30% of the system prompt**, making it the longest paragraph there. Dollar
+cost is negligible (~$0.0006/round); instruction-weight dilution is the real cost and is unquantified.
+`docs/security/prompt-injection.md` §4's rows 1–5 were specified against a system prompt without it.
 
 ---
 
