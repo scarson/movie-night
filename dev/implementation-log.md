@@ -3599,3 +3599,36 @@ rate is half what it looks like. Both rate tables are in the doc.
 
 **The candidate block is 93.3% of the prompt.** Any conversation about input cost is a conversation
 about `CANDIDATE_CAP = 200`.
+
+---
+
+## Session handoff — the overnight autonomous session (2026-08-02)
+
+`dev/handoff-2026-08-02-night.md` supersedes `dev/handoff-2026-08-02.md`, which now carries a banner and is
+kept for its bug-hunt narrative and guardrails (the new handoff deliberately does not repeat them). Final
+state: `dev` at `aa115ef`, PRs #47-#52 all merged, zero open PRs, gates green at 1,564 passed / 2 skipped.
+
+**The `dev/plans/2026-08-01-next-queue.md` queue is complete** — items 6-10 all shipped, each heading now
+carrying a SHIPPED banner with its outcome.
+
+Routed rather than dumped into the handoff, per the handoff skill's Phase 2:
+
+- **`docs/pitfalls/implementation-pitfalls.md` §2 Presentation & CSS (new section)** — **UI-1**: a utility
+  beside `animate-rise-fade` is inert because animation declarations outrank author-normal ones, and
+  reduced motion switches it on, so a state can have two renderings selected by a user preference with
+  only one ever reviewed. **UI-2**: a source sweep proves a size class is present, not that a target is big
+  enough — the exact gap between item 7 reporting touch targets clean and item 8 finding three misses one
+  commit later.
+- **`docs/pitfalls/testing-pitfalls.md` §9 Driving a Real Browser (new section)** — five entries, led by the
+  first-click-may-not-dispatch trap that read as "the feature is broken" three separate times.
+- **`dev/research/open-decisions.md`** — #1 and #11 updated with the cost model's arithmetic; #12, #12b and
+  #13 added; #6 corrected (three static-amber sites, not two).
+- **`dev/plans/2026-08-01-next-queue.md`** — items 6-10 marked shipped with outcomes; status line updated to
+  say the queue is complete.
+
+Nine adversarial review rounds on the handoff, run to a clean full pass. Rounds 6 and 7 were session-specific:
+**delegated-authority auditor** (this session ran under a mid-session authority expansion that conflicted with
+standing guidance, and used two independent AI reviewers whose reliability a future agent must calibrate) and
+**falsified-claims auditor** (this session's own reports were shown to contain five false claims, so a handoff
+by the same author is not exempt). Round 7 caught a stale figure I had carried forward from the previous
+handoff without checking — `main` is 291 commits behind, not 273.

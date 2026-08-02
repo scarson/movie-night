@@ -27,6 +27,7 @@ This document serves three audiences. Start here, then go directly to the sectio
 | § | Section | You're working on... | Entries | Checklist |
 |---|---------|---------------------|---------|-----------|
 | 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1, PLAT-2, PLAT-3 | §1.C |
+| 2 | [Presentation & CSS](#section-2-presentation--css) | Tailwind utilities, state styling, touch targets, motion | UI-1, UI-2 | §2.C |
 | — | [Orchestration](#orchestration) | Parallel subagent dispatch and output persistence | ORCH-1 | §Orchestration.C |
 | A | [Historical Changelog](#appendix-a-historical-changelog) | Provenance, validation dates, review process meta-observations | — | — |
 | B | [Unified Summary Table](#appendix-b-unified-summary-table) | All pitfalls at a glance, with severity and status | — | — |
@@ -111,6 +112,43 @@ const { results } = await db
 
 ---
 
+# Section 2: Presentation & CSS
+
+> **Reader context:** I'm styling a component, expressing a state visually, or reviewing a UI diff. These pitfalls are about presentation code that looks correct in the source and behaves differently — or not at all — in a browser.
+
+---
+
+### UI-1: A utility beside `animate-rise-fade` is inert, and reduced motion switches it on
+
+**The Flaw:** A component expresses a state by adding a plain utility — `opacity-50` for a removed item, say — to an element that already carries `animate-rise-fade`. The source reads as though the state is dimmed. It is not: CSS Cascading L5 ranks **animation declarations above normal author declarations**, and `--animate-rise-fade` (`globals.css`) carries `both` fill with `opacity` at both keyframe ends, so the animation's value wins during the delay, during the run, and forever after it settles.
+
+**Why It Matters:** The bug is invisible from both directions. Reading the source, the state looks styled. Looking at the app, the state looks correctly *un*-dimmed, so nothing seems wrong. Then the app's two reduced-motion mechanisms — `@media (prefers-reduced-motion: reduce)` and `[data-reduced-motion="true"] *`, both `animation: none !important` — remove the animation declaration, and the utility starts working. **The result is a state that renders differently for users who asked for less motion, and only their rendering was never reviewed.** Found 2026-08-02 in `ranked-list.tsx`: a removed pick's wash took `ash` metadata from 6.21:1 to **2.46:1**, and the row's own still-live Keep button drew its `border-ash` boundary at 2.46:1 against 1.4.11's 3:1 floor. Nothing in that row is inactive, so the criterion's exemption for inactive components does not apply.
+
+**The Fix:** Do not express state with a bare declaration on an animated element. Use the token vocabulary the design system already has for the state (`slate`/`ash` for inactive), or a property the entrance animation does not touch (`line-through`, a border colour, an added text line). `control-contrast.test.tsx` now sweeps the whole of `src/` for `opacity-*` with an **empty** allowlist, so a new instance fails a test rather than shipping.
+
+**The Lesson:** Any state expressed as a plain declaration on an element that also animates has **two renderings**, selected by a user preference, and code review sees only one of them. When auditing motion, do not only ask "does the animation look right" — ask "what does this element look like with `animation: none`, and has anyone checked?" Toggling the app's reduced-motion attribute on the same DOM is a two-second check that reveals it. See also testing-pitfalls §9.
+
+---
+
+### UI-2: A source sweep proves a class is present, not that a target is big enough
+
+**The Flaw:** A design-system audit greps `src/` for size classes, finds every interactive element carries `min-h-11` / `min-h-12` / `size-11` or inherits one from `control-classes.ts`, and reports the touch-target dimension clean.
+
+**Why It Matters:** Height and width are not symmetric. A class can set one while the other is content-driven, and content changes with viewport. Found 2026-08-02: `ProgressSteps` sets `min-h-11`, so height was never wrong — but width followed its contents, and below `sm:` the step label is `sr-only`, leaving the 28px marker as the entire target. Measured **32×44** at 375px. The source sweep had reported "no touch-target misses" one commit earlier; the very next commit found three. Two individually correct decisions collided — the `sr-only` label is the pattern that protects 320px reflow — and neither could see the other. A grep cannot see a collision between two classes whose interaction depends on a media query.
+
+**The Fix:** Measure. `getBoundingClientRect()` on a running page at the target viewport is the only evidence for a size claim. Where a class is the assertion (jsdom has no layout), say so in the test and record the browser measurement in the report the test cites.
+
+**The Lesson:** A source sweep and a measurement answer different questions, and only one of them is "is this target big enough." State which one an audit performed. An audit that reports a dimension clean without having measured it is worse than one that says "not checked" — it closes the question with a claim it cannot support.
+
+---
+
+### Review Checklist
+
+- [ ] **UI-1** — No state is expressed with a bare declaration (opacity, transform, filter) on an element that also carries an entrance animation. The reduced-motion rendering of any state-bearing element has been checked, not assumed.
+- [ ] **UI-2** — Every touch-target claim rests on a measurement at the target viewport, not on the presence of a size class. Where a test asserts the class (jsdom has no layout), the test says so and cites the report holding the measurement.
+
+---
+
 ## Orchestration
 
 Pitfalls that arise when a session dispatches parallel subagents and consolidates their output. The canonical rules live in `docs/git-strategy.md` → §Multi-agent coordination → Output persistence. This section is the discovery hook for plan writers who arrive here via the `writing-plans-enhanced` (or equivalent) mandated-read path — it does NOT restate the rules in full.
@@ -152,6 +190,8 @@ TODO — add entries as this document evolves.
 |----|-------|----------|--------|--------|
 | ORCH-1 | Analysis Dispatches Must Persist Findings | HIGH | VALIDATED | Orchestration |
 | PLAT-1 | D1 rejects any query binding more than 100 parameters | HIGH | VALIDATED | Section 1 |
+| UI-1 | A utility beside `animate-rise-fade` is inert, and reduced motion switches it on | HIGH | VALIDATED | Section 2 |
+| UI-2 | A source sweep proves a class is present, not that a target is big enough | MEDIUM | VALIDATED | Section 2 |
 | PLAT-2 | Independent D1 reads awaited one at a time each cost a round trip | MEDIUM | VALIDATED | Section 1 |
 | PLAT-3 | D1 refuses `pragma_*` table-valued functions joined across every table | MEDIUM | VALIDATED | Section 1 |
 

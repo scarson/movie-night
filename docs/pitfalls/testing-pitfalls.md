@@ -122,6 +122,18 @@ Membership, identity and history live in different tables with different lifecyc
 
 ---
 
+## 9. Driving a Real Browser
+
+Some claims — layout, touch-target size, computed colour, what a first-time user actually sees — cannot be made from jsdom, which has no layout engine and no CSS cascade. Driving a real browser answers them, and introduces its own ways to be confidently wrong.
+
+- [ ] **Confirm the click fired before believing what the page shows.** A driver's first `left_click` after a `read_page` / `scroll_to` may not dispatch — the coordinates were computed against a scroll position the page has since changed. **🔥 Found 2026-08-02, three times in one session:** clicking a CTA appeared to do nothing, and the natural reading was "the button is broken." It wasn't; the click never landed. Assert the *effect* — a network request in the request log, a state change in the DOM, a URL change — before concluding anything about the feature. A screenshot taken after a click that never happened is evidence of nothing.
+- [ ] **A measurement claim names the viewport it was taken at.** Sizes, reflow and truncation are all viewport-dependent; a bare "44×44" is not reproducible. Record the viewport with the number, and re-measure at 320px when the claim is about reflow.
+- [ ] **A state that a user preference can alter is checked in both states.** Reduced motion, dark/light, and any `data-*` toggle the app sets on `<html>` select between renderings. Flip the attribute on the same DOM and re-read — it is a two-second check and it is the only way to see the rendering that review never looks at. See implementation-pitfalls UI-1 for the failure this catches.
+- [ ] **Say which half of "slow" was simulated.** Holding a response open reproduces a long wait; it does not reproduce packet-level slowness, and the two fail differently. **🔥 Found 2026-08-02:** the match-path loading narrative was characterised by holding `/match` open — correct for "does the UI read as a hang", silent about first-paint behaviour on a throttled connection. State the difference rather than letting "throttled" stand for both.
+- [ ] **Screenshots lag the DOM; the measurement is the evidence.** An image can come back blank or stale while a DOM query returns correct geometry. Where a verdict rests on a number, take the number from the page and use the screenshot only as a sanity check.
+
+---
+
 ## How to Add a Testing-Pitfall
 
 When a bug reaches production (or staging, or late integration testing) because a test was missing:
