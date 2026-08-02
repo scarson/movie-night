@@ -28,6 +28,7 @@ This document serves three audiences. Start here, then go directly to the sectio
 |---|---------|---------------------|---------|-----------|
 | 1 | [Cloudflare Workers & D1](#section-1-cloudflare-workers--d1) | D1 queries, Workers runtime constraints, bindings | PLAT-1, PLAT-2, PLAT-3 | §1.C |
 | 2 | [Presentation & CSS](#section-2-presentation--css) | Tailwind utilities, state styling, touch targets, motion | UI-1, UI-2 | §2.C |
+| 3 | [The Prompt as a Data Structure](#section-3-the-prompt-as-a-data-structure) | `buildMatchingPrompt`, prompt invariants, member predicates | PROMPT-1, PROMPT-2, PROMPT-3 | §3.C |
 | — | [Orchestration](#orchestration) | Parallel subagent dispatch and output persistence | ORCH-1 | §Orchestration.C |
 | A | [Historical Changelog](#appendix-a-historical-changelog) | Provenance, validation dates, review process meta-observations | — | — |
 | B | [Unified Summary Table](#appendix-b-unified-summary-table) | All pitfalls at a glance, with severity and status | — | — |
@@ -146,6 +147,62 @@ const { results } = await db
 
 - [ ] **UI-1** — No state is expressed with a bare declaration (opacity, transform, filter) on an element that also carries an entrance animation. The reduced-motion rendering of any state-bearing element has been checked, not assumed.
 - [ ] **UI-2** — Every touch-target claim rests on a measurement at the target viewport, not on the presence of a size class. Where a test asserts the class (jsdom has no layout), the test says so and cites the report holding the measurement.
+
+---
+
+# Section 3: The Prompt as a Data Structure
+
+> **Reader context:** I'm changing what `buildMatchingPrompt` sends. The prompt is not prose — it is a serialized structure with invariants that other code and other tests depend on, assembled from user-controlled fields. These are the ways a reasonable-looking edit breaks something that is not visible in the string you just wrote.
+
+---
+
+### PROMPT-1: A predicate about a member reads the stored array, while the prompt renders a sanitized one
+
+**The Flaw:** A branch decides how to describe a member by testing their stored data — `m.vibes.length > 0` — while the block the model actually reads is built from `clampTags(m.vibes)`, which runs `sanitizePromptText` over every entry. The two disagree for any entry that is non-empty in storage and empty after sanitization.
+
+**Why It Matters:** The disagreement is reachable, and it fails toward the dangerous side. `validateTagList` (`src/app/api/user/profile/route.ts`) enforces a type and a **maximum** length, never a minimum, so `vibes: [""]` is a storable profile — and `sanitizePromptText` deletes `\p{Cf}` characters, so a lone zero-width space is also stored non-empty and rendered empty. `trim()` does not catch that one. **🔥 Found 2026-08-02:** the `NOTHING SAVED` marker and the entire `EMPTY PROFILES` rule were suppressed for a member whose rendered block was `- Vibes: ` — an empty field, which reads to the model as *answered with nothing*, strictly worse than the `None selected` the marker was added to replace. Not reachable through the UI (`tag-picker.tsx` trims and rejects blanks); reachable by any API client.
+
+**The Fix:** Compute the predicate over the same transformation the renderer applies, then test for content:
+
+```ts
+function hasContent(list: string[]): boolean {
+  return list.some((entry) => sanitizePromptText(entry, MAX_TAG_CHARS).trim().length > 0);
+}
+```
+
+**How to Detect:** For any `.length` test on a member field, ask what the prompt line for that field renders when the array is non-empty. If the answer can be "nothing", the predicate is measuring the wrong thing.
+
+---
+
+### PROMPT-2: The system prompt has invariants; a literal you add can break one
+
+**The Flaw:** A new rule is added to the system prompt with an ordinary bit of technical writing — quoting a token, say — and it silently violates a property that a test elsewhere depends on.
+
+**Why It Matters:** The prompt's *punctuation* is load-bearing for injection detection. `matching.test.ts` pins benign system prompts at **zero** `"` characters, precisely so that a quote appearing in an assembled prompt is unambiguously user content. **🔥 Found 2026-08-02:** the empty-profile marker was first written as `a line beginning "- NOTHING SAVED:"`. Those two literals broke the invariant for every empty profile — and neither of two independent reviewers caught it; the pre-existing test did. Unquoting the reference restored it.
+
+**The Fix:** Before adding text to the system prompt, read what `matching.test.ts` and `matching.injection.test.ts` assert *about the prompt as a string* — quote counts, line counts, per-line prefixes — and write within them. When a new structural token is introduced, add it to `expectStructureIntact`'s invariant list so no payload can add, move or suppress one.
+
+**How to Detect:** Run `matching.injection.test.ts` after any prompt edit. It is the fastest signal that a string-level property moved, and it is cheap.
+
+---
+
+### PROMPT-3: Two instructions that contradict, resolved by ranking them
+
+**The Flaw:** A conditional rule is appended that contradicts a directive already in the prompt, and the contradiction is patched with a precedence clause — "this rule outranks anything above about X".
+
+**Why It Matters:** The qualifier only ever covers the clause its author remembered to name. **🔥 Found 2026-08-02:** the empty-profile rule contradicted the taste-map directive in four places (`sharedVibes lists their strongest vibes`, `overlap describes where their tastes converge`, the `tensionPoints` directive, and the summary instruction) and the override clause named only the last. Both reviewers flagged it independently; the fix was free, because the directive it contradicted was *already* a conditional on `input.solo` and simply needed one more dimension.
+
+**The Fix:** Build the directive for the members actually present instead of stating it and then overriding it. A precedence clause in a prompt is a smell: it exists to patch a contradiction the builder chose to emit.
+
+**How to Detect:** If you are writing "this outranks", "ignore the above", or "notwithstanding" into a prompt, the branch that would have avoided the contradiction is usually one conditional away.
+
+---
+
+### Review Checklist
+
+- [ ] **PROMPT-1** — Every predicate deciding how a member is described is computed over the rendered/sanitized value, not the stored array's length.
+- [ ] **PROMPT-2** — String-level invariants (quote count, line prefixes, structural tokens) were read before adding prompt text, and any new structural token is pinned in `expectStructureIntact`.
+- [ ] **PROMPT-3** — No precedence clause patches a contradiction that a conditional could have avoided.
 
 ---
 

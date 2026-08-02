@@ -201,6 +201,35 @@ five strings, nothing able to say which was canonical). Not done in the sweep, b
 fourth control level extends DESIGN.md's decisions log rather than applying it. Recommendation:
 `destructiveButtonClasses` + a compact sibling, pinned like the other four.
 
+### 15. Is the `PhasedLoading` gap a defect against the spec, or a reading of it?
+**Raised by:** picking up priority-queue item 3, 2026-08-02 — **read this before implementing that item.**
+The queue says to *"frame it as a defect against a written spec, not a feature request"*. That framing
+should be checked before it is acted on, because the spec sentence is ambiguous and the defect reading
+may not be the right one.
+
+DESIGN.md §Motion: *"Phased text appears calmly. **Minimum 1.5s for narrative to land, otherwise adapts
+to actual API response time.** Not a progress bar."*
+
+`src/components/phased-loading.tsx` holds each phase 900ms and fast-forwards remaining phases to 200ms
+once `done` arrives — so it adapts **downward** only. Four phases means the narrative lands at ~3.6s and
+the screen is then motionless for the rest of a 5–15s call (measured: static from 4.6s on quick match,
+`dev/reports/mobile-qa.md`).
+
+**The two readings.** (a) "adapts to actual API response time" describes *both* directions, so failing to
+extend is a defect. (b) It describes exactly the downward fast-forward that exists — the minimum protects
+the narrative from being cut off, the adaptation stops it from padding a fast response — in which case
+nothing is broken and a longer sequence is a feature request against *"calm thinking, not a progress
+bar"*. Sentence structure mildly favours (b): the clause pairs a floor with "otherwise", which reads as
+"don't stall past the response", not "keep going until it arrives".
+
+**Constraints on any upward adaptation, if (a) wins.** The container is `aria-live="polite"`
+(`phased-loading.tsx:62`), so every phase change is announced; a rotating set of filler lines would make a
+15s call announce eight or ten times, trading a visual problem for a screen-reader one. Whatever is
+chosen has to be bounded in announcements, not just calm to look at.
+
+**Recommendation:** settle this with the same opposed-brief review used for #12 before writing code — the
+cheapest outcome is discovering there is nothing to fix.
+
 ### 13. Should the pre-results screens adopt the per-kind error headings?
 **Raised by:** PR for queue item 6
 The error *behaviour* is now consistent across all three screens — no screen offers a retry that cannot
