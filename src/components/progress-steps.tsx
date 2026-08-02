@@ -68,10 +68,12 @@ export function ProgressSteps({ steps, current, onStepSelect }: ProgressStepsPro
                   onClick={() => onStepSelect(index)}
                   aria-label={`Step ${index + 1}: ${label}`}
                   // `min-w-11` because the label is `sr-only` below `sm:`, which
-                  // leaves the 28px marker as the whole target. It replaces the
-                  // `min-w-0` that let a long name truncate rather than force
-                  // page-wide h-scroll: an explicit minimum still lets the button
-                  // shrink past its content, just no further than a thumb.
+                  // leaves the 28px marker as the whole target. It replaces a
+                  // `min-w-0` that only ever mattered at `sm:` and up, where the
+                  // label paints and has to be allowed to truncate — below that
+                  // width `sr-only` is what keeps a long name out of the layout.
+                  // Both are explicit minimums, so the button still shrinks past
+                  // its content either way; this one stops at a thumb.
                   className="flex min-h-11 min-w-11 items-center justify-center gap-xs rounded-control px-2xs"
                 >
                   <Marker state={state} position={index + 1} />

@@ -3454,3 +3454,66 @@ doc's own 5-15s budget that is up to ~10s of motionless screen.
 (these are geometry measurements from desktop Chrome at a phone viewport), and whether the soft
 keyboard obscures inputs (needs a real device — the measurable half, 16px inputs, is done; the
 residual risk is `/results`, where the steering textarea sits 138px above its submit button).
+
+---
+
+## Independent review of items 6-8 (2026-08-02)
+
+Codex (`codex exec`, high reasoning, over the source diff) and an Opus subagent (over the diff plus
+the three reports) run together, both pointed at this project's documented failure mode — *the code
+is fine and the justification is wrong* — rather than at ordinary bug-hunting. The two overlapped on
+three findings and each found things the other did not. Every finding below was verified against the
+code before acting on it.
+
+**Behaviour defects, fixed (`5bc9eee`):**
+
+- **`monthly_cap` kept a retry that cannot succeed.** Inherited verbatim from the results page, where
+  it had been `retry: true` since it was written. `movie-sessions.ts:150` counts `recommendations`
+  rows since the 1st of the UTC month; a refusal writes no row, so the number the retry is measured
+  against is provably unchanged. The sharper half is the *comment* beside `daily_limit`: "unlike the
+  other 429s" was right about `daily_limit` and wrong about the family — only `rate_limited`, the
+  provider's own, is momentary.
+- **The invite page's new guidance fired on every join failure.** "Check the link with whoever sent
+  it" is true for a 404 and false for a 429 or a 5xx, where the button they just pressed is the way
+  out. The existing rate-limit test was already walking that path. The error now carries whether it
+  is terminal (404/403).
+
+**Wrong justifications in otherwise-correct code, corrected:**
+
+- `session-flow.ts` still said every caller but the results page ignores `kind`. Two more do now.
+- `match-errors.ts` called `heading` "the heading to use" when two of its three consumers
+  deliberately do not use it.
+- `progress-steps.tsx` credited `min-w-0` with protecting 320px reflow. It does not — below `sm:` the
+  label is `sr-only` and contributes nothing to layout, so `min-w-0` only ever mattered at >=640px.
+- `ranked-list.tsx` named the **Remove** button as the live control the wash dimmed under 3:1. Both
+  buttons undo a removal (`rate()` toggles), but only **Keep** is unpressed and therefore
+  `border-ash` at 2.46:1; Remove is pressed and reads `border-cream` at 4.82:1. The comment named the
+  one control in the row that was *not* failing.
+
+**Report overclaims, corrected in place rather than quietly:**
+
+- `design-qa.md` listed touch targets among the dimensions that did not drift — "No misses" — and the
+  very next commit found three. Both statements sat on adjacent pages of this log until the review put
+  them side by side. The correction records the cause, which is the useful part: **a source sweep can
+  report that a size class is present; it cannot report that a target is big enough.** `ProgressSteps`
+  carries `min-h-11` and reads correct in source; its *width* came from contents that shrink below
+  `sm:`. Only `getBoundingClientRect()` finds that.
+- `first-run-experience.md` claimed all four typed errors were reachable on a first round. `left_group`
+  is not: both screens only match a session they just created, creation already 403s a non-member, and
+  there is no kick endpoint — so it needs the same person leaving from another device inside that
+  window. The UI branch is right; the claim about it was not.
+- `design-qa.md`'s `text-amber` classification named three non-interactive sites against a tally of
+  five, and filed two static ones under "selected states". The miss matters to decision #6:
+  `mood-screen.tsx:140` is 14px regular static amber — exactly the shape the report told Sam was
+  unique to the notices. There are three such sites, not two. `open-decisions.md` #6 updated.
+- The "4.6 s" loading figure is wall-clock from the click and includes the session-create round trip;
+  `PhasedLoading` reaches its terminal phase ~2.7 s after *mounting*. The motionless window is longer
+  than 4.6 s implies, not shorter.
+- "Off-scale numerics: three" was five — the sweep's regex missed a negative utility.
+
+**Checked and found sound, stated so the next reader does not re-check:** the CSS-cascade reasoning
+behind the inert `opacity-50` (verified against the Cascading L5 origin order, then reproduced in
+Chrome); the flexbox reasoning behind `min-w-11`; every contrast figure, recomputed independently to
+three decimals; the `requestMatch` caller audit; and — the check this repo most needs — **all nine
+tests added across the three items, replayed against a worktree at the pre-fix commit, where exactly
+those nine failed.** No test in this batch was one that could already pass.

@@ -58,13 +58,26 @@ What that costs, observed against the running Worker:
   "Not tonight, apparently" with a primary **Try again** whose window is a *day*. The results page
   had already reasoned this exact case out in a comment and set `retry: false`; quick and ritual
   never saw it.
-- **`monthly_cap`** — same shape, observed by setting `MONTHLY_MATCH_LIMIT=0`.
+- **`monthly_cap`** — same shape, observed by setting `MONTHLY_MATCH_LIMIT=0`. **Corrected after
+  review:** this pass first left `monthly_cap` as `retry: true`, inheriting the results page's own
+  mapping, and this line originally read as though the fix had covered it. It had not. An independent
+  review pointed out that the cap counts `recommendations` rows since the 1st of the UTC month and a
+  refusal writes no row, so the number a retry is measured against cannot move until the month rolls
+  over. It is now `retry: false`. See §Review below.
 - **`thin_results`** — tells the reader to loosen a dealbreaker. `/quick` has no dealbreaker control
   on it at all; the results page offers a link to `/profile` and these two did not.
 - **`left_group`** — a retry that 403s forever.
 
-Every one of these is reachable on a **first** round from `/quick` or `/ritual`. (`round_limit` is
-not — it needs ten prior rounds.)
+Three of these are reachable on a **first** round from `/quick` or `/ritual`: `daily_limit` (the
+per-user 30/24h rule, counted across sessions), `monthly_cap` (a global counter), and `thin_results`
+(an engine outcome). `round_limit` is not — it needs ten prior rounds.
+
+**Corrected after review:** this originally said *every* one, including `left_group`. It does not
+hold. Both screens only ever match a session they just created, and `POST /api/movie-sessions`
+already 403s a non-member at creation; there is no kick endpoint, only self-leave. So `left_group`
+needs the same person to leave the group from another tab or device inside the window between
+session creation and the match POST. The UI branch is right and worth keeping; the claim that it is
+an ordinary first-round state was not.
 
 The framing map moved to `src/lib/match-errors.ts`; all three screens read it, and `requestMatch`
 carries `kind` through.
@@ -195,3 +208,43 @@ disappears with it.
   catalog is already tracked as a deploy-day blocker in `docs/deploy.md`.
 - **Screenshots.** Item 7 owns the before/after captures; the evidence here is measurements, which is
   the stronger form for the claims made.
+
+---
+
+## Review — what an independent pass found
+
+Run after the work merged, with Codex (GPT-5.x, `codex exec` at high reasoning) over the source diff
+and an Opus subagent over the diff plus these reports. Both were pointed at this project's documented
+failure mode — *the code is fine and the justification is wrong* — rather than at ordinary
+bug-hunting.
+
+**Three findings, all real, all fixed:**
+
+1. **`monthly_cap` kept a retry that cannot succeed.** The mapping was inherited verbatim from the
+   results page, where it had been `retry: true` since it was written. Verified against
+   `movie-sessions.ts:150` — the count is `SELECT COUNT(*) FROM recommendations WHERE created_at >=
+   strftime('%Y-%m-01T00:00:00Z','now')`, and a refusal writes no `recommendations` row. So the
+   number the retry is measured against is provably unchanged.
+
+   The sharper part: the *comment beside `daily_limit`* said `retry: false, unlike the other 429s`.
+   That reasoning was right about `daily_limit` and wrong about the family — of the three 429 kinds,
+   only `rate_limited` (the provider's own) is momentary. A correct fix carrying an incorrect
+   generalisation, which is exactly the class this project keeps re-finding.
+
+2. **The invite page's new guidance fired on every join failure.** "Check the link with whoever sent
+   it" is true for a 404 and false for a 429, a 5xx or a dropped connection — where the button the
+   user just pressed *is* the way out. The existing rate-limit test was already exercising that path.
+   The error state now carries whether the failure is terminal (404/403) and only then offers the
+   advice.
+
+3. **Two doc comments went stale.** `session-flow.ts` still said every caller but the results page
+   ignores `kind`; `match-errors.ts` described `heading` as "the heading to use" when two of its three
+   consumers deliberately do not use it. Both corrected, with the open question about that divergence
+   pointed at `open-decisions.md` #13.
+
+**Checked and found sound:** the cascade reasoning behind the inert `opacity-50` (animation
+declarations do outrank author-normal ones); the flexbox claim that `min-w-11` still permits shrinking
+past content width; all three contrast figures, recomputed independently — ember/charcoal 4.119:1,
+50%-composited ash/midnight 2.459:1, amber 3.093:1. And every one of the nine tests added across the
+three items was confirmed to contain an assertion that fails against its own pre-fix code, which is
+the check this repo most needs and most often skips.

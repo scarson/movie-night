@@ -35,7 +35,8 @@ async function getJson<T>(url: string): Promise<T | null> {
 /**
  * POSTs/PUTs and returns the server's user-facing error string, or null on
  * success. `kind` carries the matching error taxonomy through untouched so the
- * results page can branch on it; every other caller ignores it.
+ * screens that render a failure can branch on it — the results page, the ritual
+ * and quick match. The profile and group callers ignore it.
  */
 async function send<T>(
   url: string,

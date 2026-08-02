@@ -409,6 +409,33 @@ describe("results page", () => {
     expect(screen.getByTestId("regenerate").hasAttribute("disabled")).toBe(true);
   });
 
+  it("withholds a retry once the month's budget is spent", async () => {
+    // The cap counts `recommendations` rows since the 1st of the UTC month, and
+    // a refusal writes no row — so the count a retry is measured against cannot
+    // move until the month rolls over or an operator raises the limit. It is the
+    // same shape as `daily_limit`, over a longer window; only `rate_limited`,
+    // the provider's own 429, is the momentary one.
+    vi.useFakeTimers();
+    stubApi({
+      match: {
+        status: 429,
+        body: {
+          error: "We're getting a lot of requests right now, try again later",
+          kind: "monthly_cap",
+        },
+      },
+    });
+    await renderResults();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("regenerate"));
+    });
+    await settleNarrative();
+
+    expect(screen.getByRole("alert").textContent).toContain("a lot of requests");
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+  });
+
   it("moves focus to a failed round so a keyboard user is not stranded", async () => {
     vi.useFakeTimers();
     stubApi({

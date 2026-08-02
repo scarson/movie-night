@@ -144,8 +144,10 @@ export function RankedList({
             key={rec.tmdbId}
             style={{ animationDelay: `${index * STAGGER_MS}ms` }}
             // Removal is drawn by the struck title and the line under it, not by
-            // a wash: the row stays live — its own Remove button is how you undo
-            // it — and dimming a live control's boundary drops it under 3:1.
+            // a wash: the row stays live, and dimming a live control's boundary
+            // drops it under 3:1. The Keep button is the one that proves it —
+            // unpressed, so `border-ash`, which a 50% wash takes to 2.46:1. Its
+            // Remove neighbour is pressed and reads `border-cream` at 4.82:1.
             className="animate-rise-fade grid grid-cols-[minmax(0,14rem)_1fr] gap-x-md gap-y-md border-t border-slate py-2xl first:border-t-0 first:pt-0 sm:grid-cols-[13rem_1fr] sm:gap-x-lg"
           >
             {/* The poster leads and the type sets around it, magazine-style —
