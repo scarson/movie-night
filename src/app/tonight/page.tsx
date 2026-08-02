@@ -11,7 +11,11 @@ import {
   defaultGroupSelection,
   type GroupOption,
 } from "@/components/group-picker";
-import { primaryButtonClasses, secondaryButtonClasses } from "@/components/control-classes";
+import {
+  compactOutlinedButtonClasses,
+  primaryButtonClasses,
+  secondaryButtonClasses,
+} from "@/components/control-classes";
 
 export default function Tonight() {
   const { user, loading } = useAuth();
@@ -54,6 +58,11 @@ export default function Tonight() {
   const firstName = user.name.trim().split(" ")[0];
   const target = selected === null ? "" : `?group=${encodeURIComponent(selected)}`;
 
+  // A failed fetch also leaves `groups` empty, so emptiness alone would promise a
+  // first group to someone who may already have several. Both reads exclude it.
+  const hasGroups = groups !== null && groups.length > 0;
+  const showInvite = groups !== null && !groupsFailed && groups.length === 0;
+
   return (
     <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
       <h1 className="font-display text-[1.75rem]/[1.2] font-extrabold italic text-warm-white sm:text-[2.5rem]/[1.15]">
@@ -63,13 +72,19 @@ export default function Tonight() {
       <div className="mt-xl">
         {groups === null ? (
           <div className="space-y-sm">
-            <p className="sr-only">Loading your groups…</p>
+            <p className="sr-only">Loading tonight&apos;s options…</p>
             <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
             <div aria-hidden="true" className="h-20 rounded-panel bg-charcoal" />
           </div>
         ) : (
           <div className="animate-rise-fade">
-            <GroupPicker groups={groups} value={selected} onChange={setSelected} />
+            {/* With no groups the picker is a radiogroup of one, pre-selected and
+                unchangeable. The line replacing it still says who the match is for. */}
+            {hasGroups || groupsFailed ? (
+              <GroupPicker groups={groups} value={selected} onChange={setSelected} />
+            ) : (
+              <p className="text-base text-cream">Just you tonight.</p>
+            )}
             {groupsFailed && (
               <p role="alert" className="mt-sm text-sm text-ember">
                 Couldn&apos;t load your groups — you can still watch solo.
@@ -110,12 +125,24 @@ export default function Tonight() {
       )}
 
       <div className="mt-3xl border-t border-slate pt-lg">
-        <Link
-          href="/groups"
-          className="inline-flex min-h-11 items-center text-sm font-medium text-amber hover:text-warm-white"
-        >
-          Groups &amp; invites
-        </Link>
+        {showInvite ? (
+          <>
+            <p className="max-w-[46ch] text-sm text-ash">
+              Watching with someone else? Start a group and send them the link —
+              the match reads both profiles.
+            </p>
+            <Link href="/groups" className={`${compactOutlinedButtonClasses} mt-md inline-flex items-center`}>
+              Invite someone
+            </Link>
+          </>
+        ) : (
+          <Link
+            href="/groups"
+            className="inline-flex min-h-11 items-center text-sm font-medium text-amber hover:text-warm-white"
+          >
+            Groups &amp; invites
+          </Link>
+        )}
       </div>
     </main>
   );

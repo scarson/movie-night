@@ -54,7 +54,7 @@ function stubApi({
 }
 
 /**
- * Same as `stubApi`, but `/api/groups` hangs until the returned `release` is
+ * Same as `stubApi`, but `/api/groups` hangs until the returned `resolve` is
  * called — the only way to observe the window where auth has settled and the
  * group choice has not.
  */
@@ -123,13 +123,14 @@ describe("Tonight hub", () => {
   });
 
   it("starts on solo when the user has no groups", async () => {
+    // Solo is still the selection; with no groups to choose between it is stated
+    // rather than offered as a radiogroup of one.
     stubApi({
       me: { status: 200, body: ALICE },
       groups: { status: 200, body: { groups: [] } },
     });
     renderHub();
-    const solo = await screen.findByRole("radio", { name: /just me tonight/i });
-    expect((solo as HTMLInputElement).checked).toBe(true);
+    expect(await screen.findByText(/just you tonight/i)).toBeDefined();
     expect(screen.getByRole("link", { name: /quick match/i }).getAttribute("href")).toBe("/quick");
     expect(screen.getByRole("link", { name: /full ritual/i }).getAttribute("href")).toBe("/ritual");
   });
@@ -185,6 +186,64 @@ describe("Tonight hub", () => {
         "/quick?group=g1"
       )
     );
+  });
+
+  it("offers an invite when the user has no groups", async () => {
+    stubApi({
+      me: { status: 200, body: ALICE },
+      groups: { status: 200, body: { groups: [] } },
+    });
+    renderHub();
+    const invite = await screen.findByRole("link", { name: /invite someone/i });
+    expect(invite.getAttribute("href")).toBe("/groups");
+  });
+
+  it("keeps the group-management link instead of the invite once a group exists", async () => {
+    stubApi({
+      me: { status: 200, body: ALICE },
+      groups: { status: 200, body: { groups: [SUNDAY] } },
+    });
+    renderHub();
+    await screen.findByRole("radio", { name: /Sunday Nights/ });
+    expect(screen.queryByRole("link", { name: /invite someone/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /groups & invites/i })).toBeDefined();
+  });
+
+  it("withholds the invite when the groups request failed", async () => {
+    // The catch sets groups to [], so an emptiness test alone would promise a
+    // first group to someone who may already have several.
+    stubApi({
+      me: { status: 200, body: ALICE },
+      groups: { status: 500, body: { error: "Failed to fetch groups" } },
+    });
+    renderHub();
+    await screen.findByText(/couldn't load your groups/i);
+    expect(screen.queryByRole("link", { name: /invite someone/i })).toBeNull();
+  });
+
+  it("hides the single-option group picker when the user has no groups", async () => {
+    stubApi({
+      me: { status: 200, body: ALICE },
+      groups: { status: 200, body: { groups: [] } },
+    });
+    renderHub();
+    // Waiting on the invite, not the CTAs: the CTAs are on screen while groups
+    // are still pending, when the picker is legitimately absent anyway.
+    await screen.findByRole("link", { name: /invite someone/i });
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getByRole("link", { name: /quick match/i }).getAttribute("href")).toBe("/quick");
+  });
+
+  it("keeps the picker when the groups request fails", async () => {
+    // Falling back to solo is a claim about who the match is for, so the choice
+    // has to stay on screen even though `groups` is [] here too.
+    stubApi({
+      me: { status: 200, body: ALICE },
+      groups: { status: 500, body: { error: "Failed to fetch groups" } },
+    });
+    renderHub();
+    await screen.findByText(/couldn't load your groups/i);
+    expect(screen.getByRole("radiogroup")).toBeDefined();
   });
 
   it("stays usable when the groups request fails", async () => {
