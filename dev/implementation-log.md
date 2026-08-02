@@ -3294,3 +3294,33 @@ Method notes worth keeping: `minimal` is not a valid effort on these models; tok
 as a cost signal here because repeated identical prompts hit the provider's prompt cache, so later runs
 in a cell report a fraction of the first's; and a backgrounded `&` plus `sleep` wrapper kills its own
 children when the parent exits — the loop must `wait`.
+
+---
+
+## Session handoff — the long autonomous session (2026-08-02)
+
+`dev/handoff-2026-08-02.md` supersedes the 2026-08-01 handoff, which was written mid-session at
+`80acad9` and had twenty more PRs land after it; that file now carries a superseded banner and is kept
+for its bug-hunt narrative. Final state: `dev` at `4cf65d2`, 37 PRs merged (#8-#44, all verified
+MERGED), zero open PRs, gates green at 1,553 passed / 2 skipped.
+
+Routed rather than dumped into the handoff, per the handoff skill's Phase 2:
+
+- **`dev/research/open-decisions.md` (new)** — every question awaiting Sam, in one place. These were
+  being surfaced correctly by agents and then scattered across seven research docs, so each session
+  re-discovered them. Eleven items across launch blockers, design calls, Phase 2, and provider/cost.
+- **`docs/pitfalls/testing-pitfalls.md` §7** — four entries: every arm of a comparison gets the
+  identical contract; a 0/N result is a harness hypothesis before it is a finding; raising a timeout is
+  not a fix until the cost is measured; token counts from repeated identical prompts are not a cost
+  signal. All four are things this session got wrong first and caught before shipping.
+- **`docs/pitfalls/implementation-pitfalls.md` PLAT-3** — D1 refuses `pragma_*` table-valued functions
+  joined across every table with `SQLITE_AUTH` while working filtered to one, so the first spike looks
+  correct and only real D1 reveals it.
+- **`dev/plans/2026-08-01-next-queue.md`** — items 1-5 marked shipped with PR numbers; item 10 narrowed
+  (the provider spikes answered most of the cost question, leaving only the Anthropic-side `tokens_out`)
+  and item 7 pointed at the two open colour decisions.
+
+Six adversarial review rounds were run on the handoff, then re-run after fixes per the loop rule. Round
+6's session-specific lens was **empirical-claims auditor** — for a session that produced this many
+numbers, is each one labelled measured or modelled? It caught the cost figures in open-decisions being
+presented as "at measured rates" when they rest on an estimated 3,000-token output size; corrected.
