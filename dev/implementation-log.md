@@ -3632,3 +3632,44 @@ standing guidance, and used two independent AI reviewers whose reliability a fut
 **falsified-claims auditor** (this session's own reports were shown to contain five false claims, so a handoff
 by the same author is not exempt). Round 7 caught a stale figure I had carried forward from the previous
 handoff without checking — `main` is 291 commits behind, not 273.
+
+---
+
+## Streaming service list — "Max" renamed to "HBO Max" (2026-08-02)
+
+Sam flagged that the profile page still offered **Max**, the name Warner Bros. Discovery retired when the
+service reverted to **HBO Max** in mid-2025. One-line fix in `STREAMING_SERVICES`
+(`src/components/profile-editor.tsx:17`), TDD with a genuinely-failing test first — the new case asserts the
+picker offers a `HBO Max` checkbox and no bare `Max` one, and it failed against the pre-fix component with
+`Unable to find role="checkbox" and name "HBO Max"`.
+
+**Why this is only a copy change, verified rather than assumed.** The picker list and TMDB's provider names
+never join:
+
+- `STREAMING_SERVICES` is our own product copy. A member's saved selections reach exactly one place —
+  the prompt, as free text (`src/lib/matching.ts:382`). Candidate lines carry id, title, year, genres and
+  synopsis only (`matching.ts:391-396`); streaming availability is **not** in the candidate block, so there
+  is no string equality between a member's services and a title's.
+- `PUT /api/user/profile` validates the list's *shape*, not its membership — `validateTagList` at
+  `src/app/api/user/profile/route.ts:61` has no allowlist. So no server-side constant tracks this list.
+- The names a user sees on a result card come from TMDB verbatim (`streamingLabels`,
+  `src/components/ranked-list.tsx:24`, fed by `tmdb.ts:181` mapping `provider_name`). That path is
+  third-party data and is not ours to rename.
+
+**No data migration needed, and it is worth saying why rather than assuming it.** A stored profile keeps the
+literal strings it was saved with, so a pre-existing `"Max"` selection would go invisible — the chip no
+longer exists to render it selected, and the stale string would persist unseen in `streaming_services`. That
+would be a real (if small) migration. It does not apply here: the app has never been deployed, there is no
+Worker on the account and no production D1, so the count of affected rows is zero. **If this list is ever
+edited after launch, that reasoning stops holding** and the rename needs a data fix alongside it.
+
+**Deliberately not changed: the TMDB fixtures.** `src/test/fixtures/tmdb-movie-detail.json:77`,
+`src/lib/tmdb.test.ts:136`, `src/lib/cron-handler.test.ts:105,253` and `scripts/seed-lib.test.ts:20,30` all
+carry `"Max"` as a TMDB `provider_name`. Those are captures of a third-party response, and the string is
+arbitrary to what each test asserts (that `provider_name` is passed through). Updating them would assert a
+fact about TMDB's live catalogue that I could not verify — `.dev.vars` in the repo root holds only an
+OpenRouter key, so there is no TMDB token in this environment to check provider 1899's current
+`provider_name` against. Left alone on purpose; the fixtures are self-consistent and nothing reads a brand
+name across the boundary. Re-check when a TMDB token is available.
+
+Gates green before commit: `tsc` clean, `eslint` clean, **1,565 passed / 2 skipped** (68 files).

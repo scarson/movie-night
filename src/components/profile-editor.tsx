@@ -14,7 +14,7 @@ const MAX_TAG_ENTRIES = 30;
 /** The services Phase 1 asks about. Order is the list users scan, not alphabetical. */
 export const STREAMING_SERVICES = [
   "Netflix",
-  "Max",
+  "HBO Max",
   "Disney+",
   "Prime Video",
   "Hulu",

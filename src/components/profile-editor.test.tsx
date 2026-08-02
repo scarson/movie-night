@@ -86,6 +86,14 @@ describe("ProfileEditor", () => {
     });
   });
 
+  it("offers HBO Max under its full brand name", () => {
+    renderEditor();
+    const services = screen.getByRole("group", { name: /streaming/i });
+
+    expect(within(services).getByRole("checkbox", { name: "HBO Max" })).toBeTruthy();
+    expect(within(services).queryByRole("checkbox", { name: "Max" })).toBeNull();
+  });
+
   it("deselects an already-chosen streaming service", () => {
     const onChange = renderEditor();
     const services = screen.getByRole("group", { name: /streaming/i });
