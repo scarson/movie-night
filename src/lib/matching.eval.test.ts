@@ -105,6 +105,48 @@ it("guards live evals behind RUN_LIVE_EVALS=1", () => {
 
 describe.skipIf(!RUN_LIVE)("live matching evals (real Anthropic API)", () => {
   it(
+    "solo with nothing saved: says so rather than inventing a taste",
+    { timeout: 120_000 },
+    async () => {
+      // The one measurement open-decisions #14 is waiting on. The prompt rule
+      // that produces this is shipped and unit-tested; whether the model obeys
+      // it — and whether it would have confabulated without it — is unverified
+      // until this runs. Written now so it lands the moment a key exists.
+      const blank = {
+        userId: "u-blank",
+        name: "Robin",
+        comfortTitles: [],
+        watchlist: [],
+        vibes: [],
+        dealbreakers: [],
+        streamingServices: [],
+        roughDay: false,
+      };
+      const response = await runMatching({
+        env: { ANTHROPIC_API_KEY: resolveApiKey() },
+        input: evalInput({ members: [blank], moodVibes: [], solo: true }),
+        context: { groupId: "eval-group", sessionId: "eval-empty-solo", round: 1 },
+      });
+
+      expect(response.tasteMap.members).toHaveLength(1);
+      const [taste] = response.tasteMap.members;
+
+      // The schema permits the honest answer; the prompt asks for it.
+      expect(taste.primaryVibes).toEqual([]);
+      expect(taste.genreAffinities).toEqual([]);
+      expect(taste.summary).toMatch(/saved|yet|nothing|haven't|not told/i);
+      expect(response.tasteMap.overlap.sharedVibes).toEqual([]);
+      expect(response.tasteMap.overlap.tensionPoints).toEqual([]);
+
+      // It should still recommend — an empty profile is a cold start, not an error.
+      expect(response.recommendations.length).toBeGreaterThanOrEqual(5);
+      for (const rec of response.recommendations) {
+        expect(candidateIds.has(rec.tmdbId), `unknown tmdbId ${rec.tmdbId}`).toBe(true);
+      }
+    }
+  );
+
+  it(
     "round 1: respects dealbreakers, candidate list, and taste-map shape",
     { timeout: 120_000 },
     async () => {

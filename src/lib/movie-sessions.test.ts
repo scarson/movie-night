@@ -667,7 +667,7 @@ describe("insertRecommendation", () => {
       removed_tmdb_ids: "[2,3]",
       steering_feedback: "less gloomy",
       model: "claude-sonnet-5",
-      prompt_version: "p1.2",
+      prompt_version: "p1.3",
       candidate_snapshot: "[1,2,3]",
     });
     expect(typeof row?.created_at).toBe("string");

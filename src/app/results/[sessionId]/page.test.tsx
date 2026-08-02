@@ -624,7 +624,10 @@ describe("results page", () => {
     ).toBeTruthy();
   });
 
-  it("falls back to the profiles when no vibe was set", async () => {
+  it("does not name the profiles it cannot see when no vibe was set", async () => {
+    // Third site of the string class open-decisions #12 fixed at /quick and the
+    // no-round branch: this page has no profile payload for anyone, and for an
+    // account with nothing saved the sentence is simply false.
     stubApi({
       get: {
         status: 200,
@@ -638,7 +641,8 @@ describe("results page", () => {
     });
     await renderResults();
 
-    expect(await screen.findByText("Read from your saved profiles.")).toBeTruthy();
+    expect(screen.queryByText("Read from your saved profiles.")).toBeNull();
+    expect(await screen.findByText("No vibe set for tonight.")).toBeTruthy();
   });
 
   it("keeps the heading outline unbroken in every view", async () => {
