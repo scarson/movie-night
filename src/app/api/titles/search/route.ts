@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
 import { chunk, D1_IN_CHUNK_SIZE } from "@/lib/db";
+import { RATE_LIMITS, withinRateLimit, recordRateLimitHit } from "@/lib/rate-limit";
 import { searchMovies, searchResultsToSummaries, type SearchSummary } from "@/lib/tmdb";
 
 const LOCAL_LIMIT = 10;
@@ -137,7 +138,13 @@ export async function GET(request: NextRequest) {
       posterPath: row.poster_path,
     }));
 
-    if (results.length < TMDB_FALLBACK_THRESHOLD) {
+    // Metered here rather than at the top of the handler, so the limit bounds
+    // exactly what it protects — our TMDB credentials — and a local-catalog
+    // hit, which spends nothing outside D1, never counts toward it or pays for
+    // the counting. Over the limit the picker degrades to local results, the
+    // same shape it already shows during a TMDB outage.
+    if (results.length < TMDB_FALLBACK_THRESHOLD && (await withinRateLimit(db, RATE_LIMITS.titleSearch, user.userId))) {
+      await recordRateLimitHit(db, RATE_LIMITS.titleSearch, user.userId);
       try {
         const tmdbResults = searchResultsToSummaries(await searchMovies(query, env.TMDB_API_TOKEN));
         const seen = new Set(results.map((r) => r.tmdbId));

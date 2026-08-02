@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authenticateRequest } from "@/lib/auth";
-import { checkJoinRateLimit, logJoinAttempt, joinGroup } from "@/lib/groups";
+import { joinGroup } from "@/lib/groups";
+import { RATE_LIMITS, withinRateLimit, recordRateLimitHit } from "@/lib/rate-limit";
 
 const CODE_FORMAT = /^[2-9A-Za-z]{8}$/;
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const allowed = await checkJoinRateLimit(db, user.userId);
+    const allowed = await withinRateLimit(db, RATE_LIMITS.groupJoin, user.userId);
     if (!allowed) {
       const response = NextResponse.json(
         { error: "Too many join attempts — try again later" },
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     // Logged for every well-formatted code, whether or not it matches a real group —
     // this is what rate-limits invite-code enumeration, not just successful joins.
-    await logJoinAttempt(db, user.userId);
+    await recordRateLimitHit(db, RATE_LIMITS.groupJoin, user.userId);
 
     const group = await joinGroup(db, user.userId, code);
     if (!group) {

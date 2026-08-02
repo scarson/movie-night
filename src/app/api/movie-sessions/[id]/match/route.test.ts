@@ -382,6 +382,66 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  describe("per-user daily match limit", () => {
+    function seedMatchAttempts(db: D1Database, key: string, count: number, at: string) {
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        rows.push(
+          db
+            .prepare("INSERT INTO rate_limit_log (scope, key, at) VALUES ('match', ?, ?)")
+            .bind(key, at)
+            .run()
+        );
+      }
+      return Promise.all(rows);
+    }
+
+    it("rejects with 429 daily_limit once the caller has spent 30 matches in the last 24 hours", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      const create = stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      await seedMatchAttempts(db, "u1", 30, new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+      const response = await postMatch(sessionId, "u1");
+
+      expect(response.status).toBe(429);
+      expect((await response.json<Record<string, string>>()).kind).toBe("daily_limit");
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("does not count another user's spend, or this user's spend from outside the window", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      stubAnthropic([apiMessage(JSON.stringify(validResponse([27205, 155, 603])))]);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await seedMatchAttempts(db, "u2", 30, new Date(Date.now() - 60 * 60 * 1000).toISOString());
+      await seedMatchAttempts(db, "u1", 30, new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString());
+
+      const response = await postMatch(sessionId, "u1");
+      logSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+    });
+
+    it("records the caller's spend before the model call, so a failed round still counts", async () => {
+      const db = createFakeD1(loadMigration());
+      vi.mocked(getCloudflareContext).mockResolvedValue({ env: fakeEnv(db), ctx: {} } as never);
+      const sessionId = await setup(db);
+      stubAnthropic([new APIConnectionError({ message: "network down" })]);
+
+      const response = await postMatch(sessionId, "u1");
+
+      expect(response.status).toBe(503);
+      const row = await db
+        .prepare("SELECT COUNT(*) as count FROM rate_limit_log WHERE scope = 'match' AND key = ?")
+        .bind("u1")
+        .first<{ count: number }>();
+      expect(row?.count).toBe(1);
+    });
+  });
+
   describe("MONTHLY_MATCH_LIMIT parsing", () => {
     async function attempt(monthlyLimit?: string): Promise<Response> {
       const db = createFakeD1(loadMigration());
@@ -962,9 +1022,10 @@ describe("POST /api/movie-sessions/[id]/match", () => {
       expect(response.status).toBe(200);
       // The session lookup and the live-membership probe (which needs the
       // session's group id), the five reads that depend on nothing but the
-      // session id, the candidate pool, one title hydration for every name the
-      // prompt needs, the insert, and the response hydration.
-      expect(roundTrips).toHaveLength(7);
+      // session id, the per-user spend count, its record and its prune, the
+      // candidate pool, one title hydration for every name the prompt needs,
+      // the insert, and the response hydration.
+      expect(roundTrips).toHaveLength(10);
       expect(Math.max(...roundTrips.map((trip) => trip.length))).toBe(5);
     });
 

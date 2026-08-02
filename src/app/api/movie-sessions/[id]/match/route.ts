@@ -12,6 +12,7 @@ import {
   type MatchingErrorKind,
 } from "@/lib/matching";
 import { isGroupMember } from "@/lib/groups";
+import { RATE_LIMITS, withinRateLimit, recordRateLimitHit } from "@/lib/rate-limit";
 import {
   getSessionForMember,
   getMatchRoundContext,
@@ -139,6 +140,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         headers
       );
     }
+
+    // The monthly cap is global, so on its own one account can spend everyone
+    // else's budget. This is the per-account share of it, and it is recorded
+    // here rather than after the model call: the round is billed the moment we
+    // ask, whether or not it comes back usable.
+    if (!(await withinRateLimit(db, RATE_LIMITS.match, user.userId))) {
+      return withAuthHeaders(
+        NextResponse.json(
+          { error: "You've run a lot of matches today — try again tomorrow", kind: "daily_limit" },
+          { status: 429 }
+        ),
+        headers
+      );
+    }
+    await recordRateLimitHit(db, RATE_LIMITS.match, user.userId);
 
     // A client may only keep or reject a film this session actually showed it.
     // Unrecognised ids are dropped rather than rejected: a stale second tab
