@@ -10,6 +10,10 @@
 dev/mockups/
 dev/gstack/
 
+# The browse tooling writes audit, console and network logs into a .gstack/
+# directory in whatever working directory it runs from, including a worktree root.
+.gstack/
+
 # beads issue tracker
 .beads/
 
