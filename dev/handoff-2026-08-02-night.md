@@ -1,5 +1,11 @@
 # Handoff — the overnight autonomous session → fresh session
 
+> **SUPERSEDED for current state by `dev/handoff-2026-08-02-late.md` (`dev` at `77a5ae5`).** Still the
+> best source for §Seams, §Guardrails and §The review pattern that worked, which the later handoff
+> deliberately does not repeat. Its §Priority queue is **stale**: items 1 and 2 are settled
+> (`open-decisions.md` #12, #12b) and item 3's framing is itself now under question as
+> `open-decisions.md` #15 — read that before acting on it.
+
 **Written:** 2026-08-02, at the end of an overnight session that took `dev` from `56d7490` to `aa115ef`.
 **Audience:** an agent starting cold.
 

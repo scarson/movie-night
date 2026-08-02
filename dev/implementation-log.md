@@ -3970,3 +3970,38 @@ measured figures attached. Per CLAUDE.md a comment may only go when it is provab
 true, so it moved.
 
 Gates green: `tsc` clean, `eslint` clean, **1,592 passed / 3 skipped** (68 files).
+
+---
+
+## Session handoff — the first-run-routing session (2026-08-02, late)
+
+`dev/handoff-2026-08-02-late.md` supersedes `dev/handoff-2026-08-02-night.md`, which now carries a banner
+and keeps its §Seams/§Guardrails/§review-pattern content. Final state: `dev` at `77a5ae5`, PRs #54–#57
+merged, zero open PRs, gates green at **1,592 passed / 3 skipped**.
+
+Routed rather than dumped into the handoff, per the handoff skill's Phase 2:
+
+- **`docs/pitfalls/implementation-pitfalls.md` §3 The Prompt as a Data Structure (new section)** —
+  **PROMPT-1**: a predicate about a member read the stored array while the prompt renders a sanitized
+  one, so a storable `vibes: [""]` suppressed the marker on a member whose block rendered nothing.
+  **PROMPT-2**: the system prompt has string-level invariants — a quoted literal broke the
+  zero-double-quotes property injection detection relies on, and a pre-existing test caught what two
+  reviewers missed. **PROMPT-3**: contradicting an existing directive and patching it with a precedence
+  clause, where the clause covered one of four contradictions and a conditional would have avoided all
+  of them.
+- **`docs/pitfalls/testing-pitfalls.md` §9** — the backgrounded-tab animation trap (a throttled tab
+  reports a permanently-invisible entrance animation that renders fine), and `jq 'all(.[]; …)'` returning
+  true on an empty array, which makes a CI wait exit instantly and read as "CI is not configured".
+- **`dev/research/open-decisions.md`** — #12 and #12b settled with their reasoning; #14 updated to
+  separate the fixed instruction from the unmeasured outcome; **#15 added**, questioning whether the
+  `PhasedLoading` gap is a defect against DESIGN.md or a reading of it, with both readings and the
+  `aria-live` constraint any fix has to respect.
+- **`DESIGN.md`** — four new decision rows across PRs #55 and #57.
+
+Eight adversarial review rounds on the handoff, run to a clean full pass. Round 6 was session-specific:
+**unmeasured-claim auditor**, chosen because this session declined a change whose premise was unverified
+and then shipped a prompt fix whose outcome is equally unverified — the failure mode being that
+"unmeasured" quietly becomes "fixed" in the retelling. It produced four findings, including that the
+priority queue framed item 1 as a defect to fix, which is the exact framing #15 exists to question.
+Verifying figures against `git` rather than memory caught the commits-behind number: **309**, not the
+293 I had carried forward.
