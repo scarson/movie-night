@@ -1,0 +1,67 @@
+{
+  "tasteMap": {
+    "members": [
+      {
+        "userId": "iris",
+        "name": "Iris",
+        "summary": "Drawn to puzzle-box plotting and high-stakes tension. Her comfort watches (Inception, The Dark Knight, Parasite) all reward close attention, and she rules out horror entirely.",
+        "primaryVibes": ["Cerebral", "Suspenseful", "Mind-Bending"],
+        "genreAffinities": ["Thriller", "Science Fiction", "Crime", "Drama"]
+      },
+      {
+        "userId": "theo",
+        "name": "Theo",
+        "summary": "Prefers warmth over edge — romantic, comedic, visually charming films like Notting Hill, Amélie, and La La Land. War stories are a hard no for him.",
+        "primaryVibes": ["Cozy", "Feel-Good", "Romantic"],
+        "genreAffinities": ["Romance", "Comedy", "Drama", "Music"]
+      }
+    ],
+    "overlap": {
+      "summary": "Iris and Theo sit at opposite ends of the intensity dial, but both gravitate toward films built on clever construction and strong central characters rather than plot for its own sake. The bridge tonight is craft: stories that are meticulously assembled (which satisfies Iris's love of puzzles) while still carrying real warmth and heart (which is non-negotiable for Theo).",
+      "sharedVibes": ["Clever, well-constructed storytelling", "Strong central character studies", "Distinctive visual style"],
+      "tensionPoints": [
+        "Iris wants genuine tension and stakes; Theo wants comfort and warmth, so straightforwardly dark thrillers risk losing him",
+        "Theo's dealbreaker on war and Iris's dealbreaker on horror each eliminate a large slice of suspense-adjacent films",
+        "Iris's favorites lean grim or morally ambiguous (Fight Club, Parasite), while Theo's lean sweet and optimistic — a purely 'suspenseful' pick for the mood could tip too far toward Iris's side alone"
+      ]
+    }
+  },
+  "recommendations": [
+    {
+      "tmdbId": 120467,
+      "matchScore": 91,
+      "explanation": "A meticulously plotted caper wrapped in a candy-colored, comedic package. The murder-and-inheritance plot gives Iris the puzzle-box suspense she wants, while the whimsy, wit, and warmth of Gustave and Zero's friendship land squarely in Theo's comfort zone. No horror, no war — just a very stylish chase."
+    },
+    {
+      "tmdbId": 19913,
+      "matchScore": 88,
+      "explanation": "Already on Theo's watchlist, and its non-linear, out-of-order structure gives Iris something to actively piece together rather than a straightforward rom-com. It is honest about heartbreak without being saccharine, which keeps it feeling clever rather than merely cozy."
+    },
+    {
+      "tmdbId": 27205,
+      "matchScore": 84,
+      "explanation": "The most direct hit on tonight's suspenseful mood and a comfort favorite for Iris, but it is not purely a puzzle box — Cobb's grief over his wife and marriage gives Theo an emotional through-line to hold onto rather than just heist mechanics and dream logic."
+    },
+    {
+      "tmdbId": 129,
+      "matchScore": 80,
+      "explanation": "Chihiro's journey into the bathhouse world has real tension and strange, dream-logic rules to untangle for Iris, while the film's tenderness, gorgeous imagery, and ultimately hopeful arc make it an easy, cozy watch for Theo. A safe, shared discovery for both."
+    },
+    {
+      "tmdbId": 194,
+      "matchScore": 76,
+      "explanation": "One of Theo's comfort films, but worth resurfacing because Amélie's secret schemes and orchestrated coincidences give it a playful, almost mystery-like structure — enough of a puzzle to keep Iris engaged alongside the whimsical romance Theo already loves."
+    },
+    {
+      "tmdbId": 10681,
+      "matchScore": 72,
+      "explanation": "A quiet, near-wordless first act builds real atmosphere and tension, which should appeal to Iris's suspense side, before settling into a tender, wordless love story that plays right to Theo's romantic, feel-good preferences. Low-stakes but not shallow."
+    },
+    {
+      "tmdbId": 603,
+      "matchScore": 68,
+      "explanation": "A fresh option for tonight's suspenseful mood and Iris's love of mind-bending premises — reality-questioning plot, real stakes. It is the riskiest pick for Theo since it is heavier on action than romance, so it is offered as the night's wildcard rather than the safest bet."
+    }
+  ],
+  "conversational": "Iris and Theo are working with genuinely different palettes — Iris wants to be kept guessing, Theo wants to feel good — so tonight's suspenseful mood needed picks that lean into tension without losing Theo's warmth, and skip anything on either person's dealbreaker list. Since **The Dark Knight** was already ruled out, the list below is entirely fresh.\n\n**The Grand Budapest Hotel** tops the list because it genuinely threads the needle: a real caper with real stakes, dressed in Wes Anderson's warm, funny, meticulous style. **(500) Days of Summer** was already on Theo's watchlist, and its scrambled timeline gives Iris something to actively work out rather than a passive watch. **Inception** is the closest thing to a guaranteed crowd-pleaser for tonight's mood — it is Iris's comfort pick, but its emotional core keeps Theo anchored too.\n\n**Spirited Away** and **Amélie** are both gentler discoveries — enough mystery and cleverness to hold Iris's interest, enough tenderness to feel like home for Theo. **WALL·E** trades on quiet tension up front and a sweet love story after. **The Matrix** closes things out as the wildcard: it leans harder into Iris's suspense lane than Theo's romance one, so treat it as the option to reach for if tonight's appetite skews a little more thrill-seeking."
+}

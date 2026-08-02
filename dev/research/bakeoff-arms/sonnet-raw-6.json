@@ -1,0 +1,63 @@
+{
+  "tasteMap": {
+    "members": [
+      {
+        "userId": "iris",
+        "name": "Iris",
+        "summary": "Drawn to layered, high-stakes stories that reward close attention, with a taste for crime and psychological tension. Horror is a hard no.",
+        "primaryVibes": ["Cerebral", "Suspenseful", "Mind-Bending"],
+        "genreAffinities": ["Thriller", "Science Fiction", "Crime", "Drama"]
+      },
+      {
+        "userId": "theo",
+        "name": "Theo",
+        "summary": "Gravitates toward warm, character-driven romances and comedies with visual charm. War stories are off the table.",
+        "primaryVibes": ["Cozy", "Feel-Good", "Romantic"],
+        "genreAffinities": ["Romance", "Comedy", "Drama", "Music"]
+      }
+    ],
+    "overlap": {
+      "summary": "Both of them respond to stories that are precisely constructed rather than loosely plotted, and to central relationships with real emotional weight underneath the genre trappings. Tonight's suspenseful mood is the natural meeting point: a story with tension and craft, but not the bleakness or violence either of them rules out.",
+      "sharedVibes": ["Meticulous, well-built plotting", "Emotional sincerity under the surface", "Visual and structural cleverness"],
+      "tensionPoints": ["Iris wants stakes and dread; Theo wants comfort and warmth, so pure suspense can read as cold to him and pure romance can read as low-stakes to her", "Their dealbreakers cut in opposite directions - horror off-limits for Iris, war off-limits for Theo - which rules out the more intense end of the suspense spectrum"]
+    }
+  },
+  "recommendations": [
+    {
+      "tmdbId": 496243,
+      "matchScore": 92,
+      "explanation": "Already one of Iris's comfort movies, and it's suspenseful in exactly the way tonight calls for - a slow-building sense of dread with a genuinely clever structure. For Theo, it's grounded by a family at its center whose hopes and disappointments feel real, not just a puzzle box."
+    },
+    {
+      "tmdbId": 120467,
+      "matchScore": 87,
+      "explanation": "A caper plot with real tension and misdirection gives Iris the twisty pleasure she's after, while the storybook look, deadpan warmth, and loyal friendships give Theo the coziness he wants. It sits right at their overlap."
+    },
+    {
+      "tmdbId": 19913,
+      "matchScore": 84,
+      "explanation": "Already on Theo's watchlist, and its scrambled, out-of-order timeline is the kind of structural trick Iris tends to enjoy picking apart. It's a romance told with enough formal cleverness that it doesn't feel like a straightforward one."
+    },
+    {
+      "tmdbId": 129,
+      "matchScore": 80,
+      "explanation": "A discovery for both of them - a dreamlike, slightly unnerving fantasy world that rewards close attention for Iris, wrapped in the kind of tender, coming-of-age warmth that suits Theo's taste for feel-good stories."
+    },
+    {
+      "tmdbId": 27205,
+      "matchScore": 76,
+      "explanation": "One of Iris's favorites and a strong fit for tonight's suspenseful mood, with mind-bending stakes she clearly likes. It's a stretch for Theo, but the grief-and-love story underneath the heists gives him something to hold onto."
+    },
+    {
+      "tmdbId": 77338,
+      "matchScore": 72,
+      "explanation": "This leans toward Theo's feel-good, character-driven wheelhouse - a warm, true-story friendship with genuine heart. For Iris, the sharp humor and class-tension undercurrent offer more bite than a typical crowd-pleaser."
+    },
+    {
+      "tmdbId": 313369,
+      "matchScore": 66,
+      "explanation": "Squarely in Theo's comfort zone as a swooning, music-driven romance. It's the furthest from Iris's suspenseful preference on this list, but its bittersweet honesty about ambition versus love gives it more to chew on than pure fluff."
+    }
+  ],
+  "conversational": "Iris and Theo pull in different directions - she wants tension and a puzzle to work out, he wants warmth and a relationship to root for - but the honest overlap between them is craft: stories built carefully enough that neither of them feels shortchanged.\n\nGiven tonight's suspenseful mood, **Parasite** is the clearest fit: it's already a comfort watch for Iris, and its dread builds exactly the way she likes, while Theo gets a family drama with real stakes underneath the tension. **The Grand Budapest Hotel** is close behind - a caper with enough misdirection to satisfy Iris, wrapped in a cozy, storybook tone that's very much Theo's speed.\n\n**(500) Days of Summer** is already on Theo's list, and its scrambled timeline gives Iris something structurally interesting to track inside a romance. **Spirited Away** is a fresh discovery for both - dreamlike and a little unsettling in the way Iris responds to, but tender enough at heart to land for Theo too.\n\nRounding things out: **Inception** leans hard into Iris's taste for mind-bending suspense, with a love story underneath that Theo can hold onto even if the genre isn't his usual. **The Intouchables** flips that balance the other way - a feel-good, true-story friendship for Theo, with enough sharp humor to keep Iris engaged. And **La La Land** is here mainly for Theo, a swooning romance that at least has some bittersweet honesty to it rather than pure sweetness."
+}

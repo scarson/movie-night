@@ -1,0 +1,58 @@
+{
+  "tasteMap": {
+    "members": [
+      {
+        "userId": "iris",
+        "name": "Iris",
+        "summary": "Iris gravitates toward tightly plotted, intellectually engaging films - puzzle-box thrillers and layered dramas that reward close attention - and steers clear of horror.",
+        "primaryVibes": ["Cerebral", "Suspenseful", "Mind-Bending"],
+        "genreAffinities": ["Thriller", "Science Fiction", "Drama", "Crime"]
+      },
+      {
+        "userId": "theo",
+        "name": "Theo",
+        "summary": "Theo favors warm, character-driven comedies and romances with a gentle emotional pull, and steers clear of war stories.",
+        "primaryVibes": ["Cozy", "Feel-Good", "Romantic"],
+        "genreAffinities": ["Comedy", "Romance", "Drama", "Music"]
+      }
+    ],
+    "overlap": {
+      "summary": "Iris and Theo sit at opposite ends of the intensity spectrum - one wants tension and puzzles, the other wants warmth and comfort - but both respond strongly to inventive, well-crafted storytelling and vivid visual worlds, which gives tonight's suspenseful mood room to work if the tone leans more wonder than dread.",
+      "sharedVibes": ["Inventive, richly imagined worlds", "Character-driven storytelling", "Stylish visual craft"],
+      "tensionPoints": ["Iris wants intellectual tension and ambiguity; Theo wants emotional warmth and reassurance", "Iris rules out horror while Theo rules out war, which narrows how dark or heavy tonight's suspense can get"]
+    }
+  },
+  "recommendations": [
+    {
+      "tmdbId": 496243,
+      "matchScore": 90,
+      "explanation": "Parasite is already one of Iris's comfort favorites, and its slow-building dread fits tonight's suspenseful mood perfectly. Theo's fondness for sharp, character-driven comedy - the kind he finds in Amelie and Notting Hill - carries over here too, since the tension is laced with dark humor rather than horror or violence for its own sake."
+    },
+    {
+      "tmdbId": 129,
+      "matchScore": 85,
+      "explanation": "A strong middle ground: it has the eerie, dreamlike unpredictability Iris likes in mind-bending stories, but its tone stays gentle and wondrous rather than frightening, which should sit well with Theo's preference for cozy, feel-good viewing."
+    },
+    {
+      "tmdbId": 120467,
+      "matchScore": 82,
+      "explanation": "A caper with real mystery and stakes gives Iris something to puzzle over, while its whimsical, meticulously crafted world and dry humor echo the tone Theo loves in Amelie. It threads the needle between suspense and warmth."
+    },
+    {
+      "tmdbId": 27205,
+      "matchScore": 78,
+      "explanation": "Inception is Iris's comfort-zone pick and matches tonight's suspenseful mood as directly as anything on the list. It's a bigger ask for Theo, who leans toward gentler romance, but the visual imagination and the emotional core - a man trying to get back to his family - give him something to hold onto."
+    },
+    {
+      "tmdbId": 10681,
+      "matchScore": 74,
+      "explanation": "A quiet, mostly wordless love story wrapped in science fiction - Theo gets the tender romance he gravitates toward, and Iris gets a thoughtful, atmospheric world with real tension in its survival stakes."
+    },
+    {
+      "tmdbId": 603,
+      "matchScore": 68,
+      "explanation": "A discovery pick aimed squarely at Iris's love of suspenseful, reality-bending premises. It asks more of Theo than the others here, but its central story is ultimately about connection and belief in another person, which keeps it from being purely cerebral."
+    }
+  ],
+  "conversational": "Since **The Dark Knight** didn't land last round, here's a fresh set built around tonight's suspenseful mood, balancing Iris's love of tense, mind-bending stories with Theo's pull toward warmth and romance.\n\n**Parasite** tops the list - it's already a favorite of Iris's, and its slow-building tension comes wrapped in the kind of sharp, dark comedy that should still feel approachable to Theo. **Spirited Away** and **The Grand Budapest Hotel** both offer real mystery and unease without tipping into anything harsh, making them good compromises for a night that wants suspense but not dread.\n\n**Inception** is the boldest swing toward Iris's taste - it's one of her comfort films and matches the mood directly, though it asks more of Theo than the others here. **WALL·E** balances that out with a tender, near-wordless love story set inside a thoughtful sci-fi frame, which should give Theo something familiar to connect with. **The Matrix** rounds things out as a discovery pick for Iris, leaning hardest into the suspenseful, reality-questioning territory she enjoys.\n\nIf tonight ends up wanting more warmth than tension, Parasite, Spirited Away, and The Grand Budapest Hotel are the safest bets to start with."
+}
