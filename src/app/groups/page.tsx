@@ -356,7 +356,10 @@ export default function Groups() {
                     </button>
                   )}
                   {leaveError?.groupId === group.id && confirmingLeave === null && (
-                    <p role="alert" className="mt-sm text-sm text-ember">
+                    // Cream, not ember: this alert sits on the card's charcoal,
+                    // where ember is 4.12:1. Same reason the confirm above keeps
+                    // ember to its border.
+                    <p role="alert" className="mt-sm text-sm text-cream">
                       {leaveError.message}
                     </p>
                   )}

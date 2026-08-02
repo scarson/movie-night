@@ -202,3 +202,50 @@ describe("1.4.11 — every remaining slate use is non-interactive", () => {
     expect(slateUses()).toEqual(ALLOWED);
   });
 });
+
+describe("no state is drawn with opacity", () => {
+  /**
+   * DESIGN.md §Accessibility: opacity is outside the token system and compounds
+   * with whatever sits underneath, so it may not carry state. Measured against
+   * `midnight`, a 50% wash takes `ash` from 6.21:1 to **2.46:1** and `amber`
+   * from 9.04:1 to 3.09:1 — under the 4.5:1 text floor and, for a live control's
+   * boundary, under 1.4.11's 3:1.
+   *
+   * The rule has a second edge that source review cannot see. An element that
+   * also carries `animate-rise-fade` runs an animation whose `both` fill holds
+   * `opacity: 1`, and animation declarations outrank author-normal ones — so an
+   * `opacity-*` utility beside it does nothing at all, right up until reduced
+   * motion drops the animation with `animation: none !important` and it starts
+   * working. The wash would then appear *only* for the people who asked for less
+   * motion. That is why this is a repo-wide sweep and not an assertion on one
+   * component.
+   *
+   * The allowlist is empty on purpose. An entry here has to argue why a wash is
+   * the right vocabulary when the palette already has slate and ash for inactive.
+   */
+  const ALLOWED: Record<string, number> = {};
+
+  const SRC = path.resolve(__dirname, "..");
+
+  /** Counts `opacity-*` utility references per source file (tests excluded). */
+  function opacityUses(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          const hits = readFileSync(full, "utf8").match(/\bopacity-/g);
+          if (hits) counts[path.relative(SRC, full)] = hits.length;
+        }
+      }
+    };
+    walk(SRC);
+    return counts;
+  }
+
+  it("matches the documented allowlist exactly", () => {
+    expect(opacityUses()).toEqual(ALLOWED);
+  });
+});

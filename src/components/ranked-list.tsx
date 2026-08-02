@@ -143,9 +143,10 @@ export function RankedList({
           <li
             key={rec.tmdbId}
             style={{ animationDelay: `${index * STAGGER_MS}ms` }}
-            className={`animate-rise-fade grid grid-cols-[minmax(0,14rem)_1fr] gap-x-md gap-y-md border-t border-slate py-2xl first:border-t-0 first:pt-0 sm:grid-cols-[13rem_1fr] sm:gap-x-lg ${
-              removed ? "opacity-50" : ""
-            }`}
+            // Removal is drawn by the struck title and the line under it, not by
+            // a wash: the row stays live — its own Remove button is how you undo
+            // it — and dimming a live control's boundary drops it under 3:1.
+            className="animate-rise-fade grid grid-cols-[minmax(0,14rem)_1fr] gap-x-md gap-y-md border-t border-slate py-2xl first:border-t-0 first:pt-0 sm:grid-cols-[13rem_1fr] sm:gap-x-lg"
           >
             {/* The poster leads and the type sets around it, magazine-style —
                 on a phone it takes most of the measure, with the rank and score

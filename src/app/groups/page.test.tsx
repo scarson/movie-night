@@ -363,6 +363,28 @@ describe("Groups page", () => {
     expect(api.calls.some((c) => c.url === "/api/groups/g1/leave")).toBe(true);
   });
 
+  it("reports that failure in a colour charcoal can carry", async () => {
+    // The group card is `bg-charcoal`, where ember measures 4.12:1 — under the
+    // 4.5:1 floor for 14px text. DESIGN.md states the rule outright, and the
+    // confirm block thirty lines above this alert already applies it, keeping
+    // ember as a *border* for exactly this reason.
+    stubApi({
+      groups: [SUNDAY],
+      post: {
+        "/api/groups/g1/leave": { status: 500, body: { error: "Failed to leave group" } },
+      },
+    });
+    renderGroups();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /leave group Sunday Nights/i })
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^yes, leave$/i }));
+
+    const alert = await screen.findByText("Failed to leave group");
+    expect(alert.closest("li")?.className).toContain("bg-charcoal");
+    expect(alert.className).not.toContain("text-ember");
+  });
+
   it("disables the create and join controls while another mutation is in flight", async () => {
     // A single `busy` semaphore guards every mutation, but each button only
     // disabled itself. With a leave in flight, Create stayed enabled yet its
