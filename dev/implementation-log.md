@@ -3269,3 +3269,28 @@ error log. Rows persisted before this change keep their stored order; the read p
 
 **Check results:** `npx tsc --noEmit` clean; `npm run lint` clean; `npm test` 68 files, 1553 passed,
 2 skipped; `npx @opennextjs/cloudflare build` complete.
+
+---
+
+## GPT-5.6 Terra/Luna reasoning-effort sweep (2026-08-01)
+
+`dev/research/2026-08-01-gpt56-effort-sweep.md`. 36 runs — two models across `none/low/medium/high/
+xhigh/max`, n=3 — on the committed bake-off prompt, at no marginal cost via `codex exec`.
+
+**Effort is a latency dial, not a quality dial for this task.** Validity, matchScore ordering and
+exclusion adherence are saturated at every level (36/36 usable, 0/36 out of order, 0/36 returned the
+excluded title), and taste balance moves within noise. `max` costs ~2.5x the latency of `medium` and
+buys nothing measurable — on a path that already blocks a user-facing button, that is the argument.
+
+The ordering result also settles the question the matchScore chip raised: measured on raw model output,
+frontier models never got it wrong across 36 sweep runs plus 16 bake-off samples. The unenforced
+invariant was worth closing, but it was a cheap-model failure, not a general one.
+
+Balance context against the pool's own 54%-Theo composition: Sonnet 64%, `gpt-5.6-sol` 59%, Terra and
+Luna 33-40% across most cells, `deepseek-v4-flash` 27% with no Theo comfort title in any round. Terra
+and Luna are valid but lean further from the pool than the other frontier arms.
+
+Method notes worth keeping: `minimal` is not a valid effort on these models; token counts are useless
+as a cost signal here because repeated identical prompts hit the provider's prompt cache, so later runs
+in a cell report a fraction of the first's; and a backgrounded `&` plus `sleep` wrapper kills its own
+children when the parent exits — the loop must `wait`.
