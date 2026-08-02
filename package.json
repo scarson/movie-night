@@ -12,6 +12,10 @@
     "preview": "opennextjs-cloudflare build && wrangler dev",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",
     "seed:local": "npx tsx scripts/seed.ts --local",
+    "//preflight": "Requires a target: npm run preflight -- --remote (or --local). Exits 1 if any check fails.",
+    "preflight": "npx tsx scripts/preflight.ts",
+    "//smoke": "Post-deploy. Defaults to the production origin; pass another to override, e.g. npm run smoke -- http://127.0.0.1:8787",
+    "smoke": "npx tsx scripts/smoke.ts",
     "//migrate:local": "Targets a FRESH local D1. Against a database that already has 0001 applied, the first file fails on 'table users already exists' and the run stops there. Reset the local state first — see docs/deploy.md section 2.",
     "migrate:local": "for f in migrations/*.sql; do npx wrangler d1 execute movie-night-db --local --file=\"$f\" || exit 1; done"
   },

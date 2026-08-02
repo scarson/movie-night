@@ -2921,3 +2921,99 @@ risks consciously accepted.
 **Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 64 files / 1465
 passed / 2 skipped (baseline 63 / 862 / 2), only the pre-existing `vite:dynamic-import-vars`
 warnings.
+## 2026-08-01 — Structured logging, deploy preflight, post-deploy smoke (`claude/observability`)
+
+**Branch** cut from `dev` at `f09d375`. Baseline `npm test` confirmed before any change: 63 files
+/ 865 passed / 2 skipped. Two commits: `b761b5e` (logging + preflight), `a2cad1f` (smoke + docs).
+
+**Why.** Nothing has ever been deployed. The e2e smoke report proved that a handful of accidental
+structured log lines were the only instrument for saying what the app did — it used the *absence*
+of `provider_auth_failed` as positive evidence that no Anthropic call left the process. That
+accident is now a design property.
+
+**Part 1 — `src/lib/log.ts`.** One function, `logEvent(event, fields, sink)`. One JSON line with
+`event` first, `undefined` fields dropped, and the `LogValue` type narrowed to scalars so an object
+(a user row, a header set) cannot reach a log by accident. Any field whose *name* contains
+`token`, `secret`, `password`, `credential`, `api_key`, `apikey`, `authorization`, `cookie`, `jwt`
+or `email` has its value replaced with `[redacted]` — a naming guard, not a content guard, and the
+doc says so.
+
+**Converted: the cron only.** `runScheduled` moves the scheduled-handler logic out of `worker.ts`
+into `src/lib/cron-handler.ts`, because `worker.ts` imports build-time OpenNext artifacts and can
+never be reached by a test — the old `try/catch` around `runWeeklyRefresh` was therefore untested
+code on the one path that runs unattended. It now emits `cron_started` (schedule + scheduled time)
+before doing any work: with no following `cron_refresh` or `cron_failed`, a run that died mid-flight
+is distinguishable from a trigger that was never registered, which was previously impossible.
+`cron_failed` moved from `console.log` to `console.error` and gained the cron expression.
+`cron_refresh` gained `failed_tmdb_ids` (up to 10) — `fetch_errors: 200` cannot tell "TMDB is down"
+from "these ids are gone upstream". Four existing strict `toEqual` assertions were **extended**, not
+loosened, and no cron test was weakened.
+
+**Specified but NOT converted** — `docs/deploy.md` §Observability lists the exact call sites, all in
+files other agents held: `matching.ts` (`provider_auth_failed`, `matching_call`), the match route
+(`removed_ids_filtered`, `round_persist_failed`), the session GET (`corrupt_ai_response`),
+`account.ts` (`scrub_*`). The real gap named there is auth: every route `catch` ends in an
+unstructured `console.error("GET /api/…:", err)`, so a failed sign-in in production is prose with
+no event name to filter on.
+
+**Workers observability was already on** — `wrangler.jsonc` has `observability.enabled`,
+`logs.invocation_logs`, `head_sampling_rate: 1` and `traces.enabled`, all valid per the Cloudflare
+docs. No config change was needed. `invocation_logs` publishes CPU and wall time per invocation,
+which is why no event carries its own duration.
+
+**Part 2 — `scripts/preflight.ts` + `preflight-lib.ts`.** Five checks against `--local` or
+`--remote`, each with a remedy; exits 1 on any failure. Secret *names* only, never a value.
+
+The migration check is the substantive one. It derives expectations from the DDL in `migrations/`
+— `CREATE TABLE`, `CREATE INDEX`, `ALTER TABLE … ADD COLUMN`, and `DROP INDEX` (which becomes an
+`absent` expectation, the only way an unapplied `0004` is detectable) — with later files overriding
+earlier ones about the same object, then compares against `sqlite_master`. No ledger table, and a
+new migration is covered the moment it lands. SQL comments are stripped first: `0004` documents its
+rollback as commented-out `CREATE INDEX` lines, which would otherwise demand the very indexes it
+drops.
+
+**Two platform gotchas found by running it, not by reading.** (1) `SELECT … FROM sqlite_master m
+JOIN pragma_table_info(m.name) p` fails on D1 with `not authorized: SQLITE_AUTH` when run across
+every table — it works with a single-table filter, which is why the first spike looked fine.
+Columns are now read out of `sqlite_master.sql`, which SQLite rewrites in place on `ALTER TABLE …
+ADD COLUMN` (verified: `sessions` stores `…created_at TEXT\n, rotated_at TEXT)`). (2) Turbopack's
+asset hashes are base36 with no separator (`27jktro2p5rq9.js`), so the smoke check's first regex —
+which expected hex after a `-` — matched nothing against real served HTML.
+
+**What preflight found about the actual first deploy.** Against the real remote database: `0002`,
+`0003` and `0004` unapplied, `titles` empty, and the Worker does not exist on the account at all
+(`wrangler secret list` → `Worker "movie-night" not found`), so no secret is set. All three would
+have made the first deploy fail or produce an unusable app. The unapplied `0002` is the worst of
+them — `authenticateRequest` runs before each route's own error handling, so signed-in users would
+get raw 500s.
+
+**Part 3 — `scripts/smoke.ts` + `smoke-lib.ts`.** The three post-deploy steps a script can settle:
+`GET /` renders HTML, unauthenticated `GET /api/auth/me` returns `401 {"error":"Unauthorized"}` (the
+smoke report's negative control), and a content-hashed asset *discovered from the HTML the site just
+served* carries `Cache-Control: … immutable`. The signed-in steps stay a checklist, now stating the
+observable each should produce and the log event to watch for.
+
+**Verified against a running Worker, not just unit tests.** `wrangler dev` on the OpenNext build
+with real bindings and a gitignored dummy `.dev.vars`: `npm run smoke -- http://127.0.0.1:8796` →
+3/3 PASS, with the cache header reading `public, max-age=31536000, immutable` on
+`/_next/static/chunks/3q0wak5j2u5n5.css`.
+
+**The cron path ran for the first time.** Part 5 of the e2e report records it as entirely
+unexercised. `wrangler dev --test-scheduled` plus
+`curl "…/cdn-cgi/handler/scheduled?cron=0+9+*+*+1"` produced
+`{"event":"cron_started","cron":"0 9 * * 1","scheduled_time":"2026-08-02T00:08:52.807Z"}` then
+`{"event":"cron_refresh","refreshed":0,"fetch_errors":0,"write_errors":0}` against an empty
+catalog, and after seeding two titles,
+`{"event":"cron_refresh","refreshed":0,"fetch_errors":2,"write_errors":0,"failed_tmdb_ids":[27205,155]}`
+— the dummy TMDB token failing both, named, in popularity-DESC order. That exercises the
+`worker.ts` → `runScheduled` wiring end to end.
+
+**The failing tests, in order.** `Error: Cannot find module './log'` for the helper; then five cron
+failures led by `expected { event: 'cron_refresh', …(3) } to deeply equal { …(4) }` over the missing
+`failed_tmdb_ids`; then `Cannot find module './preflight-lib'`; then `columnsFromCreateTable is not
+a function`; then `Cannot find module './smoke-lib'`. One test of mine was wrong rather than the
+code — the cap test assumed candidate order `[1..10]` when the composite `ORDER BY … popularity
+DESC` returns `[12..3]`; the expectation was corrected, not the ordering.
+
+**Quality checks:** `npx tsc --noEmit` clean, `npm run lint` clean, `npm test` 66 files / **930
+passed** / 2 skipped (baseline 865, +65 new), `npx @opennextjs/cloudflare build` clean.
