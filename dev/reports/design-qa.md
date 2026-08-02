@@ -21,14 +21,32 @@ Worth stating, because the sweep expected drift here and did not find it.
 |---|---|
 | **Border radius** | 16 `rounded-control`, 15 `rounded-panel`, 13 `rounded-pill`, 4 `rounded-tag`. **Zero** raw or arbitrary radii. DESIGN.md's "NOT uniform" rule holds by construction. |
 | **Type scale** | `text-xs/sm/base/xl` plus `text-[1.75rem]` (28), `text-[2.5rem]` (40), `text-[3.5rem]` (56) — every one on the documented 12/14/16/20/28/40/56 ramp. No `text-lg` (18px is not on the scale) and no `text-2xl`/`3xl` anywhere. |
-| **Spacing** | 328 uses of the named scale. Off-scale numerics: **three**, all benign — `mt-0`/`pt-0` resets and one `mt-2` positioning an `aria-hidden` 1px rule in the taste map. |
-| **Touch targets** | Every interactive element resolves to `min-h-11`/`min-h-12`/`size-11`, or inherits one from `control-classes.ts`, or is a full-width `rounded-panel` row at `p-md`. No misses. |
+| **Spacing** | 328 uses of the named scale. Off-scale numerics: **five**, all benign — `mt-0` x2 and `pt-0` (resets), one `mt-2` positioning an `aria-hidden` 1px rule in the taste map, and `-space-x-2` on the avatar stack. All are on the 4px grid. (First written as three; the sweep's regex missed the negative utility.) |
+| **Touch targets** | ~~No misses.~~ **This was wrong — see the correction below.** |
 | **Anti-patterns** | No purple/violet gradients, no icon-in-circle feature grids, no decorative blobs, no system fonts. The only gradients are the landing starfield (documented decoration) and the taste map's meeting rule, which is semantic and carries a comment saying so. |
 | **Focus** | One global `:focus-visible` rule in `globals.css`. No per-component divergence. |
 | **Disabled treatment** | Centralised in `control-classes.ts`, inherited everywhere, pinned by `control-contrast.test.tsx`. One exception, below. |
 
 The centralisation work of 2026-08-01 is why. `control-classes.ts` plus the two pinned contrast
 tests mean most of what a sweep like this normally finds cannot be written in the first place.
+
+### Correction — "no touch-target misses" was false when written
+
+This report originally listed touch targets among the dimensions that did not drift. The very next
+commit found three undersized targets (`dev/reports/mobile-qa.md`, MQ-1 and MQ-2), one of them an
+input with no `min-h` at all. Both statements sat in the tree, on adjacent pages of the
+implementation log, until an independent review put them side by side.
+
+The cause is worth recording, because it is the difference between the two passes rather than
+carelessness: this sweep read **source**, and every control it inspected named a size class or
+inherited one from `control-classes.ts`. It never measured a rendered box. `ProgressSteps` carries
+`min-h-11` and looks correct in source; it measured 32×44 because its *width* came from contents that
+shrink below `sm:`. Reading class strings cannot find that. Item 8 measured
+`getBoundingClientRect()` and found it in one pass.
+
+**The rule this leaves behind:** a source sweep may report that a size class is present. It may not
+report that a target is big enough. Those are different claims and only one of them is checkable
+without a browser.
 
 ---
 
@@ -125,14 +143,22 @@ concern was that every other `text-amber` is a link.
 The sweep can now answer the factual half of that. Classifying all 18 `text-amber` sites:
 
 - **Interactive (13)** — nav, footer, page-level tertiary links, and the selected states in `Chip`,
-  `RoughDayToggle`, `GroupPicker`, `ProgressSteps`, `MoodScreen`.
-- **Non-interactive (5)** — the two skipped-titles notices, and the invite code on
-  `groups/join/[code]/page.tsx:86`, which is 28px semibold display type with `tracking-[0.2em]`.
+  `RoughDayToggle`, `GroupPicker`.
+- **Non-interactive (5)** — the two skipped-titles notices; the invite code on
+  `groups/join/[code]/page.tsx:86` (28px semibold with `tracking-[0.2em]`); the **current** step
+  marker in `progress-steps.tsx:32`, which renders in a `<span>` because only *completed* steps are
+  buttons; and the session-summary line in `mood-screen.tsx:140`, a `<dd>` inside the charcoal panel.
 
-So "amber is otherwise links-only" is not quite true today: the invite-code display already uses
-amber as static emphasis, and nobody has read it as a link, because size and letter-spacing say
-otherwise. The distinguishing variable looks like **type treatment, not colour** — the notice is
-14px regular, which is exactly the shape a text link takes.
+**Corrected after review.** This first named only three non-interactive sites against a tally of
+five, and filed `ProgressSteps` and `MoodScreen` under "selected states" as though they were
+controls. The correction matters to the decision rather than just tidying the count:
+`mood-screen.tsx:140` is **14px regular amber static text** — precisely the shape this report told
+Sam was unique to the skipped-titles notices. There are three of those, not two.
+
+So "amber is otherwise links-only" is not true today. The invite-code display uses amber as static
+emphasis and nobody reads it as a link, because 28px and letter-spacing say otherwise. The
+distinguishing variable looks like **type treatment, not colour** — and by that reading the
+session-summary line has the same problem the notices do.
 
 That narrows the decision rather than making it: `text-cream` remains the one-line alternative, and
 "keep amber but change the notice's type treatment" is now a third option that did not exist before

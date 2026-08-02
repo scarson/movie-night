@@ -43,10 +43,17 @@ Two individually correct decisions produced it. The `sr-only` label is the patte
 singled out as *right*, because it stops a long member name forcing horizontal scroll at 320px. The
 `min-h-11` shows the author thinking about touch. Neither could see the other.
 
-Fixed with `min-w-11` (and `justify-center`, so the marker centres in the wider box). `min-w-0` was
-what it replaced — an explicit minimum still lets the button shrink past its content width, so the
-truncation behaviour that protects 320px is intact. Verified after the fix: **44×44 at both 375px and
-320px, zero overflowing elements, `scrollWidth === clientWidth` at both.**
+Fixed with `min-w-11` (and `justify-center`, so the marker centres in the wider box). Both it and
+the `min-w-0` it replaced are explicit minimums, so the button still shrinks past its content width
+either way; this one stops at a thumb. Verified after the fix: **44×44 at both 375px and 320px, zero
+overflowing elements, `scrollWidth === clientWidth` at both.**
+
+**Corrected after review:** an earlier draft said `min-w-0` was what let a long name truncate rather
+than force horizontal scroll at 320px. It is not — below `sm:` the label is `sr-only` and contributes
+nothing to layout, so `sr-only` is what protects 320px and `min-w-0` only ever mattered at ≥640px.
+The fix is right; that reason for it was not. The independent review also measured the headroom this
+leaves: at 320px `scrollWidth === clientWidth` holds up to **seven members**, and overflow starts at
+eight. No group-size cap exists anywhere, which is separately on the backlog.
 
 This clears WCAG 2.2's 2.5.8 floor either way (24×24), so it was a house-rule miss, not a conformance
 failure. DESIGN.md's 44px rule is stricter than the criterion on purpose.
@@ -109,13 +116,19 @@ with the `/match` response held open, sampling the rendered text:
 
 **Quick match (first wait):**
 
-| t | on screen |
+| t (from the click) | on screen |
 |---|---|
 | 1.1 s | Reading your tastes... |
 | 2.4 s | Finding the overlap... |
 | 3.2 s | Weighing tonight's mood... |
 | 4.6 s | Choosing tonight's picks... |
 | 7 s → 14 s | *unchanged* |
+
+These are wall-clock from the button press, so they include the session-create round trip before the
+loading screen mounts. `PhasedLoading` holds `HOLD_MS = 900` per phase, so it reaches its terminal
+phase about **2.7 s after mounting** — the motionless window is longer than 4.6 s suggests, not
+shorter. The refinement figure below is the one to quote, because there the component mounts
+immediately.
 
 **Refinement (second wait, after the user has invested effort):** terminal phase by **~3.0 s**, then
 unchanged through 12 s.

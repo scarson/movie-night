@@ -68,8 +68,16 @@ What that costs, observed against the running Worker:
   on it at all; the results page offers a link to `/profile` and these two did not.
 - **`left_group`** — a retry that 403s forever.
 
-Every one of these is reachable on a **first** round from `/quick` or `/ritual`. (`round_limit` is
-not — it needs ten prior rounds.)
+Three of these are reachable on a **first** round from `/quick` or `/ritual`: `daily_limit` (the
+per-user 30/24h rule, counted across sessions), `monthly_cap` (a global counter), and `thin_results`
+(an engine outcome). `round_limit` is not — it needs ten prior rounds.
+
+**Corrected after review:** this originally said *every* one, including `left_group`. It does not
+hold. Both screens only ever match a session they just created, and `POST /api/movie-sessions`
+already 403s a non-member at creation; there is no kick endpoint, only self-leave. So `left_group`
+needs the same person to leave the group from another tab or device inside the window between
+session creation and the match POST. The UI branch is right and worth keeping; the claim that it is
+an ordinary first-round state was not.
 
 The framing map moved to `src/lib/match-errors.ts`; all three screens read it, and `requestMatch`
 carries `kind` through.

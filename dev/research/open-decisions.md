@@ -50,9 +50,19 @@ to a deliberately quiet design. Corrected facts since it was first raised: the g
 not midnight (6.21:1). Fallback if too loud: a mid-tone token, now a one-line edit.
 
 ### 6. The skipped-titles notice colour
-**Raised by:** PR #29
-The notice uses `text-amber`. DESIGN.md maps `--warning` to amber, but every other `text-amber` in the
-app is a link, so it may read as interactive. `text-cream` is the one-line alternative.
+**Raised by:** PR #29, sharpened by `dev/reports/design-qa.md` (queue item 7)
+The notice uses `text-amber`. DESIGN.md maps `--warning` to amber, and the concern was that every
+other `text-amber` is a link, so it may read as interactive. `text-cream` is the one-line alternative.
+
+**The sweep changed the shape of this.** Classifying all 18 `text-amber` sites: 13 interactive, 5 not.
+"Amber is otherwise links-only" is not true — the invite-code display is static amber at 28px semibold
+and nobody reads it as a link, because size and letter-spacing say otherwise. So the distinguishing
+variable looks like **type treatment, not colour**, which adds a third option: keep amber and change
+the notice's type treatment.
+
+And a correction that matters to the choice: there is a **third** 14px-regular static amber site, the
+session-summary line at `mood-screen.tsx:140`. Whatever is decided has to cover it too. (The report
+first named only two; an independent review caught the miscount.)
 
 ### 7. The `users.name` scrub collateral
 **Raised by:** `dev/research/2026-08-01-name-scrub-collateral.md`
