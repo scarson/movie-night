@@ -259,7 +259,8 @@ change a line outside it, STOP and surface it rather than editing across the bou
 | `src/lib/matching.ts` | **G4** | the tension-axes block inside `buildMatchingPrompt`, appended directly after G3's watch block | everything G3 owns, and everything else |
 | `MatchingPromptInput` (in `src/lib/matching.ts`) | **G3 then G4** | G3 adds `watchHistory`; G4 adds `tensionAxes` **directly after it**. This is the one interface two groups both extend — the conflict is mechanical (adjacent field additions) as long as G4 appends rather than reordering | neither may change an existing field |
 | `src/app/api/movie-sessions/[id]/match/route.test.ts` | **G3 then G4** | the round-trip assertions at ~lines 967-968 (see G3-2 and G4-4 — **both** must be updated, and the second one is the one people miss) | each other's added cases |
-| `src/lib/movie-sessions.ts` | **G3 only** | `MatchRoundContext`, `getMatchRoundContext` (signature + two added statements) | `createSoloGroup`, `getSessionForMember`, `insertRecommendation`, `getTitlesMap`, `formatTitleRefs` |
+| `src/lib/movie-sessions.ts` | **G3** | `MatchRoundContext`, `getMatchRoundContext` (signature + **two** added statements) | `createSoloGroup`, `getSessionForMember`, `insertRecommendation`, `getTitlesMap`, `formatTitleRefs` |
+| `src/lib/movie-sessions.ts` | **G4** | **one further** statement appended to the same batch (the axes read), and one further `MatchRoundContext` field | the signature G3 set, and everything G3 must not touch. Append at the end of the batch array — do not reorder, or G3's destructuring positions shift |
 | `src/app/api/movie-sessions/[id]/match/route.ts` | **G3 only** | the whole file | — no other group edits it |
 | `src/app/api/user/profile/route.ts` | **G1 only** | the enrichment block (currently lines 120–192), replaced by a call to `ensureTitles` | validation, the `profiles` upsert, the response body shape |
 | `src/lib/cron-handler.ts` | **G4 only** | one new exported `runTensionAxisRefresh`, appended after `runWeeklyRefresh` | `runWeeklyRefresh` and `STALE_TITLES_LIMIT` — do not change either |
@@ -267,7 +268,7 @@ change a line outside it, STOP and surface it rather than editing across the bou
 | `src/components/ranked-list.tsx` | **G5 only** | `RankedListProps`, the control row (currently lines 206–233) | `streamingLabels`, `asOfNote`, the poster/`Heart`/`Cross` components |
 | `src/app/results/[sessionId]/page.tsx` | **G5 only** | the `<RankedList>` call site and one new handler | `ERROR_FRAMING`, `runRound`, `showWeightingNote` |
 | `src/app/tonight/page.tsx` | **G5 only** | one added `<WatchPrompt>` above the `<h1>` | the groups fetch and the two entry links |
-| `docs/deploy.md` | **G1**, **G4** | §2's "Pending migrations" list — one line each (G1 `0005`, G4 `0006`) | each other's line, and every other section |
+| `docs/deploy.md` | **G1**, **G4** | the "Pending migrations — not yet applied to the remote database" section (line ~49) — one bullet + one command line each (G1 `0005`, G4 `0006`) | each other's entry, §2 itself (marked DONE for `0001`), and every other section |
 | `DESIGN.md` | **G6 only** | one new section and its Decisions Log rows | every existing section — in particular do not touch the rough-day note at line 124 |
 | `CLAUDE.md` + `AGENTS.md` | **G6 only** | §Gotchas and §Architecture | everything else. **These two files must stay identical** except for framework-specific phrasing — see the Sibling-sync note at the top of each |
 
@@ -382,8 +383,12 @@ CREATE INDEX idx_watch_history_group ON watch_history(group_id, watched_at DESC)
 CREATE INDEX idx_watch_ratings_watch ON watch_ratings(watch_history_id);
 ```
 
-Then add one line to `docs/deploy.md` §2's "Pending migrations — not yet applied to the remote
-database" list: `0005_watch_loop.sql`.
+Then add an entry to `docs/deploy.md`'s **"Pending migrations — not yet applied to the remote
+database"** section (currently at line 49). That section states its own format — *"Add one bullet and
+one command line per new migration"* — so match the existing `0002`/`0003`/`0004` entries exactly:
+an unchecked `- [ ]` bullet naming the file and what it does, plus the
+`npx wrangler d1 execute movie-night-db --remote --file=…` line. **Do not touch §2 itself**, which is
+marked DONE for `0001` and must stay that way.
 
 **Tests to write** (`src/test/fake-d1.test.ts`, appended):
 
@@ -888,8 +893,13 @@ Order of operations, and each one matters:
    absent, `null`, or a non-empty string.
 2. `isGroupMember(db, groupId, user.userId)` → 403 `kind: "not_a_member"` if false. Live membership,
    not `session_members` — testing-pitfalls §8: an ex-member must not write into the group's history.
-3. If `sessionId` is present: read the session and confirm `group_id === groupId` → 400 otherwise.
-   Do not trust the client to pair them.
+3. If `sessionId` is present: `getSessionForMember(db, sessionId, user.userId)` and confirm its
+   `groupId === groupId` → 400 otherwise. Do not trust the client to pair them, and **do not
+   hand-roll a `SELECT` on `movie_sessions`** — the member-scoped read is the one the rest of the app
+   uses and it already returns `null` indistinguishably for an unknown session and a non-member.
+   A group member who joined *after* the session was created is not a `session_members` row and so
+   gets `null` here; that is correct rather than a gap, because `/results` is closed to them too.
+   They can still log the watch with `sessionId: null`.
 4. `ensureTitles(db, [tmdbId], env.TMDB_API_TOKEN)`. **If the title cannot be resolved, return 400**
    with `{ error: "We couldn't find that title just now — try again in a little while", kind: "unknown_title" }`.
    This deliberately differs from the profile PUT, which drops an unenrichable id and saves the rest:
@@ -1241,6 +1251,12 @@ The `groupId` parameter is needed because watch history is group-scoped and the 
 it (`phase-2-design.md` §4.6). The route already holds it as `session.groupId`
 (`src/app/api/movie-sessions/[id]/match/route.ts:98`), read one line earlier.
 
+**Append the two statements to the end of the batch array.** `getMatchRoundContext` destructures the
+batch results **positionally** (`const [round, month, recommended, members, removed] = await db.batch(...)`),
+so inserting anywhere but the end silently reassigns existing fields to the wrong results — and every
+one of them is a plausible-looking array or number, so the failure surfaces as a wrong prompt rather
+than a crash. G4-4 appends the eighth for the same reason.
+
 **Route wiring:** pass `context.watchedTmdbIds` to `selectCandidates`, and add the watch-history
 tmdb ids to the union already fed to `getTitlesMap` at lines 166-172 so the prompt can name them from
 the same single hydration. That union grows by at most `WATCH_HISTORY_PROMPT_LIMIT` (10);
@@ -1419,8 +1435,9 @@ CREATE UNIQUE INDEX idx_tension_axes_pair_name
 CREATE INDEX idx_tension_axes_group ON tension_axes(group_id);
 ```
 
-Add `0006_tension_axes.sql` to `docs/deploy.md` §2's "Pending migrations" list, **after** G1's `0005`
-line.
+Add a `0006_tension_axes.sql` entry to `docs/deploy.md`'s "Pending migrations" section in the same
+format G1-1 used (unchecked bullet + `wrangler d1 execute` line), **after** G1's `0005` entry so the
+list stays in numeric order.
 
 **Tests to write** (`src/test/fake-d1.test.ts`, appended): two rows with the same
 `(group_id, user_a_id, user_b_id, axis_name)` → the second rejects; the same axis name for a
@@ -1612,10 +1629,19 @@ invisible without the test.
 `src/lib/movie-sessions.ts`, `src/app/api/movie-sessions/[id]/match/route.ts`,
 `src/lib/matching.test.ts`.
 
-**The change.** `getMatchRoundContext` gains an eighth batched statement reading the group's axes
-above `MIN_AXIS_CONFIDENCE`, ordered by `confidence DESC`, `LIMIT 3` (`design-doc.md:529`:
-*"the 3 strongest tension axes"*). `MatchingPromptInput` gains `tensionAxes: PromptAxis[]`, and
-`buildMatchingPrompt` renders a block directly after G3's watch block:
+**The change.** `getMatchRoundContext` gains an eighth batched statement — **appended to the end of
+the batch array, never inserted**, because G3's destructuring reads the results positionally and
+reordering silently swaps two context fields. It reads the group's axes above `MIN_AXIS_CONFIDENCE`,
+ordered by `confidence DESC`, limited by a new constant in `src/lib/tension-axes.ts`:
+
+```ts
+/** design-doc.md:529 bounds prompt enrichment at "the 3 strongest tension axes". */
+export const TENSION_AXES_PROMPT_LIMIT = 3;
+```
+
+Interpolate it into the SQL rather than hardcoding `3`. `MatchingPromptInput` gains
+`tensionAxes: PromptAxis[]` **directly after G3's `watchHistory`** (§1.3), and `buildMatchingPrompt`
+renders a block directly after G3's watch block:
 
 ```
 PERSISTENT TENSIONS (from past nights; use them, never quote them):
