@@ -268,7 +268,7 @@ describe("POST /api/movie-sessions/[id]/match", () => {
     expect(row).toMatchObject({
       round_number: 1,
       model: "claude-sonnet-5",
-      prompt_version: "p1.2",
+      prompt_version: "p1.3",
     });
     expect(JSON.parse(row!.candidate_snapshot as string).sort((a: number, b: number) => a - b)).toEqual(
       [155, 550, 603, 680, 27205]
