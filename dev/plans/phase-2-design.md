@@ -26,6 +26,12 @@ Two consequences, both deliberate:
 One position in this document (§4.4) **contradicts a decision in the approved design doc**. It is
 called out as a challenge, not as a resolution. Sam decides.
 
+**Review history.** Three self-review passes, then an independent adversarial pass over the privacy
+logic. That pass found two blockers — an unrevealed rating could reach shared prose through the
+matching prompt (§4.5a), and private notes were feeding the tension-axis generator (§4.4) — plus a
+technical justification in §3 that was simply backwards. All three are fixed, and each fix says what
+the earlier draft got wrong rather than quietly reading as though it had always said this.
+
 **Also for the record:** `CLAUDE.md`'s skill-routing rule says to ask Sam whether to use superpowers
 or gstack when both systems cover a domain. Brainstorming is such a domain (`superpowers:brainstorming`
 vs. `/office-hours`). That question could not be asked either — which is the second reason this is
@@ -85,14 +91,16 @@ never stand between the couple and the film.**
                                        ▼
   ┌── the next matching round ──────────────────────────────────────┐
   │  Watched titles are gone from the candidate pool (code, not     │
-  │  prompt). The last ≤10 watches and their ratings enter the      │
-  │  prompt as reasoning material.                                  │
+  │  prompt). The last ≤10 watches enter the prompt — with their    │
+  │  ratings ONLY once the pair completed (§4.5). An unrevealed     │
+  │  rating never reaches shared prose.                             │
   └────────────────────────────────────┬────────────────────────────┘
                                        │
                                        ▼
   ┌── weekly, in the existing cron ─────────────────────────────────┐
   │  Groups with ≥3 both-rated nights get their tension axes        │
-  │  recomputed. Those enter later prompts and the taste map.       │
+  │  recomputed. In Phase 2 those are prompt INPUT only — no        │
+  │  surface renders them (§8).                                     │
   └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -133,17 +141,22 @@ Two fields, one of which is optional:
 
 | Field | Column | Shape |
 |---|---|---|
-| How it landed | `watch_ratings.rating` | `1` not for us · `2` good · `3` loved it · `NULL` skipped |
+| How it landed | `watch_ratings.rating` | `1` not for me · `2` good · `3` loved it · `NULL` skipped |
 | An optional note | `watch_ratings.surprise_feedback` | free text, ≤200 chars, private to its author (§4.4) |
 
 **POSITION on the three-point scale, held lightly** — see **OPEN-1**, this is a genuine product
 judgment and the integers are cheap to change now and expensive later.
 
 The argument for three: the consumer of this signal is a language model, not a statistics engine.
-"Alice: loved it. Ben: not for us." plus one sentence gives Claude far more to reason with than
+"Alice: loved it. Ben: not for me." plus one sentence gives Claude far more to reason with than
 "3.5 vs 4.0", and a five- or ten-point scale invites the deliberation the product exists to remove.
 DESIGN.md's 44px touch targets and mobile-first layout also mean three controls fit on one row at
 375px and five do not without shrinking below the floor.
+
+**The labels are first-person singular** — *not for me*, not *not for us*. You are rating
+individually and privately; a label that speaks for the pair is wrong in the couple flow (it asks you
+to answer for someone whose answer you are not allowed to see) and wrong again in solo mode, where §3
+promises the question is identical and first-person. The labels are part of **OPEN-1**.
 
 **POSITION: `NULL` means *skipped*, and that is what the nullable column is for.**
 `watch_ratings.rating` is nullable in the reserved schema. Reading that as "skipped" rather than
@@ -219,11 +232,26 @@ rating UI must derive "is there anyone else to reveal to" from the group's live 
 this wrong is exactly the shape of bug B9, where a `member_count` that counted the wrong rows made
 `solo` disagree with the prompt's actual membership.
 
-**Second trap: a partner who deleted their account can never complete a pair.** `deleteAccount`
-anonymizes `session_members.user_id` to a random sentinel and deletes the `users` row
-(`src/lib/account.ts:148-156`); the same treatment applies to `watch_ratings`. The reveal gate must
-count members with a **live `users` row**, or the survivor sits at "Ben hasn't said yet" forever for
-a Ben who no longer exists.
+**Second trap: a rater who is no longer a member must still count toward completion.** Two ways that
+happens, and they need the same fix:
+
+- **Account deletion.** `group_members.user_id` is `REFERENCES users(id) ON DELETE CASCADE`
+  (`migrations/0001_initial_schema.sql:44`), and `deleteAccount` ends with
+  `DELETE FROM users WHERE id = ?` (`src/lib/account.ts:155`) — so the departing member's
+  `group_members` row is **already gone**. Any eligibility query rooted in `group_members` therefore
+  excludes them automatically. *(An earlier draft of this document claimed the reveal gate needed a
+  `users` join to avoid the survivor waiting forever. That was backwards — the cascade had already
+  done it, and a test written against the claim would have passed with or without the code. It is
+  recorded here because it is exactly the inverted-justification failure the implementation plan's
+  §0.3 is about, and it was found by review rather than by reasoning.)*
+- **Leaving the group.** `leaveGroup` deletes only the `group_members` row and Phase 2 deliberately
+  preserves `watch_ratings`. So a partner who rated and then left leaves both ratings in the table
+  while disappearing from `group_members` — and a gate defined purely on current membership would
+  deny the survivor a reveal whose data is sitting right there.
+
+**So eligibility for the reveal is: everyone who already has a rating row for this watch, plus every
+current member who joined on or before it.** That counts departed raters in and late joiners out, and
+it is the same predicate in both directions.
 
 ---
 
@@ -347,10 +375,19 @@ that actually makes the model good, and drops the framing that makes it a liabil
 
 If the recommendation is accepted, the handling is:
 
-- **Never rendered to another member.** Not on reveal, not anywhere. (Whether it *should* appear on
-  reveal is **OPEN-3**; the safe default is no.)
-- **Does enter the prompt**, sanitized and clamped, under the same PRIVATE treatment `computeWeightNote`
-  uses: available for reasoning, forbidden in output.
+- **Never rendered to another member. Not on reveal, not anywhere — this is settled, not an open
+  question.** An earlier draft left "share the note on reveal?" open while also promising, in the
+  published privacy-policy copy, that *"Your note is yours. Nobody else in your group sees it."* A
+  shipped promise cannot be contingent on a question nobody has answered, so the promise wins and the
+  question is closed.
+- **Enters the matching prompt**, sanitized and clamped, under the same PRIVATE treatment
+  `computeWeightNote` uses: available for reasoning, forbidden in output — and only for a watch whose
+  pair has completed (§4.5a).
+- **Does NOT enter the tension-axis prompt at all.** An axis is, by construction, an *attributed
+  statement about a named person* (`position_a`, `position_b`) which is then fed back into the
+  matching prompt. Passing notes into the generator is a direct route from "text nobody else sees" to
+  "prose about you, derived from what your partner wrote about the evening". Axes are supposed to
+  describe persistent taste; three notes are not that. Ratings and stated profiles are enough.
 - **Nulled on account deletion.** It is the departing user's own text, not a shared record, and the
   privacy policy promises personal data is removed.
 
@@ -406,17 +443,49 @@ abstraction over disclosed material, not a back channel around the gate. That is
 the numbers; it is why the gate is defined on the same predicate, and it should stay that way if
 either number is tuned (**OPEN-4**).
 
-**And the corresponding output ban.** The matching prompt receives per-member ratings by name,
-because "this worked for Alice and not for Ben" is the entire tension signal and an anonymized
-aggregate destroys it. But the engine has no idea which pairs are revealed, and should not have to:
+### 4.5a A rating shapes recommendations only once the pair has completed
+
+**This corrects the most dangerous thing in an earlier draft of this document**, which said the
+reveal state never gates what reaches the prompt, on the grounds that "the model is not a group
+member". The model is not — but **its output is delivered to group members**, and that is what
+matters.
+
+The failure, concretely. Ben rates *Hereditary* "not for me". Alice has not answered. The prompt
+carries both facts, the model obeys an attribution ban, and it writes the sentence §2.4 uses as the
+example of the payoff:
+
+> *"you two didn't get on with the last slow-burn we sent, so this one earns its running time"*
+
+Alice knows she said nothing. In a group of two, a non-attributed statement about "you two" is
+attributable by elimination. That is Ben's unrevealed rating, in shared prose, delivered to someone
+who has committed nothing — a direct contradiction of §4.2's *"the API tells you **nothing**"*, and
+the rough-day bug's exact shape one more time.
+
+**POSITION: rating values reach the prompt only for watches whose pair has completed.** For an
+incomplete watch, the prompt gets the title and the date — which it needs anyway, for exclusion and
+recency — and no ratings at all. It is one join condition, and it turns the attribution ban from the
+*only* defence into defence in depth.
+
+Three things follow, and the first is a genuine product cost worth stating plainly:
+
+1. **A unilateral rating shapes nothing until the other person answers.** That is a real loss. It is
+   also an honest and explicable rule — *your answers start counting once you've both answered* —
+   and it gives the second person a reason to answer that no notification could.
+2. **Skip and silence become identical in the prompt too**, not just in the UI. A skipped pair never
+   completes, so it never carries ratings. §4.3's invariant now holds at every layer rather than
+   resting on the model's obedience.
+3. **Solo is unaffected.** One eligible member means one rating completes the watch, so a solo
+   viewer's rating counts immediately.
+
+**And the output ban stays**, for completed pairs:
 
 > **The prompt must forbid attributing any past rating to any member in any output field**, and
 > forbid stating that anyone declined to rate. The model may say *"the last slow-burn didn't land"*.
 > It may not say *"Ben didn't like the last slow-burn"*.
 
-This is over-restrictive for revealed pairs, deliberately. It is one rule instead of a rule that
-depends on state the engine cannot see — and every leak in this codebase so far has come from a rule
-that depended on state somebody forgot to check.
+Both members of a completed pair have already seen both ratings, so the ban is belt-and-braces there
+— which is the right place for a belt-and-braces rule, and the wrong place to have been relying on it
+alone.
 
 ### 4.6 Group-scoped, not user-scoped
 
@@ -488,12 +557,18 @@ Sketch of the block, in the line-oriented style the rest of the user message alr
 ```
 WHAT THEY'VE WATCHED (most recent first — never recommend any of these again):
 - Arrival (tmdbId 329865), 3 weeks ago — Alice: loved it; Ben: good. Alice noted: the ending got me.
-- Hereditary (tmdbId 493922), 5 weeks ago — Alice: not for us; Ben: hasn't said.
+- Hereditary (tmdbId 493922), 5 weeks ago.
 
 HOW TO USE THIS (PRIVATE — apply silently): these are evidence about why things work for
 them, not a genre to repeat. Never attribute a past rating to a member in your output, never
 say who liked or disliked anything, and never mention that someone did not rate something.
 ```
+
+The second line carries **no ratings at all**, and that is the §4.5a gate at work: its pair has not
+completed, so whatever anyone said about it stays out of a prompt whose output both of them will
+read. The line is still there, because the title and the date are what stop it being recommended
+again and what let the model reason about recency. A skipped watch and a never-answered one produce
+the identical line — the invariant holds in the prompt, not only in the UI.
 
 Cost is ~10 lines against a CANDIDATES block of 7,000–9,000 tokens. Negligible.
 
@@ -529,12 +604,17 @@ Four guards, in descending order of how much I trust them:
 1. **Watched-exclusion is itself anti-collapse.** The pool loses the engine's own past outputs every
    round. A recommender that cannot repeat itself cannot converge on a single film, and structurally
    resists converging on a narrow set.
-2. **History never narrows the candidate pool.** `selectCandidates` pulls
-   `popularity DESC LIMIT 250` plus member-referenced titles
-   (`src/lib/matching.ts:108-113`). History **subtracts** (exclusions) and **explains** (prompt text).
-   It is never allowed to become a filter or a ranking input at the SQL layer. This is the strongest
-   structural guarantee and it is worth writing down as an invariant, because "just boost the genres
-   they liked" is the obvious next change and it is the one that ruins this.
+2. **History never *narrows* the candidate pool — but it does subtract from it, and the pool must
+   grow to compensate.** `selectCandidates` pulls `popularity DESC LIMIT 250` and caps at 200
+   (`src/lib/matching.ts:33-34, 108-113`). Removed ids are per-session and bounded by ten rounds;
+   **watched ids are group-scoped and accumulate forever**, so the two are not the same arithmetic
+   and an argument that works for one does not transfer. A couple watching weekly reaches ~50 titles
+   in a year, and from there every watch monotonically shrinks the effective pool. The fix is one
+   line — **the pool query's `LIMIT` is `250 + watchedIds.size`**, so exclusions cost breadth rather
+   than consuming it.
+   What stays invariant is that history never becomes a *filter or a ranking input at the SQL layer*.
+   It subtracts, and it explains in prose. "Just boost the genres they liked" is the obvious next
+   change and it is the one that ruins this.
 3. **An explicit instruction** that history explains *why* something worked rather than *what to
    repeat*, plus a standing requirement that at least one pick per round sits outside the pattern
    history suggests.
@@ -565,7 +645,8 @@ it keeps a Claude call off every user-facing path.
 
 This gives Phase 2 a **fast path and a slow path**, which is the right split rather than a compromise:
 
-- **Fast (same night):** a rating enters the next round's prompt immediately, via the last-10 block.
+- **Fast (as soon as the pair completes):** the ratings enter the next round's prompt via the last-10
+  block. Not the instant one person answers — §4.5a gates that — but with no batch job in between.
 - **Slow (weekly):** axes are a relationship model, and a relationship model that changes on Tuesday
   because of one film is not a model.
 
@@ -637,14 +718,33 @@ nothing.
   couple logs the next morning. That is fine for "3 weeks ago" prose and asking for a date is
   friction nobody wants. Written down here so nobody "fixes" it into a date picker later.
 
-### 6.4 The one place the reserved schema does not fit
+### 6.4 Where the reserved schema does not fit the design
 
-Nothing in the three tables is wrong enough to drop, but one thing is missing rather than mis-shaped:
-**there is no representation of "this watch has been asked about and dismissed"** distinct from
-"this watch is unrated". The design works around it by reading `rating IS NULL` as *skipped* (§4.3)
-and by expiring questions after 21 days — which is why no extra column is proposed. If Sam prefers a
-skip that leaves no trace, that costs a `dismissed_at` column and a migration, and it is worth doing
-deliberately rather than discovering later (**OPEN-5**).
+Nothing in the three tables is wrong enough to drop. Four places where the reservation and the design
+do not line up, in descending order of consequence:
+
+1. **`surprise_feedback` encodes a question the design should not ask.** The column holds what its
+   name says, but the *question* it was reserved for — "what surprised you about your partner's
+   reaction" — is one member's evaluation of another, persisted and fed to a model (§4.4). The column
+   survives; the question does not. **This is the only place where the reserved design, rather than
+   the reserved schema, is the problem**, and it is **OPEN-2** because Sam approved it.
+
+2. **There is no "asked and dismissed" state** distinct from "unrated". The design works around it by
+   reading `rating IS NULL` as *skipped* (§4.3) and expiring questions after 21 days, which is why no
+   extra column is proposed — and which turns out to be the privacy-safe reading as well. But it is a
+   workaround: it means a skip is a stored opinion-shaped row that holds no opinion. A `dismissed_at`
+   column would be more honest and costs a migration (**OPEN-5**).
+
+3. **`tension_axes` cannot express its own key invariant.** The table is pairwise, but nothing in it
+   says `user_a_id` and `user_b_id` are ordered, so `(A,B)` and `(B,A)` are distinct rows and any
+   uniqueness constraint is defeated by whichever order the writer happened to use. The invariant has
+   to live in application code (§6.2), and a `CHECK` would only convert an application bug into an
+   undiagnosable cron failure.
+
+4. **`watch_history.watched_at` overstates its own precision.** It is the *logging* time, which
+   differs from the viewing time whenever a couple logs the next morning. Fine for "3 weeks ago"
+   prose, and asking for a date is friction nobody wants — but the name will mislead someone
+   eventually, which is why it is written down here (§6.3) rather than corrected into a date picker.
 
 ---
 
@@ -674,7 +774,10 @@ Out of scope for this campaign. Each is real work; none of it blocks or is block
 | **Letterboxd import** | Phase 1.5. |
 | **"Our Movie Nights" timeline** | Phase 1.5, and it is a *reading* surface over `watch_history` while this is the *writing* loop. Worth noting the overlap so it isn't built twice — it should be built on top of this, later. |
 | **OG share cards** | Phase 1.5. |
-| **Editing a submitted rating** | §2.3. Reintroduces anchoring. |
+| **Editing a submitted rating** | §2.3. Reintroduces anchoring. **OPEN-5**. |
+| **Deleting or undoing a logged watch** | **OPEN-9**. |
+| **Rendering tension axes anywhere in the UI** | In Phase 2 axes are **prompt input only**; nothing displays them. §4.5 argues they *could* safely be shown, and `tasteMap.overlap.tensionPoints` already ships the same shape per-round — but a persistent-axis surface is a real design job (where it lives, how a wrong axis gets corrected) and it should follow real data rather than precede it. Input-only also keeps their blast radius small while the generator is unproven. |
+| **A stats or history surface of any kind** | §7. |
 | **Per-user (rather than per-group) history** | §4.6, **OPEN-6**. |
 | **Removing a watched title from a member's watchlist** | §5.2. A write across a privacy boundary for a cosmetic gain. |
 | **The live adversarial prompt-injection pass** | Still a launch gate in `docs/deploy.md`. Phase 2 widens the injection surface (notes enter the prompt); it does not discharge the gate. |
@@ -686,11 +789,13 @@ Out of scope for this campaign. Each is real work; none of it blocks or is block
 Each has my recommendation and a **default** so the implementation plan is executable without an
 answer. Overruling any of them is a small change *if it happens before the group lands*.
 
-**OPEN-1 — Is a three-point rating scale right?**
-Three (`not for us` / `good` / `loved it`) vs five stars vs a two-way thumb. My recommendation is
+**OPEN-1 — Is a three-point rating scale right, and are these the right labels?**
+Three (`not for me` / `good` / `loved it`) vs five stars vs a two-way thumb. My recommendation is
 three: the consumer is a language model, not a statistics engine, and three controls fit one row at
-375px. But this is taste, and the integers are cheap now and expensive after real data exists.
-*Default if unanswered: three.* **Blocks nothing; changes G1-1 and G5-2 if overruled.**
+375px. The labels are first-person singular on purpose (§2.3) — you are rating alone. But this is
+taste, and the integers are cheap now and expensive after real data exists.
+*Default if unanswered: three, with those labels.* **Blocks nothing; changes G5-2's copy if the
+labels move, and G1-1's validation if the scale does.**
 
 **OPEN-2 — Do you want the Taste Autopsy question rewritten? (§4.4)**
 The approved design doc asks *"what surprised you about your partner's reaction"*. I think that is the
@@ -699,11 +804,14 @@ feeds a prompt. My recommendation is to keep the column and ask about the film i
 contradicts a decision you approved, so it is yours.** *Default if unanswered: my version — the
 first-person, about-the-film question.*
 
-**OPEN-3 — On reveal, does the partner see the note as well as the rating?**
-If reveal is the moment both have committed, sharing the note with it is defensible and makes the
-reveal much richer. It is also the most personal text the app holds. *Default if unanswered: no —
-ratings reveal, notes never do.* Changing this later is a UI change, not a data change, so the safe
-default costs nothing.
+**OPEN-3 — Can a reveal expire unseen?**
+There is no per-user "seen" state, so a completed reveal is offered on the hub for a window and then
+stops. That window is a product decision and it was originally buried in a constant, which is exactly
+what §0 says this document must not do. Second-order: only the most recent completed reveal is
+offered, so a second one completed in the same week is silently dropped.
+*Default if unanswered: 7 days from **pair completion** (not from the watch), most recent only.*
+The alternative — a `seen_at` column, so no reveal is ever missed — is a migration and a write on
+every hub load.
 
 **OPEN-4 — Where are the tension-axis gates set?**
 Defaults: ≥3 nights rated by both members before any axis is computed; `confidence` ≥ 0.6 before one
@@ -711,10 +819,19 @@ is shown. Both are guesses. The *existence* of both gates is not open (§4.5); o
 *Default if unanswered: 3 and 0.6, as named constants.*
 
 **OPEN-5 — Should a mis-tapped rating be undoable?**
-Ratings are frozen (§2.3) to preserve the blind property. A mis-tap is a real complaint. The cheap
-middle is an undo window before the partner rates — which is a small amount of machinery, and a
-`dismissed_at`-shaped schema question rides along with it (§6.4). *Default if unanswered: frozen, no
-undo.*
+Ratings are frozen (§2.3) to preserve the blind property, and skip is one tap in the same row. Two
+costs the freeze imposes, neither of which is obvious to the person tapping:
+
+- **The skipper forfeits their own reveal, permanently.** The reveal requires the caller's own
+  non-`NULL` rating, so "skip" also means "never find out what they thought".
+- **The skipper permanently destroys the other person's reveal too.** §4.3 frames the skip as
+  self-protection; it is also a unilateral, unrecoverable veto over someone else's outcome, available
+  from a mis-tap.
+
+And the argument for freezing is **void before the partner has rated** — there is nothing to anchor
+on yet. So an undo-until-the-partner-answers window costs nothing in privacy terms, which makes it a
+much stronger candidate than "frozen forever" looks. *Default if unanswered: frozen, no undo —
+but this is the open question I would most like answered.*
 
 **OPEN-6 — Should "never recommend what I've seen" eventually be per-user?**
 History is group-scoped, per the schema (§4.6). That is right for *explaining* — what you watched with
@@ -727,6 +844,21 @@ The off-app watch path (§2.5) makes the engine's misses visible for the first t
 to the user is either endearingly honest or annoying, and I genuinely cannot tell which.
 *Default if unanswered: no — record it, use it silently.*
 
+**OPEN-8 — In a group of three or more, does the reveal need everyone?**
+§4.2 is written for a couple, where "both have answered" is unambiguous. The app supports friend
+groups. Unanimity means one member who never opens the app blocks the reveal for everyone else,
+permanently. A quorum, or a progressive reveal as each person answers, are both defensible and both
+change what a member can infer. *Default if unanswered: unanimity among eligible members, with plural
+copy ("Ben and Chris haven't said yet").* This was originally resolved inside a `WHERE` clause, which
+is why it is here.
+
+**OPEN-9 — Can a logged watch be undone?**
+One tap by one member permanently removes a title from the group's candidate pool (§5.2), and Phase 2
+ships no way to delete or edit a `watch_history` row. The only escape is the other person adding the
+title to their comfort list. For a mis-tap on the wrong film in a search list, that is a poor remedy.
+*Default if unanswered: no undo in Phase 2.* A `DELETE /api/watches/{id}` restricted to the logger
+within a short window is small, and it is the obvious first follow-up if this bites.
+
 ---
 
 ## 10. Success criteria for Phase 2
@@ -735,8 +867,10 @@ Lifted from the design doc's own bar (`dev/plans/design-doc.md:454`) and made ch
 
 1. A couple can log a watch in **one tap** from the results screen, with no dialog.
 2. The rating question appears **once**, on `/tonight`, and is dismissed in **one tap**.
-3. Neither member can learn anything about the other's rating before submitting their own — provable
-   by an API-shape test, not by inspection.
+3. No member can learn anything about another's rating before submitting their own — provable by an
+   API-shape test (the pre-rating response is deep-equal across the partner's states) **and** by a
+   prompt-shape test (an incomplete watch renders identically whether the other person skipped or
+   never answered).
 4. A watched title **cannot** appear in a later candidate pool, provable in a unit test against
    `selectCandidates` rather than against prompt text.
 5. After 4+ rated nights, a matching round's `explanation` or `conversational` text references what
@@ -754,7 +888,11 @@ Lifted from the design doc's own bar (`dev/plans/design-doc.md:454`) and made ch
 | 2026-08-01 | Simultaneous reveal, gated on both ratings non-`NULL` | Immediate visibility anchors the second rater; permanent privacy is theatre when they watched it together. Approach C at a scale where it costs one read |
 | 2026-08-01 | No timeout reveal; a completed reveal is offered for 7 days **from pair completion** | A timeout hands your rating to someone who gave nothing. Measuring the offer window from `watched_at` instead would swallow the payoff whenever the partner answered late |
 | 2026-08-01 | `rating IS NULL` means *skipped*; indistinguishable from silence to the partner | Uses the nullable column as reserved, terminates the prompt loop with no new state, and protects the skipper |
-| 2026-08-01 | Reveal state never gates what reaches the prompt | One unilateral rating is fully useful to the engine; the model is not a group member |
+| 2026-08-01 | **Rating values reach the prompt only once the pair has completed** | Reverses an earlier draft. The model is not a group member, but its output is *delivered to* group members, and in a couple a non-attributed "you two didn't get on with it" is attributable by elimination to whoever did not answer. §4.5a |
+| 2026-08-01 | Notes never enter the tension-axis prompt | An axis is an attributed statement about a named person; feeding private notes into its generator is a route from "text nobody sees" to "prose about you" |
+| 2026-08-01 | Notes are never shared on reveal — closed, not open | A published privacy promise cannot be contingent on an unanswered question |
+| 2026-08-01 | Reveal eligibility counts existing raters plus members who joined before the watch | A partner who rated and then left, or whose account cascaded out of `group_members`, must not strand a reveal both people earned |
+| 2026-08-01 | The candidate pool's `LIMIT` grows with the watched count | Watched ids are group-scoped and unbounded, unlike per-session removals; the borrowed "no floor needed" arithmetic did not transfer |
 | 2026-08-01 | Past ratings may never be attributed to a member in model output | The engine cannot see reveal state and should not have to. One rule beats a rule that depends on unchecked state — the lesson of B8 |
 | 2026-08-01 | Tension axes are shared output; single-film ratings are not | An axis is symmetric, about taste, and evidence-backed. `tensionPoints` already ships this shape |
 | 2026-08-01 | Axes gated on ≥3 both-rated nights and a confidence floor | An axis from one disagreement is a stereotype, and a wrong one is a relational harm |

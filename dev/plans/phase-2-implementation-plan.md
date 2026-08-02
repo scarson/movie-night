@@ -10,6 +10,14 @@
 and feeding it back into matching. **26 tasks across six execution groups.** Two migrations, `0005`
 and `0006`, allocated in §1.4.
 
+**Review history.** Four rounds: three self-review passes against the actual code, then an
+independent adversarial pass in two lanes (subagent-readiness; privacy logic and internal
+consistency). The independent pass found two blockers in the design's privacy shape and four
+prescribed tests that could not have failed — including one in this plan's own load-bearing privacy
+test set. Every one of those is fixed below, and each fix carries a note saying what the earlier
+draft got wrong, because *"this looked right and wasn't"* is the most useful thing a plan can tell
+the person executing it.
+
 **Not in scope:** Vectorize, embeddings, candidate pre-filtering, the Sonnet/Opus A/B, TV titles,
 Letterboxd import, the "Our Movie Nights" timeline. Full list with reasons: `phase-2-design.md` §8,
 restated here in §8.
@@ -144,15 +152,22 @@ apply to every group, not just the one that introduces them.
 1. **Before you have rated, no API response may reveal anything about whether another member has
    rated** — not the value, not the fact, not by omission of a field that is present otherwise.
    Presence-as-readout is exactly how bug B8 shipped.
-2. **A reveal requires every eligible member to have a non-`NULL` rating.** A `NULL` (skip) never
+2. **A reveal requires every eligible member to have a non-`NULL` rating**, where *eligible* is
+   defined once in G1-4(d) — existing raters plus current members who joined before the watch, so a
+   partner who rated and then left still completes it. A `NULL` (skip) never
    completes a reveal.
 3. **A skip is indistinguishable from silence to anyone but its author.** The partner's copy is
    "*[name]* hasn't said yet", which stays true because a `NULL` is not a rating.
 4. **`surprise_feedback` is never rendered to another member**, in any surface, in this campaign.
 5. **The matching prompt may never attribute a past rating to a member in any output field**, and
    may never state that someone declined to rate. It may say "the last slow-burn didn't land".
-6. **Reveal state never gates what reaches the prompt.** The engine sees everything; the humans see
-   what §4.2 allows.
+6. **Rating values reach the matching prompt only for watches whose pair has completed.** An
+   incomplete watch contributes its title and date and nothing else. The model's output is delivered
+   to group members, so a prompt carrying an unrevealed rating puts that rating one paraphrase away
+   from the person who has not answered — and in a couple, "you two didn't get on with it" is
+   attributable by elimination. Invariant 5 is the second line of defence, not the first.
+7. **Free-text notes never enter the tension-axis prompt.** An axis is an attributed statement about
+   a named person; a note is text its author was promised nobody would see.
 
 If a task looks like it needs to break one of these, it does not — **STOP and surface it**.
 
@@ -203,8 +218,8 @@ round result if you can say what you looked for.
 
 | Group | Theme | Tasks | Primary files |
 |---|---|---|---|
-| **G1** | Watch history: schema + data layer | 5 | `migrations/0005_*.sql`, `src/lib/titles.ts` (new), `src/lib/watch-history.ts` (new), `src/lib/account.ts`, `src/lib/groups.ts` |
-| **G2** | The rating API | 4 | `src/app/api/watches/**` (new), `src/lib/watch-flow.ts` (new) |
+| **G1** | Watch history: schema + data layer | 5 | `migrations/0005_*.sql`, `src/types/watch.ts` (new), `src/lib/titles.ts` (new), `src/lib/watch-history.ts` (new), `src/app/api/user/profile/route.ts`, `src/lib/account.ts`, `src/lib/groups.ts` |
+| **G2** | The rating API | 4 | `src/app/api/watches/**` (new), `src/lib/watch-flow.ts` (new) — **routes only; no D1 access of its own** |
 | **G3** | Matching integration | 4 | `src/lib/matching.ts`, `src/lib/movie-sessions.ts`, `src/app/api/movie-sessions/[id]/match/route.ts` |
 | **G4** | Tension axes (see §1.6 — sequencing) | 5 | `migrations/0006_*.sql`, `src/lib/tension-axes.ts` (new), `src/types/tension-axes.ts` (new), `src/lib/cron-handler.ts`, `worker.ts`, `src/lib/matching.ts` |
 | **G5** | UI: logging a watch, and the question | 5 | `src/components/ranked-list.tsx`, `src/components/watch-prompt.tsx` (new), `src/app/tonight/page.tsx`, `src/app/results/[sessionId]/page.tsx` |
@@ -225,9 +240,11 @@ G1  →  G2  →  G3  →  G4  →  G5  →  G6
   because `src/lib/matching.ts` is also touched by G4, and G3 owns the larger change there.
 - **G4 after G3.** Both edit `src/lib/matching.ts`; G3's prompt block lands first and G4 appends the
   axes block beside it. G4 also carries migration `0006`, which must follow G1's `0005`.
-- **G5 after G4** only so it rebases onto a settled `src/lib/matching.ts`; it has no functional
-  dependency on G4. If G4 is deferred (§1.6), **G5 moves up and merges directly after G3**, and G6
-  drops the tension-axis paragraph from its docs edits.
+- **G5 after G4 is a convenience, not a constraint.** G5 shares no file with G4 (§1.3) — it touches
+  only `ranked-list.tsx`, the new `watch-prompt.tsx`, `tonight/page.tsx` and `results/[sessionId]/page.tsx`.
+  It is placed here so the campaign's server work is settled before the UI is measured against it.
+  Its only real dependency is G2. If G4 is deferred (§1.6), the sequence becomes
+  **G1 → G2 → G3 → G5 → G6** and G6 drops the tension-axis paragraph.
 - **G6 last.** It documents what shipped, so it must see what shipped.
 
 **Parallelism.** The order above is the **merge** order. Development may overlap only where the
@@ -261,7 +278,8 @@ change a line outside it, STOP and surface it rather than editing across the bou
 | `src/app/api/movie-sessions/[id]/match/route.test.ts` | **G3 then G4** | the round-trip assertions at ~lines 967-968 (see G3-2 and G4-4 — **both** must be updated, and the second one is the one people miss) | each other's added cases |
 | `src/lib/movie-sessions.ts` | **G3** | `MatchRoundContext`, `getMatchRoundContext` (signature + **two** added statements) | `createSoloGroup`, `getSessionForMember`, `insertRecommendation`, `getTitlesMap`, `formatTitleRefs` |
 | `src/lib/movie-sessions.ts` | **G4** | **one further** statement appended to the same batch (the axes read), and one further `MatchRoundContext` field | the signature G3 set, and everything G3 must not touch. Append at the end of the batch array — do not reorder, or G3's destructuring positions shift |
-| `src/app/api/movie-sessions/[id]/match/route.ts` | **G3 only** | the whole file | — no other group edits it |
+| `src/app/api/movie-sessions/[id]/match/route.ts` | **G3** | the whole file | — |
+| `src/app/api/movie-sessions/[id]/match/route.ts` | **G4** | **only** the `tensionAxes` argument added to the `runMatching` input object | everything else — G3 owns the rest, and G4 rebases onto it |
 | `src/app/api/user/profile/route.ts` | **G1 only** | the enrichment block (currently lines 120–192), replaced by a call to `ensureTitles` | validation, the `profiles` upsert, the response body shape |
 | `src/lib/cron-handler.ts` | **G4 only** | one new exported `runTensionAxisRefresh`, appended after `runWeeklyRefresh` | `runWeeklyRefresh` and `STALE_TITLES_LIMIT` — do not change either |
 | `worker.ts` | **G4 only** | `scheduled()` | `fetch()` |
@@ -360,6 +378,9 @@ backfill.
 -- Watch-loop constraints and indexes. The three Phase 2 tables were created in
 -- 0001 with no uniqueness, no rating timestamp and no indexes; the rating loop
 -- needs all three. Every table below is empty, so nothing is backfilled.
+-- IF NOT EXISTS on every index so a re-applied migration is a no-op, matching
+-- 0004. The ALTER below is the one statement that cannot be made idempotent —
+-- SQLite has no ADD COLUMN IF NOT EXISTS — so it must be run exactly once.
 
 ALTER TABLE watch_ratings ADD COLUMN rated_at TEXT;
 
@@ -367,28 +388,39 @@ ALTER TABLE watch_ratings ADD COLUMN rated_at TEXT;
 -- has a non-null rating", which a duplicate row silently breaks. Account
 -- deletion rewrites user_id to a per-row random sentinel, so this stays
 -- satisfiable afterwards.
-CREATE UNIQUE INDEX idx_watch_ratings_member ON watch_ratings(watch_history_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_watch_ratings_member
+  ON watch_ratings(watch_history_id, user_id);
 
 -- Logging the same title twice from the same session is a double-tap, not a
 -- rewatch. Partial, so a genuine rewatch on a later night (session_id NULL, or a
 -- different session) is still its own row.
-CREATE UNIQUE INDEX idx_watch_history_session_title
+CREATE UNIQUE INDEX IF NOT EXISTS idx_watch_history_session_title
   ON watch_history(group_id, tmdb_id, content_type, recommended_in_session_id)
   WHERE recommended_in_session_id IS NOT NULL;
 
 -- Every read of this table is "this group's recent history", and one of them
 -- runs inside the match route's batch.
-CREATE INDEX idx_watch_history_group ON watch_history(group_id, watched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watch_history_group
+  ON watch_history(group_id, watched_at DESC);
 
-CREATE INDEX idx_watch_ratings_watch ON watch_ratings(watch_history_id);
+CREATE INDEX IF NOT EXISTS idx_watch_ratings_watch
+  ON watch_ratings(watch_history_id);
 ```
+
+**`IF NOT EXISTS` is a repo convention, not a preference.** `migrations/0004_recommendation_indexes.sql:2`
+records it — *"IF [NOT] EXISTS on every statement so a re-applied migration is a no-op, not an
+error"* — and `docs/deploy.md` relies on it. Read that file before writing this one. The `ALTER` is
+the exception; call it out in the `docs/deploy.md` entry so a deployer knows that one statement is
+not safe to re-run.
 
 Then add an entry to `docs/deploy.md`'s **"Pending migrations — not yet applied to the remote
 database"** section (currently at line 49). That section states its own format — *"Add one bullet and
 one command line per new migration"* — so match the existing `0002`/`0003`/`0004` entries exactly:
 an unchecked `- [ ]` bullet naming the file and what it does, plus the
-`npx wrangler d1 execute movie-night-db --remote --file=…` line. **Do not touch §2 itself**, which is
-marked DONE for `0001` and must stay that way.
+`npx wrangler d1 execute movie-night-db --remote --file=…` line. **Note in that bullet that
+`0005`'s `ALTER TABLE` is the campaign's one non-idempotent statement** — every other migration in
+the repo is safe to re-run and a deployer will assume this one is too. **Do not touch §2 itself**,
+which is marked DONE for `0001` and must stay that way.
 
 **Tests to write** (`src/test/fake-d1.test.ts`, appended):
 
@@ -399,11 +431,14 @@ marked DONE for `0001` and must stay that way.
 | the partial index blocks a same-session double log | two rows with identical `(group_id, tmdb_id, content_type, recommended_in_session_id)`, session id non-null | the second rejects |
 | `rated_at` exists and round-trips | insert a rating with an ISO timestamp | `SELECT rated_at` returns it byte-for-byte |
 
-**Failing-first proof.** Before the migration file exists, the first test fails with
-`UNIQUE constraint failed` *not being thrown* — i.e. the second insert succeeds and the
-`await expect(...).rejects` assertion reports "promise resolved". The fourth fails with
-`no such column: rated_at` from `node:sqlite`. **If any of these passes before you add the file,
-`migrations/` already contains something it should not — STOP and report it.**
+**Failing-first proof.** Before the migration file exists, **tests 1, 3 and 4** fail: 1 and 3 because
+the second insert succeeds and the `await expect(...).rejects` assertion reports "promise resolved",
+4 with `no such column: rated_at` from `node:sqlite`. **If any of those three passes before you add
+the file, `migrations/` already contains something it should not — STOP and report it.**
+
+**Test 2 passes before the change, and that is correct** — with no index there is nothing to block a
+rewatch. It is a guard against the *next* version of this index being written non-partial, not a
+failing-first test, and it must not be "fixed" to fail. Say so in its comment.
 
 **Do NOT:**
 - Do NOT add foreign keys to any of the three tables. `phase-2-design.md` §6.1 explains why:
@@ -439,57 +474,74 @@ copying it would duplicate ~70 lines of TMDB-fetch-and-upsert, which `CLAUDE.md`
 | Profile PUT response | `{ profile }` or `{ error, unknownIds }` or `{ skippedTitles }` | **byte-identical** |
 | Callers | one | two (G2-1 is the second) |
 
-**The change.** Create `src/lib/titles.ts` with an ABOUTME header and this exported shape:
+**The change — TWO functions, not one.** The route does something between the existence check and the
+enrichment loop that a single `ensureTitles` cannot express: at
+`src/app/api/user/profile/route.ts:139-150` it returns **400 with the `unknownIds` list, before any
+TMDB fetch**, when more than `MAX_UNKNOWN_IDS_PER_PUT` ids are unknown. A one-call helper would
+either have to re-run the existence query in the route — an extra D1 round trip and a second copy of
+the PLAT-1 chunking, which is the duplication this task exists to remove — or let up to 100 TMDB
+fetches fire before the 400. Neither preserves behaviour. So:
 
 ```ts
-export interface EnsureTitlesResult {
-  /** Ids that were already present or were successfully enriched. */
-  known: number[];
-  /** Ids that could not be enriched, with the reason the caller has to phrase. */
+/**
+ * Which of these ids have no `titles` row yet. Chunked at D1_IN_CHUNK_SIZE
+ * (PLAT-1). Filtered against the caller's array rather than built from query
+ * results, so the order the caller sees is the order it supplied — the profile
+ * PUT returns this list to the client verbatim in its 400 body.
+ */
+export async function findUnknownTitleIds(db: D1Database, tmdbIds: number[]): Promise<number[]>;
+
+export interface EnrichTitlesResult {
+  /** Ids that now have a `titles` row. */
+  enriched: number[];
+  /** Ids that could not be fetched, with the reason the caller has to phrase. */
   skipped: SkippedTitle[];
 }
 
-/**
- * Guarantees a `titles` row for every id given, fetching from TMDB for the ones
- * D1 does not have. Order-preserving: `known` follows the caller's input order,
- * because the profile PUT's response body is order-visible to the client.
- */
-export async function ensureTitles(
+/** Fetches each id from TMDB and upserts a `titles` row. Callers pass only ids
+ *  `findUnknownTitleIds` returned; a known id would be refetched needlessly. */
+export async function enrichTitles(
   db: D1Database,
   tmdbIds: number[],
   tmdbToken: string
-): Promise<EnsureTitlesResult>;
+): Promise<EnrichTitlesResult>;
 ```
 
-Move the existing body verbatim: the chunked existence check (`chunk` + `D1_IN_CHUNK_SIZE` — PLAT-1),
-the `fetchMovieDetail` / `detailToTitle` / `detailToEnrichment` loop, and the
-`INSERT OR REPLACE INTO titles` with its `last_refresh_attempt_at` comment. **Preserve every comment.**
-`CLAUDE.md` forbids removing comments you cannot prove false, and the `last_refresh_attempt_at`
-comment records a real interaction with the weekly refresh.
+The route composes them in its existing order: `findUnknownTitleIds` → the
+`MAX_UNKNOWN_IDS_PER_PUT` 400 → `enrichTitles`. **`MAX_UNKNOWN_IDS_PER_PUT` and its 400 stay in the
+route** — it is a per-request policy, not a property of enrichment, and G2-1's cap is different (one
+title).
 
-`MAX_UNKNOWN_IDS_PER_PUT` and the 400 it drives stay **in the route** — it is a per-request policy,
-not a property of enrichment, and G2-1's cap is different (one title).
+Move both bodies verbatim: the chunked existence check (`chunk` + `D1_IN_CHUNK_SIZE`), and the
+`fetchMovieDetail` / `detailToTitle` / `detailToEnrichment` loop with its `INSERT OR REPLACE INTO
+titles` and the `last_refresh_attempt_at` comment. **Preserve every comment.** `CLAUDE.md` forbids
+removing comments you cannot prove false, and that one records a real interaction with the weekly
+refresh.
 
 **Tests to write:**
 
-- `src/lib/titles.test.ts`: an id already in `titles` is returned in `known` with no fetch (assert the
-  injected fetch was never called); an unknown id is fetched and inserted, and a follow-up `SELECT`
-  shows the enriched row; a TMDB 404 yields `skipped` with `reason: "not-found"`; any other TMDB
-  failure yields `reason: "unavailable"`; **a 120-id input issues two `IN(...)` queries and never
-  binds more than 100 parameters** (PLAT-1 — the fake throws above 100, so this is provable);
-  `known` preserves input order when D1 returns rows in a different one.
+- `src/lib/titles.test.ts`: `findUnknownTitleIds` returns only the ids with no row; it **preserves the
+  caller's order** when D1 returns rows in a different one; **a 120-id input issues two `IN(...)`
+  queries and never binds more than 100 parameters** (PLAT-1 — the fake throws above 100, so this is
+  provable). `enrichTitles` fetches an unknown id and a follow-up `SELECT` shows the enriched row; a
+  TMDB 404 yields `skipped` with `reason: "not-found"`; any other TMDB failure yields
+  `reason: "unavailable"`; it never fetches an id it was not given.
 - `src/app/api/user/profile/route.test.ts`: **do not add new cases.** The existing suite is the
-  regression test for this refactor. Confirm it passes unchanged.
+  regression test for this refactor. Confirm it passes unchanged — including the
+  `MAX_UNKNOWN_IDS_PER_PUT` 400 case, which is the one the two-function split exists to preserve.
 
-**Failing-first proof.** This is the one task where the primary evidence is *"the existing tests keep
+**Failing-first proof.** This is the one task whose primary evidence is *"the existing tests keep
 passing"*, which is not a failing-first proof. So the failing-first test is in `titles.test.ts`:
-create `src/lib/titles.ts` exporting `ensureTitles` as a stub that returns
-`{ known: [], skipped: [] }` without touching D1, and run the "unknown id is fetched and inserted"
+create `src/lib/titles.ts` exporting `enrichTitles` as a stub that returns
+`{ enriched: [], skipped: [] }` without touching D1, and run the "unknown id is fetched and inserted"
 case. It must fail on the assertion that a `titles` row now exists —
 `expected null to have property 'tmdb_id'` or equivalent — **not** on `Cannot find module`. Only then
-move the real body in.
+move the real body in. Do the same for `findUnknownTitleIds` with a stub returning `[]`: the
+order-preservation test then fails on an empty array rather than a wrong order, which is a weaker
+signal, so **also** assert the 400-boundary case through the route.
 
 **Do NOT:**
+- Do NOT collapse the two functions back into one. The 400 has to happen between them.
 - Do NOT change the profile PUT's response body, status codes, or the order of any array in it.
 - Do NOT move `MAX_UNKNOWN_IDS_PER_PUT` into the lib.
 - Do NOT "improve" the enrichment while moving it — no added retries, no batching of the TMDB fetches,
@@ -637,7 +689,31 @@ export interface Reveal {
   posterPath: string | null;
   ratings: { name: string; rating: WatchRatingValue }[];
 }
+
+/**
+ * The state between answering and the reveal. Returned ONLY to a caller who
+ * already has a watch_ratings row for this watch — before that, §0.5 invariant 1
+ * forbids saying anything about anyone else, and this shape says plenty.
+ */
+export interface Awaiting {
+  watchId: string;
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  /** Eligible members who have no non-NULL rating. A skipper appears here too,
+   *  which is what makes a skip indistinguishable from silence (§4.3). */
+  names: string[];
+  /** True when the caller's own rating is NULL. Only ever true for its owner. */
+  selfSkipped: boolean;
+}
 ```
+
+> **⚠ `Awaiting` is why G5-3 can exist at all.** An earlier draft had `getRevealForWatch` return
+> `null` in every non-complete case, and G5-3 was told to render *"Ben hasn't said yet"* — from a
+> response carrying no watch, no name, and no way to tell "partner hasn't answered" from "solo group"
+> or "not your watch". Its prescribed tests would have been written against props no route produced,
+> and would have passed while the shipped screen rendered nothing. If you find yourself unable to
+> render a state the plan asks for, that is the defect to report (§0.3), not to design around.
 
 **Then the constants**, module-level in `src/lib/watch-history.ts`:
 
@@ -687,24 +763,36 @@ The mapper groups the flat rows into:
 export interface WatchRating {
   userId: string;
   name: string;
-  /** null means the member skipped it. */
-  rating: 1 | 2 | 3 | null;
+  rating: WatchRatingValue;
   note: string;
 }
 export interface WatchSummary {
   watchId: string;
   tmdbId: number;
   watchedAt: string;
+  /**
+   * EMPTY unless the pair completed. §0.5 invariant 6: an unrevealed rating must
+   * not reach a prompt whose output is delivered to the person who has not
+   * answered. The watch itself still appears — the title and date are what stop
+   * it being recommended again.
+   */
   ratings: WatchRating[];
 }
 ```
 
+> **⚠ The completeness gate is the point of this mapper, and it is easy to leave out.** Emit
+> `ratings` **only** when every eligible member of the watch (same predicate as `getRevealForWatch`
+> below) has a non-`NULL` rating. Otherwise emit `[]` — not a partial list, not entries with
+> `rating: null`. A partial list is what makes a skip distinguishable from silence in the prompt, and
+> the guardrail sentence is not a substitute for not sending the data.
+
 Both joins are `LEFT`, deliberately and for different reasons. `watch_ratings` is LEFT because **a
 watch with no ratings still counts as watched** and must still reach the prompt block. `users` is
-LEFT because a rater who deleted their account leaves a sentinel `user_id` with no `users` row — the
-mapper **drops that rating entirely** (`u.name IS NULL` → skip), which is the same treatment
-`sessionMembersStatement` gives deleted members (`src/lib/movie-sessions.ts:285-295`). Do not convert
-either to an INNER join.
+LEFT because a rater who deleted their account leaves a sentinel `user_id` with no `users` row, and
+the mapper drops that rating (`u.name IS NULL` → skip). `sessionMembersStatement` reaches the same
+outcome with an **INNER** `JOIN users` (`src/lib/movie-sessions.ts:291`) — same result, different
+mechanism, and you cannot copy it here: an INNER join on `users` would also drop the *watch* whenever
+no rating exists, which is precisely the row this read must keep. Do not convert either join.
 
 **(c) `getPendingRating(db, userId, now: Date)`** — the question, or `null`. Returns
 `Omit<Question, "title" | "posterPath">`; the route hydrates the two title fields (G2-3).
@@ -713,10 +801,23 @@ Selection rule, exactly:
 - across every group the caller is currently a member of (`group_members`),
 - **only watches from on or after the caller's `group_members.joined_at`** — asking someone to rate a
   night they were not there for is wrong, and it is the same eligibility rule the reveal uses in (d);
-- watches with `watched_at >= now - RATING_PROMPT_WINDOW_DAYS`,
+- watches with `watched_at >= ` **a bound computed in JS from the injected `now` and bound as a
+  parameter**;
 - for which **no `watch_ratings` row exists with this `user_id`** (a `NULL` rating counts as a row —
   a skip means "don't ask me again", `phase-2-design.md` §4.3),
+- **at most one question per `tmdb_id`** — take the newest watch of each title, not the newest watch.
+  Without this, two logs of the same film (a double-tap on the session-less path, which the partial
+  index deliberately does not cover, or a genuine rewatch, which `0005` deliberately allows) produce
+  two consecutive questions about the same film, contradicting §2.2's "at most one question at a
+  time" and §10's "the question appears **once**";
 - newest `watched_at` first, **`LIMIT 1`**.
+
+> **⚠ Do NOT use `sqliteIsoNow('-21 days')` for the window.** It expands to
+> `strftime(…, 'now', '-21 days')` (`src/lib/db.ts:15-20`) — SQLite's own clock — which would make
+> the injected `now` parameter silently dead and the expiry tests untestable against a fixed clock
+> (testing-pitfalls §7, "no hardcoded time-of-day assumptions"). **`now` is the only clock in this
+> function.** Compute `new Date(now.getTime() - RATING_PROMPT_WINDOW_DAYS * 864e5).toISOString()` and
+> bind it. The same rule applies to (d) and to G2-3's reveal window.
 
 `groupName` is `groups.name`, **except that the reserved `SOLO_GROUP_NAME` (`"__solo__"`, exported
 from `src/lib/groups.ts`) is mapped to `""`.** That name is an internal marker and must never reach a
@@ -731,18 +832,50 @@ group-scoped, the two disagree when a group gains a member, and that mismatch is
 boolean, not an optional field that is present in some responses and absent in others. §0.5
 invariant 1.
 
-**(d) `getRevealForWatch(db, watchId, userId)`** — returns `null` unless **all** of:
+**(d) `getRevealForWatch(db, watchId, userId)`** — returns one of three things:
 
-1. the caller is a member of the watch's group **and** `joined_at <= watched_at`;
-2. the caller has a non-`NULL` rating for this watch;
-3. **every** eligible member has a non-`NULL` rating. "Eligible" = a live `users` row **and**
-   `group_members.joined_at <= watch_history.watched_at`. The `joined_at` condition exists because a
-   member who joined after the night was not there, and requiring their rating would block the reveal
-   forever;
+```ts
+type WatchOutcome =
+  | { kind: "reveal";   reveal: Omit<Reveal, "title" | "posterPath"> }
+  | { kind: "awaiting"; awaiting: Omit<Awaiting, "title" | "posterPath"> }
+  | null;  // caller ineligible, hasn't rated, or the group is solo
+```
+
+**Eligibility, stated once and used in three places** — here, in (b)'s completeness gate, and in
+G2-2's authorization:
+
+> **An eligible member of a watch is: anyone who already has a `watch_ratings` row for it, plus every
+> current `group_members` row for its group whose `joined_at <= watch_history.watched_at`.**
+
+The first half is not redundant. `leaveGroup` deletes the `group_members` row but Phase 2 preserves
+`watch_ratings`, and `group_members.user_id` is `REFERENCES users(id) ON DELETE CASCADE`
+(`migrations/0001_initial_schema.sql:44`) so account deletion removes it too. A gate defined purely
+on current membership would therefore **deny the survivor a reveal that both people had already
+earned**, because the other rater is no longer a member. Counting existing raters in fixes both cases
+at once. The `joined_at` half keeps a late joiner from blocking a reveal for a night they missed.
+
+Return `{ kind: "reveal" }` when **all** of:
+
+1. the caller is eligible;
+2. the caller has a **non-`NULL`** rating;
+3. **every** eligible member has a non-`NULL` rating;
 4. there are **at least two** eligible members (a solo group has nothing to reveal).
 
-When it returns non-null it returns `Omit<Reveal, "title" | "posterPath">`, hydrated by the route in
-the same way as the question.
+Return `{ kind: "awaiting" }` when the caller has a `watch_ratings` **row** (rated or skipped), 1 and
+4 hold, and 3 does not. Two sub-cases, and the difference matters:
+
+| Caller's own rating | `names` | `selfSkipped` |
+|---|---|---|
+| non-`NULL` | every eligible member without a non-`NULL` rating — **a skipper appears here**, which is what makes a skip indistinguishable from silence | `false` |
+| `NULL` (they skipped) | **`[]`** — they gave nothing, so they learn nothing | `true` |
+
+The second row is not an accident. A skip forfeits the reveal (`phase-2-design.md` §4.3, OPEN-5), and
+if skipping still disclosed who had answered it would be a cheap probe: tap skip, read the roster.
+The skipper sees only *"you skipped this one"*.
+
+Return `null` otherwise — no `watch_ratings` row at all (they have not answered, so §0.5 invariant 1
+applies in full), ineligible, or a solo group. **Nothing is ever disclosed to someone who has not
+answered in some form.**
 
 **Tests to write** (`src/lib/watch-history.test.ts`) — this is the largest test set in the campaign
 and the privacy invariants live here:
@@ -753,23 +886,30 @@ and the privacy invariants live here:
 | the prompt read caps at 10, newest first | 12 watches with distinct `watched_at` | exactly the 10 newest, in descending `watched_at` — **assert the exact id sequence**, not the length (testing-pitfalls §4) |
 | an unrated watch still reaches the prompt read | one watch, no ratings | present, `ratings: []` |
 | a deleted rater's rating is dropped | a rating whose `user_id` has no `users` row | that entry absent; the watch still present |
+| **an incomplete pair carries no ratings at all** | two eligible members, one rated 3, the other has no row | `ratings: []` — **not** a one-entry list |
+| **skip and silence produce the identical prompt read** | fixture A: partner rated `NULL`. fixture B: partner has no row. Both with the caller rated 3 | the two `WatchSummary` objects are **deep-equal**. Assert equality, not the absence of a field — an absence assertion passes against an implementation that never had it (§0.3) |
+| a complete pair carries both ratings | both non-`NULL` | two entries, both names |
 | the pending question skips a watch the caller already rated | a rating with `rating: 2` | that watch is not returned |
 | **a skip counts as answered** | a rating with `rating: NULL` | that watch is not returned |
 | the question expires | a watch 22 days old and one 20 days old | the 20-day-old one is returned |
 | the question is the newest unrated | three unrated watches | the newest |
 | a member is not asked about a night before they joined | `joined_at` after `watched_at` | no question |
+| **the same title logged twice yields one question** | two `watch_history` rows, same `tmdb_id`, both unrated | one question, for the newer row |
 | the `__solo__` name never escapes | a solo group's pending question | `groupName === ""` |
 | `relativeDays` against a fixed clock | 0/1/3/21/70 days, and `"not a date"` | `today`, `yesterday`, `3 days ago`, `3 weeks ago`, `2 months ago`, `""` |
 | **the question leaks nothing about the partner** | a two-member group where the partner has rated 3 | the returned object has no field whose value or presence differs from the partner-hasn't-rated case — **assert with a deep-equality comparison of the two objects** |
-| no reveal until both have rated | caller rated, partner has not | `null` |
-| **no reveal when the partner skipped** | caller rated 3, partner rating `NULL` | `null` |
-| reveal when both rated | both non-null | both entries, both names |
-| no reveal for a solo group | one live member, rated | `null` |
-| a late joiner does not block the reveal | member C `joined_at` after `watched_at`, never rated; A and B both rated | reveal returns A and B |
-| a deleted partner does not block the reveal forever | partner's `users` row gone; caller rated | `null`, because fewer than two eligible members remain — **and assert the caller is not left in a "waiting" state**, i.e. `getPendingRating` also returns nothing for that watch |
-| ex-member cannot read a reveal | caller's `group_members` row deleted | `null` |
+| no reveal until both have rated | caller rated, partner has not | `kind: "awaiting"`, `names: ["Ben"]`, `selfSkipped: false` |
+| **no reveal when the partner skipped** | caller rated 3, partner rating `NULL` | `kind: "awaiting"`, and the whole object is **deep-equal** to the row above |
+| reveal when both rated | both non-null | `kind: "reveal"`, both entries, both names |
+| **a caller who has not answered gets nothing** | partner rated 3, caller has no row | `null` |
+| **a caller who skipped learns nothing** | caller rating `NULL`, partner rated 3 | `kind: "awaiting"`, `names: []`, `selfSkipped: true` |
+| no reveal for a solo group | one eligible member, rated | `null` |
+| a late joiner does not block the reveal | member C `joined_at` after `watched_at`, never rated; A and B both rated | `kind: "reveal"` with A and B |
+| **a partner who rated and then left still completes the reveal** | A and B both rated; B's `group_members` row deleted | `kind: "reveal"` with both — this is the case a current-membership-only gate strands forever |
+| **a partner who deleted their account still completes the reveal** | A and B both rated; B's `users` row deleted, which cascades `group_members` away and sentinel-anonymises `watch_ratings.user_id` | `kind: "reveal"` — B's entry is dropped from `ratings` (no `users` row for the name), so assert A's entry survives and the caller is **not** left awaiting |
+| ex-member who never rated cannot read a reveal | caller's `group_members` row deleted, caller has no rating row | `null` |
 
-**Failing-first proof.** Two of these are the load-bearing ones and both must be watched to fail:
+**Failing-first proof.** Four of these are load-bearing and all four must be watched to fail:
 
 - *"a skip counts as answered"*: write `getPendingRating` first with the naive predicate
   `WHERE wr.rating IS NULL OR wr.id IS NULL`, which is the wrong reading of the schema. The test then
@@ -779,13 +919,29 @@ and the privacy invariants live here:
   included. The deep-equality assertion fails on `{ partnerHasRated: true } !== { partnerHasRated: false }`.
   **If you write the object without that field from the start, this test passes immediately and proves
   nothing** — write the leaky version, watch it fail, then remove the field.
+- *"an incomplete pair carries no ratings at all"*: write the mapper first without the completeness
+  gate, which is the obvious implementation. It fails with
+  `expected [ { name: 'Alice', rating: 3 } ] to deeply equal []`. The companion *"skip and silence are
+  deep-equal"* test fails at the same time, on a one-entry list against an empty one.
+- *"a partner who rated and then left still completes the reveal"*: define eligibility first as
+  current `group_members` only — the obvious implementation, and the one a reviewer waves through. It
+  fails on `expected { kind: 'awaiting' } to have property 'reveal'`.
+
+**And one prescribed test that CANNOT fail, called out so nobody manufactures a failure for it:**
+*"a partner who deleted their account still completes the reveal"*. Because
+`group_members.user_id REFERENCES users(id) ON DELETE CASCADE`, the deleted member is already out of
+`group_members` before any Phase 2 code runs — so this test passes against several wrong
+implementations too. It is a **regression guard**, not a failing-first test. Keep it, say so in its
+comment, and do not treat its passing as evidence the eligibility rule is right; the *leaver* test
+above is the one that proves that.
 
 **Do NOT:**
-- Do NOT expose a `partnerHasRated`, `pendingCount`, `awaiting`, or any equivalent field on the
-  question. §0.5 invariant 1.
+- Do NOT expose a `partnerHasRated`, `pendingCount`, or any equivalent field on the **question**.
+  `Awaiting` exists for the post-answer state and only for the post-answer state. §0.5 invariant 1.
 - Do NOT add a timeout that reveals one rating without the other (`phase-2-design.md` §4.2).
-- Do NOT return `surprise_feedback` from `getRevealForWatch`. §0.5 invariant 4; **OPEN-3** defaults to
-  not sharing notes.
+- Do NOT return `surprise_feedback` from `getRevealForWatch` or from the prompt read's public shape.
+  §0.5 invariant 4 — notes are never shared with another member, and that is **closed**, not an open
+  question.
 - Do NOT use `datetime()` anywhere in these queries. The window comparison is against a JS
   `toISOString()` value — use `sqliteIsoNow('-21 days')` or compute the bound in JS and bind it.
 
@@ -838,18 +994,25 @@ not "fix" it. G4-5 adds the one thing `leaveGroup` *does* need to touch (tension
 
 | Test | File | Expected |
 |---|---|---|
-| a deleted user's rating value survives, anonymized | `account.test.ts` | the `watch_ratings` row still exists with its `rating`; `user_id` matches `/^deleted-[0-9a-f]{8}$/`; `surprise_feedback` is `NULL` |
+| a deleted user's rating value survives, anonymized | `account.test.ts` | the `watch_ratings` row still exists with its `rating`; `user_id` matches `/^deleted-[0-9a-f]{8}$/` |
+| **the deleted user's note is gone** | `account.test.ts` | `surprise_feedback` read straight from `watch_ratings` is `NULL` |
 | two deletions in the same group do not collide | `account.test.ts` | both members of one group delete; both rows survive with different sentinels — sequential, named per §0.4 |
 | the group's watch history survives a deletion | `account.test.ts` | `watch_history` row count unchanged |
-| a deleted member's rating disappears from the prompt read | `account.test.ts` | `toWatchHistoryForPrompt` (G1-4b) no longer lists that rating — **this is the §8 "reader keyed on a surviving key" check, and it is the point of the task** |
 | leaving a group preserves that member's ratings | `groups.test.ts` | `watch_ratings` row count unchanged after `leaveGroup` |
 
-**Failing-first proof.** Run the first test against unmodified `deleteAccount`. It fails on
-`expected 'user-1' to match /^deleted-/` — a value assertion on a row that really exists. The fourth
-test is the important one: it must fail with the deleted member's name still appearing in the prompt
-read's output, which it will, because nothing anonymizes it. **If the fourth test passes before your
-change, the mapper in G1-4b is already dropping ratings for a reason other than the missing `users`
-row — read it and report what you find (§0.3).**
+**Failing-first proof.** The first two tests, both run against unmodified `deleteAccount`: the
+`user_id` assertion fails on `expected 'user-1' to match /^deleted-[0-9a-f]{8}$/`, and the note
+assertion fails on `expected 'the ending got me' to be null`. Both are value assertions on rows that
+really exist.
+
+**A test this task must NOT claim** — an earlier draft prescribed *"a deleted member's rating
+disappears from the prompt read"* as "the point of the task", with the proof *"it must fail with the
+deleted member's name still appearing"*. That is backwards: `deleteAccount` already ends with
+`DELETE FROM users WHERE id = ?` (`src/lib/account.ts:155`), and G1-4b's mapper drops any rating
+whose `LEFT JOIN users` yields nothing — so the rating is **already** absent before this task's
+statement exists, and the test would have passed trivially while reading as the strongest evidence in
+the group. It is worth keeping as a regression guard; it is worthless as a failing-first proof, and
+its comment must say which it is.
 
 **Do NOT:**
 - Do NOT delete `watch_history` rows on account deletion. `CLAUDE.md` §Gotchas: "Account deletion
@@ -948,7 +1111,7 @@ D1 access of its own** — `submitRating` and `getRevealForWatch` both come from
 ```
 POST /api/watches/{watchId}/rating
 body: { rating: 1 | 2 | 3 | null, note?: string }
-200  { reveal: Reveal | null }
+200  { reveal: Reveal | null, awaiting: Awaiting | null }   — at most one is non-null
 400  { error }
 401  { error: "Unauthorized" }
 404  { error: "Watch not found" }   — unknown watch OR caller not eligible (anti-enumeration)
@@ -977,10 +1140,11 @@ Order of operations:
    `{"event":"rating_resubmitted", watch_id, user_id}`. A flaky network retry must not error; a
    genuine mind-change silently not applying is the intended behaviour (ratings are frozen), and the
    log is how anyone ever finds out it happened.
-4. `getRevealForWatch(db, watchId, user.userId)`, then **hydrate its `title` and `posterPath` through
-   `getTitlesMap`** exactly as G2-3 does — the response type is the full `Reveal` from
-   `src/types/watch.ts`, and G5-3 renders the two shapes with the same component, so they must not
-   differ. An unhydrated title is `""`, never a 500.
+4. `getRevealForWatch(db, watchId, user.userId)` → map its `WatchOutcome` onto the response's two
+   fields, then **hydrate `title` and `posterPath` through `getTitlesMap`** exactly as G2-3 does. Both
+   response types are the full `Reveal` / `Awaiting` from `src/types/watch.ts`, and G5-3 renders
+   both with the same component, so the two routes must not shape them differently. An unhydrated
+   title is `""`, never a 500.
 
 **Tests to write:**
 
@@ -992,9 +1156,10 @@ Order of operations:
 | `0`, `4`, `"3"`, `2.5` are each rejected | 400, zero rows |
 | a note over 200 chars is rejected | 400, zero rows |
 | a second submit does not overwrite | rate 3, then post 1 → **the stored value is still 3**, response is 200, and the captured log contains `rating_resubmitted` |
-| the second rater gets the reveal | both members rate → the second response's `reveal` lists both names and both ratings |
-| **the first rater's response reveals nothing** | first of two rates → `reveal` is `null` |
-| **a skip does not complete a reveal** | A rates 3, B skips → A's later read gets no reveal (via G2-3) and B's response `reveal` is `null` |
+| the second rater gets the reveal | both members rate → the second response's `reveal` lists both names and both ratings, `awaiting` is `null` |
+| **the first rater's response reveals no rating** | first of two rates → `reveal` is `null`, `awaiting.names` is `["Ben"]` |
+| **a skip does not complete a reveal** | A rates 3, B skips → A's later read (via G2-3) gets `awaiting`, not `reveal`; and B's own response is `awaiting` with `names: []`, `selfSkipped: true` |
+| **the skipper's response is the same whatever the partner did** | B skips, twice over: once with A rated, once with A absent | the two response bodies are **deep-equal** |
 | a non-member gets 404 | 404, and the body is byte-identical to the unknown-watch 404 |
 | a member who joined after the watch gets 404 | 404, zero rows |
 | unauthenticated | 401 |
@@ -1016,7 +1181,8 @@ Note that the frozen-write mechanism itself is proved in **G1-3**, not here. Do 
 proof; this task proves the route's *response* to a frozen write.
 
 **Do NOT:**
-- Do NOT return `surprise_feedback` in the reveal (§0.5 invariant 4, **OPEN-3**).
+- Do NOT return `surprise_feedback` in the reveal or the awaiting shape. §0.5 invariant 4 — notes are
+  never shared with another member, and that is settled, not open.
 - Do NOT return the partner's rating in any shape when the reveal is null — not as `null`, not as an
   empty array keyed by name, not as a count.
 - Do NOT 403 for ineligibility. 404, matching the session route.
@@ -1034,18 +1200,36 @@ proof; this task proves the route's *response* to a frozen write.
 
 ```
 GET /api/watches/pending
-200 { question: Question | null, reveal: Reveal | null }
+200 { question: Question | null, reveal: Reveal | null, awaiting: Awaiting | null }
 401 { error: "Unauthorized" }
 ```
 
-**At most one of the two is ever non-null, and `question` wins.** Rules:
+**At most one of the three is ever non-null, and `question` wins.** Rules:
 
 1. `getPendingRating(db, user.userId, new Date())`. If it returns a question, hydrate its title
    through `getTitlesMap` and return `{ question, reveal: null }`.
-2. Otherwise, look for a completed reveal: the caller's most recent watch whose pair **completed**
-   within `REVEAL_WINDOW_DAYS` (**7**, a module constant in `src/lib/watch-history.ts`) and for which
-   `getRevealForWatch` returns non-null. Return `{ question: null, reveal }`.
-3. Otherwise `{ question: null, reveal: null }`.
+2. Otherwise, find **exactly one candidate watch with one statement, then call `getRevealForWatch`
+   exactly once on it.** The candidate is the caller's most recently *completed* watch inside the
+   window:
+   ```sql
+   SELECT wh.id
+   FROM watch_history wh
+   JOIN watch_ratings mine ON mine.watch_history_id = wh.id AND mine.user_id = ?
+   JOIN watch_ratings any_r ON any_r.watch_history_id = wh.id
+   WHERE any_r.rated_at >= ?          -- the JS-computed window bound
+   GROUP BY wh.id
+   ORDER BY MAX(any_r.rated_at) DESC
+   LIMIT 1
+   ```
+   Then one `getRevealForWatch` call, and map its `WatchOutcome` onto `reveal` / `awaiting`.
+
+   > **⚠ Do NOT iterate.** "Take the most recent watch and test it, then the next, then the next" is
+   > an uncapped N+1 of D1 round trips on every hub load — a PLAT-2 violation in a campaign that is
+   > strict about PLAT-2 everywhere else. **One candidate query, one outcome call, and if that watch
+   > yields `null`, return all-null.** A missed older reveal is the accepted cost of having no
+   > `seen_at` state (**OPEN-3**).
+
+3. Otherwise `{ question: null, reveal: null, awaiting: null }`.
 
 > **⚠ The window runs from `MAX(watch_ratings.rated_at)` for that watch — the moment the pair
 > completed — NOT from `watch_history.watched_at`.** Measured from `watched_at`, a partner who answers
@@ -1065,14 +1249,16 @@ render a fallback, exactly as `RankedList` renders `pick N` for an unhydrated re
 
 | Test | Expected |
 |---|---|
-| nothing to show | both `null` |
-| one unrated watch | `question` set with the hydrated title; `reveal` null |
-| a question outranks a ready reveal | one unrated watch AND one completed pair → `question` non-null, `reveal` null |
+| nothing to show | all three `null` |
+| one unrated watch | `question` set with the hydrated title; `reveal` and `awaiting` null |
+| a question outranks a ready reveal | one unrated watch AND one completed pair → `question` non-null, the other two null |
 | a completed pair inside the window | `reveal` set, `question` null |
-| a completed pair outside the window | both ratings 8 days old → both null |
+| a completed pair outside the window | both ratings 8 days old → all null |
 | **a watch from 30 days ago whose pair completed yesterday** | `reveal` set — this is the assertion that pins the window to `rated_at` rather than `watched_at`, and it is the one that catches the wrong reading |
+| **the caller has rated and the partner has not** | `awaiting` set with the partner's name; `reveal` null |
 | an unhydrated title | `question.title === ""`, status 200 |
 | **the question is identical whether or not the partner has rated** | run twice with the partner's rating present and absent → deep-equal `question` objects |
+| **one candidate query, one outcome call** | seed five completed watches; assert with `recordStatements` (`src/test/statement-recorder.ts`) that the reveal path costs a bounded, constant number of round trips regardless of how many watches exist |
 | unauthenticated | 401 |
 
 **Failing-first proof.** Implement step 1 and step 2 with the priority **reversed** (reveal first).
@@ -1106,10 +1292,13 @@ server's user-facing error rather than throwing — but in its own module.
 export async function logWatch(args: { groupId: string; tmdbId: number; sessionId: string | null }):
   Promise<{ watchId: string | null; error: string | null }>;
 
-export async function submitRating(watchId: string, input: { rating: 1 | 2 | 3 | null; note: string }):
-  Promise<{ reveal: Reveal | null; error: string | null }>;
+export async function submitRating(
+  watchId: string,
+  input: { rating: WatchRatingValue | null; note: string }
+): Promise<{ reveal: Reveal | null; awaiting: Awaiting | null; error: string | null }>;
 
-export async function fetchPending(): Promise<{ question: Question | null; reveal: Reveal | null }>;
+export async function fetchPending():
+  Promise<{ question: Question | null; reveal: Reveal | null; awaiting: Awaiting | null }>;
 ```
 
 `fetchPending` **never surfaces an error** — a failed pending fetch renders nothing, exactly as
@@ -1117,13 +1306,19 @@ export async function fetchPending(): Promise<{ question: Question | null; revea
 shows an error banner because an optional question could not load is worse than a hub that shows no
 question.
 
+**`GENERIC_ERROR` is `const GENERIC_ERROR = "Something went wrong. Check your connection and try again."`**
+— `src/lib/session-flow.ts:15` defines it but does **not** export it, and G2 must not edit that file
+(§1.3). So declare the same literal in `watch-flow.ts`. The string is pinned here because a test that
+asserts it must assert the same characters the module uses, and two implementers would otherwise word
+it differently.
+
 **Tests to write:** a 201 returns the `watchId`; a 403 returns the server's `error` string and a null
-`watchId`; a network throw returns `GENERIC_ERROR`; `submitRating` passes a `reveal` through
-untouched; `fetchPending` returns `{ question: null, reveal: null }` on a 500, on a network throw,
-and on an unparseable body.
+`watchId`; a network throw returns exactly that `GENERIC_ERROR` literal; `submitRating` passes
+`reveal` **and** `awaiting` through untouched; `fetchPending` returns all-null on a 500, on a network
+throw, and on an unparseable body.
 
 **Failing-first proof.** Write `fetchPending` first to propagate errors (returning `null` for the
-whole object on failure). The "500 returns both-null" test fails with
+whole object on failure). The "500 returns all-null" test fails with
 `expected null to have property 'question'`. **If you write the swallow-and-default version first,
 every test passes immediately.**
 
@@ -1181,6 +1376,24 @@ the never-return guarantee."* Read those lines before you start; the same reason
 > rejection, a comfort title is a standing request. An implementer who copies the line above will get
 > this backwards. Write the comment above verbatim so the next reader sees both rules stated together.
 
+4. **Grow the pool by the number of exclusions.** The popularity query is
+   `ORDER BY popularity DESC LIMIT ?` bound to `CANDIDATE_POOL_SIZE` (`src/lib/matching.ts:110-112`,
+   `CANDIDATE_POOL_SIZE = 250`, `CANDIDATE_CAP = 200`). Bind `CANDIDATE_POOL_SIZE + watchedIds.size`
+   instead, with this comment:
+   ```ts
+   // Watched ids are group-scoped and accumulate for the life of the group,
+   // unlike removedIds, which reset with the session. Without widening the pull,
+   // every watch permanently costs the group one candidate.
+   ```
+
+> **⚠ Do not carry over the removed-ids "no floor needed" arithmetic — it does not transfer, and an
+> earlier draft of this plan claimed it did.** The Phase 1 campaign rejected a pool floor for
+> *removals* because they are bounded by ten rounds within one session. `watchedIds` has no such
+> bound: a couple watching weekly reaches ~50 in a year and keeps going. The pool is 250 and the cap
+> 200, so from about 50 watched titles onward the effective candidate set shrinks with every film
+> they enjoy — the loop punishing its own success. Widening the pull is the fix; a floor is still
+> not, because a floor would reintroduce watched titles rather than find new ones.
+
 **Tests to write** (`src/lib/matching.test.ts`, appended):
 
 - *"a watched title is absent from the pool"* — seed 20 titles, pass 3 in `watchedIds`, assert none
@@ -1192,6 +1405,9 @@ the never-return guarantee."* Read those lines before you start; the same reason
 - *"a title that is both removed and a comfort title is still excluded"* — the removal rule wins;
   the comfort exception applies only to `watchedIds`.
 - *"filtering does not disturb popularity ordering"* — assert the exact returned id sequence.
+- *"the pool widens by the exclusion count"* — seed 300 titles, mark 40 watched, and assert the
+  returned set is the same size as it would have been with 0 watched. This is the exhaustion guard,
+  and asserting only "the 40 are absent" would pass against the shrinking version.
 - Update **every** existing `selectCandidates` call in `matching.test.ts` to pass `new Set()` for the
   new argument where the test is not about watches.
 
@@ -1232,8 +1448,14 @@ reintroduces the exact cost PLAT-2 was written about.
 | Signature | `getMatchRoundContext(db, sessionId)` | `getMatchRoundContext(db, sessionId, groupId)` |
 | Statements in the batch | 5 | 7 |
 | `MatchRoundContext` | 5 fields | + `watchedTmdbIds: Set<number>`, `watchHistory: WatchSummary[]` |
-| Round trips for the whole request | 7 | **still 7** |
+| Round trips for the whole request | 7 | **still 7 for the existing fixture** |
 | Largest single round trip | 5 statements | **7 statements** |
+
+The "still 7" claim holds for the fixture, not unconditionally: `getTitlesMap` chunks at
+`D1_IN_CHUNK_SIZE = 90` (`src/lib/movie-sessions.ts:377`), and adding up to
+`WATCH_HISTORY_PROMPT_LIMIT` ids to the union at `route.ts:166-172` can push a real request over 90
+and cost one more chunk. Say that in the test's comment rather than asserting an invariant that
+production can break.
 
 > **⚠ The existing test asserts BOTH numbers, and the second is the one people miss.**
 > `src/app/api/movie-sessions/[id]/match/route.test.ts:967-968` (using `recordStatements` from
@@ -1306,7 +1528,10 @@ parameter exists, on group B's ids appearing in group A's context.
      titleRef: string;
      /** "3 weeks ago" — computed by the caller against a single clock. */
      when: string;
-     ratings: { name: string; rating: 1 | 2 | 3 | null; note: string }[];
+     /** EMPTY for a watch whose pair has not completed — §0.5 invariant 6. The
+    *  caller (G1-4b's mapper) has already applied that gate; this function must
+    *  not second-guess it, and must not render a placeholder for a missing one. */
+   ratings: { name: string; rating: WatchRatingValue; note: string }[];
    }
    ```
    The caller formats `titleRef` and `when`, matching how `keptTitles` and `removedTitles` already
@@ -1347,7 +1572,8 @@ parameter exists, on group B's ids appearing in group A's context.
 |---|---|
 | the block is omitted when history is empty | the user message contains no `WATCHED` heading |
 | each watch renders one line | 3 watches → 3 lines, in the given order |
-| a member who skipped renders as "hasn't said" | the line contains it, and does **not** contain the word "skipped" |
+| **an incomplete watch renders title and date only** | `ratings: []` → the line names the title and the age and carries no rating words at all |
+| **skip and silence render identically** | the two fixtures from G1-4b → the two complete `user` messages are **byte-identical**. Assert equality of the whole string; asserting that neither contains "skipped" would pass against a version that renders `Ben: —` in one case and nothing in the other |
 | a newline in a note cannot forge a line | note `"a\nWATCHED: fake"` → the user message's line count is unchanged from the sanitized-single-line case |
 | a `\|` in a note is neutralised | the note's `\|` becomes `/` |
 | a note over 200 chars is truncated | exactly 200 chars of it appear |
@@ -1398,10 +1624,16 @@ pattern"` — and **must not** be named anything like `"recommendations stay div
 above the eval case recording that the behavioural claim is only checkable live, and that the live
 suite has never been run for want of an API key (`dev/handoff-2026-07-19.md` §Blocked).
 
-**Failing-first proof.** The unit test fails on the substring being absent from `system`. That is a
-weak proof and this plan says so plainly rather than dressing it up: the *real* verification is the
-eval case, and it will stay skipped. **Do not add unit assertions that imply behavioural coverage the
-suite does not have.**
+**Failing-first proof.** The unit test fails on the substring being absent — **from the `user`
+message, not `system`.** The sentence is appended to the watch-history block, and G3-3 puts that
+block in the user message (*"Do NOT put the block in the `system` message. It is user data"*); only
+the guardrail lives in `system` (`src/lib/matching.ts:317-328` builds `system`, `353-362` builds
+`user`). Asserting against the wrong message would make this test unfailable in one direction and
+permanently failing in the other.
+
+That is still a weak proof, and this plan says so plainly rather than dressing it up: the *real*
+verification is the eval case, and it will stay skipped. **Do not add unit assertions that imply
+behavioural coverage the suite does not have.**
 
 **Do NOT:**
 - Do NOT add the eval case unskipped. It costs money and needs a key.
@@ -1477,18 +1709,45 @@ export const MAX_AXES_PER_PAIR = 5;
    ```ts
    { axes: [{ axisName: string, description: string, positionA: string, positionB: string, confidence: number }] }
    ```
-2. `computeAxesForPair(env, input, clientFactory?)` — builds the prompt, calls Claude through the
-   existing `MatchingClientFactory` seam (`src/lib/matching.ts:481-497`, which already sets
-   `maxRetries: 1, timeout: 45_000`), and parses. **Reuse that seam; do not construct a second
-   Anthropic client.**
-3. The prompt carries: both members' names, their `vibes` and `dealbreakers`, and every both-rated
-   watch with ratings and notes. It carries the **same guardrail sentence** as the matching prompt,
-   plus one axis-specific constraint:
+2. `computeAxesForPair(env, input, clientFactory?)`, with `input` **defined as a type in
+   `src/types/tension-axes.ts`, not left to prose**:
+   ```ts
+   export interface AxisPairInput {
+     memberA: { userId: string; name: string; vibes: string[]; dealbreakers: string[] };
+     memberB: { userId: string; name: string; vibes: string[]; dealbreakers: string[] };
+     /** Only nights BOTH rated non-NULL. Titles pre-formatted "Title (tmdbId N)". */
+     nights: { titleRef: string; when: string; ratingA: WatchRatingValue; ratingB: WatchRatingValue }[];
+   }
+   ```
+   Caps, applied with `sanitizePromptText` from `src/lib/matching.ts`: names at `MAX_NAME_CHARS`,
+   each tag at `MAX_TAG_CHARS`, each `titleRef` at `MAX_TITLE_ENTRY_CHARS`. G4-3 constructs this and
+   G4-2's tests fixture it, so it cannot be prose.
+
+   **`nights` carries NO `note` field, deliberately** — §0.5 invariant 7 and
+   `phase-2-design.md` §4.4. An axis is an *attributed statement about a named person*
+   (`position_a`, `position_b`) that is then fed back into the matching prompt; passing private notes
+   into its generator is a direct route from "text nobody else sees" to "prose about you, derived
+   from what your partner wrote". Axes describe persistent taste, and three notes are not that.
+
+3. **The Anthropic call.** Use `MatchingClientFactory` / `defaultClientFactory` from
+   `src/lib/matching.ts:481-497` (already `maxRetries: 1, timeout: 45_000`) and write your own
+   `client.messages.create` in `tension-axes.ts`. You **cannot** call `callClaude` — it hard-codes
+   `MATCHING_RESPONSE_SCHEMA` and `MATCHING_MODEL` (`matching.ts:512-530`) and §1.3 puts it in G4's
+   must-not-touch column. Mirror its two structural details: branch on `stop_reason` **before**
+   extracting text (a `max_tokens` or `refusal` turn is not an answer), and `find` the text block
+   rather than indexing `content[0]` (thinking blocks come first).
+   **Failure taxonomy:** do not build one. Let any error propagate; `runTensionAxisRefresh` (G4-3)
+   catches per group and counts it. An axis refresh has no user waiting on it, so the matching
+   engine's six-kind taxonomy buys nothing here — and duplicating it would duplicate the
+   `APIError`/`APIConnectionError` mapping G4 may not touch.
+
+4. **The prompt** carries the `AxisPairInput` fields, the **same guardrail sentence** as the matching
+   prompt, and one axis-specific constraint:
    > *Never name a specific film in `axisName`, `description`, `positionA` or `positionB`. Describe
    > the taste, not the evidence.*
    This exists because a group at exactly the minimum evidence bar has few enough rated nights that
    naming one turns the axis back into a rating disclosure (`phase-2-design.md` §4.5).
-4. `storeAxesForPair(db, groupId, userAId, userBId, axes)`:
+5. `storeAxesForPair(db, groupId, userAId, userBId, axes)`:
    - **Canonicalise the pair first**: sort the two ids lexicographically so `user_a_id < user_b_id`,
      and swap `positionA`/`positionB` with them. Without this, `(A,B)` and `(B,A)` are different rows
      and the unique index does nothing.
@@ -1508,6 +1767,7 @@ export const MAX_AXES_PER_PAIR = 5;
 | a rewrite replaces, not appends | store 3 axes, then store 2 → exactly 2 rows |
 | a failed insert leaves the previous set intact | inject a statement failure on the INSERT (`withFailingStatement`, `src/test/fake-d1.ts`) → the original 3 rows are still there (testing-pitfalls §3) |
 | the axis prompt carries the guardrail and the no-film-names rule | both substrings present |
+| **no note text can reach the axis prompt** | `AxisPairInput` has no note field, so assert structurally: build the input from a `WatchSummary` whose ratings carry a distinctive note string, and assert that string appears **nowhere** in the generated prompt. §0.5 invariant 7 |
 | a member name with a newline cannot forge a line | sanitized, line count unchanged |
 | a malformed model response is rejected | `parse` throws rather than storing partial axes |
 | confidence outside 0–1 is clamped | `1.4` → `1`, `-0.2` → `0` |
@@ -1547,41 +1807,49 @@ invocation's budget. Read that comment before writing anything here.
     *  invocation budget as the 200 TMDB fetches above. */
    const AXIS_GROUPS_PER_RUN = 20;
    ```
-3. Candidate selection, in two reads:
+3. **Candidate selection in ONE query.** The night count, the staleness stamps and the member count
+   all come back together, so the number of D1 round trips does not scale with how many groups have
+   ever rated anything:
    ```sql
-   SELECT wh.group_id AS group_id, MAX(wr.rated_at) AS newest_rating,
-          (SELECT MAX(computed_at) FROM tension_axes ta WHERE ta.group_id = wh.group_id) AS newest_axis
-   FROM watch_history wh
-   JOIN watch_ratings wr ON wr.watch_history_id = wh.id
-   WHERE wr.rating IS NOT NULL
-   GROUP BY wh.group_id
+   SELECT q.group_id AS group_id,
+          COUNT(*)   AS nights,
+          MAX(q.newest_rating) AS newest_rating,
+          (SELECT MAX(computed_at) FROM tension_axes ta WHERE ta.group_id = q.group_id) AS newest_axis,
+          (SELECT COUNT(*) FROM group_members gm
+             JOIN users u ON u.id = gm.user_id
+            WHERE gm.group_id = q.group_id) AS live_members
+     FROM (
+       SELECT wh.group_id, wh.id, MAX(wr.rated_at) AS newest_rating
+         FROM watch_history wh
+         JOIN watch_ratings wr ON wr.watch_history_id = wh.id AND wr.rating IS NOT NULL
+         JOIN users u ON u.id = wr.user_id
+        GROUP BY wh.id
+       HAVING COUNT(DISTINCT wr.user_id) >= 2
+     ) q
+    GROUP BY q.group_id
    ```
-   then, in JS, keep groups where `newest_axis === null || newest_rating > newest_axis`. Both columns
-   are JS-written ISO 8601, so the lexicographic comparison is valid — **this is only true because
-   G4-2 and G2-2 write them from `toISOString()`**; if either ever writes a SQLite `datetime()`, the
-   comparison silently inverts (`CLAUDE.md` §Gotchas). Assert the format in a test rather than
-   trusting it.
+   Then, in JS: keep groups where `live_members >= 2`, `nights >= MIN_BOTH_RATED_NIGHTS`, and
+   `newest_axis === null || newest_rating > newest_axis`. Take the first `AXIS_GROUPS_PER_RUN`.
 
-   Then, per candidate group, one query for the evidence bar:
-   ```sql
-   SELECT COUNT(*) AS nights FROM (
-     SELECT wh.id
-     FROM watch_history wh
-     JOIN watch_ratings wr ON wr.watch_history_id = wh.id AND wr.rating IS NOT NULL
-     JOIN users u ON u.id = wr.user_id
-     WHERE wh.group_id = ?
-     GROUP BY wh.id
-     HAVING COUNT(DISTINCT wr.user_id) >= 2
-   )
-   ```
-   Drop groups below `MIN_BOTH_RATED_NIGHTS`, then take the first `AXIS_GROUPS_PER_RUN`.
+   > **⚠ Do NOT issue a per-group query before the cap.** An earlier draft did, which is one D1 round
+   > trip per group that has ever rated anything, uncapped, in a task whose whole premise is
+   > subrequest-budget discipline. `AXIS_GROUPS_PER_RUN` bounds the *Anthropic* calls; nothing would
+   > have bounded the D1 calls.
 
-   **`>= 2` is a deliberate approximation of "every eligible member".** For a couple — the product's
-   actual shape — the two are identical. For a group of three it means "at least two of them", which
-   is weaker than the design's wording. That is acceptable here and nowhere else: this is a *quality
-   gate on derived data*, not a privacy boundary, and the exact-membership version needs the
-   `joined_at` join that the reveal gate carries for a correctness reason this query does not have.
-   Write this reasoning as a comment.
+   **`COUNT(DISTINCT wr.user_id) >= 2` is a deliberate approximation of "every eligible member".**
+   For a couple — the product's actual shape — the two are identical. For a group of three it means
+   "at least two of them". Acceptable here and nowhere else: this is a *quality gate on derived data*,
+   not a privacy boundary. Write that reasoning as a comment.
+
+   **The `live_members >= 2` filter is what keeps solo groups out.** A solo group's own rating passes
+   `COUNT(DISTINCT user_id) >= 2`? No — it cannot, with one rater. But a group that *was* two people
+   and is now one still can, from historic rows, so the filter is load-bearing rather than belt-and-
+   braces. Test it.
+
+   Both timestamp columns are JS-written ISO 8601, so the lexicographic comparison is valid — **only
+   because G4-2 and G1-3 write them from `toISOString()`**; if either ever writes a SQLite
+   `datetime()`, the comparison silently inverts (`CLAUDE.md` §Gotchas). Assert the format in a test
+   rather than trusting it.
 
 4. Per group, per pair of live members: `computeAxesForPair` then `storeAxesForPair`. **A group costs
    one Anthropic call per pair** — one for a couple, three for a group of three — so
@@ -1603,21 +1871,31 @@ invocation's budget. Read that comment before writing anything here.
 | a group whose axes are newer than its newest rating is skipped | client never called |
 | a group whose rating is newer than its axes is recomputed | client called |
 | the per-run cap holds | 25 eligible groups → **exactly 20** client calls |
+| **a group that is now solo is skipped** | a two-member group with 3 both-rated nights, then one member's `group_members` row deleted → the client is never called |
+| **candidate selection costs a bounded number of round trips** | 25 eligible groups → assert with `recordStatements` that selection is one round trip regardless of group count |
 | one failing group does not abort the run | inject a throw for group 1 of 3 → groups 2 and 3 still stored, log reports `failures: 1` |
 | `rated_at` and `computed_at` are both `T`-separated | regex assertion on both, in the same test, with a comment naming the `datetime()` trap |
 
-**Failing-first proof.** Implement the candidate query with `>=` instead of `>` for the staleness
-comparison. The "axes newer than the newest rating is skipped" test then fails with
-`expected "spy" to not have been called` — the group is recomputed every single week forever,
-burning an Anthropic call per group per run. That is the real bug this comparison prevents, and it is
-invisible without the test.
+**Failing-first proof.** Implement the staleness filter as `newest_axis === null` only — i.e. compute
+once and never again — which is the version someone writes when they are thinking about "has this
+group got axes yet". The *"rating newer than axes is recomputed"* test then fails with
+`expected "spy" to have been called once` while the *"axes newer is skipped"* test stays green,
+which is exactly the discrimination the pair of tests exists to provide.
+
+> **A proof that does NOT work, recorded so nobody retries it.** An earlier draft said to write `>=`
+> instead of `>` and watch the "axes newer is skipped" test fail. It cannot: with
+> `newest_axis > newest_rating`, both `newest_rating > newest_axis` and `newest_rating >= newest_axis`
+> are false, so the group is skipped either way. The two predicates differ only when the two ISO
+> strings are byte-identical. If you want that case covered too, seed `rated_at === computed_at`
+> exactly and say which behaviour you intend.
 
 **Do NOT:**
 - Do NOT change `STALE_TITLES_LIMIT`, add a second cron trigger, or add a `limits` block to
   `wrangler.jsonc`. All three were explicitly ruled out in the Phase 1 campaign (§9 of that plan).
 - Do NOT use `ctx.waitUntil`.
-- Do NOT compute axes for a solo group. It has no pairs, and the query's `GROUP BY` will still return
-  it — filter on live member count ≥ 2.
+- Do NOT drop the `live_members >= 2` filter. A group that *was* two people and is now one still
+  satisfies the night count from historic rows, so the `GROUP BY` returns it and there are no pairs
+  to compute.
 
 ---
 
@@ -1823,16 +2101,25 @@ The question:
 
 ```
 How was Arrival?
-[ Not for us ]  [ Good ]  [ Loved it ]
+[ Not for me ]  [ Good ]  [ Loved it ]
 Anything catch you off guard?   (optional, one line)
-                                                  Skip
+
+Skip — nobody sees anything for this one
 ```
+
+**The labels are first-person singular.** *Not for me*, never *not for us*: you are rating alone and
+privately, so a label that speaks for the pair asks you to answer for someone whose answer you are
+not allowed to see — and it contradicts §3's promise that the solo question is identical. The labels
+are part of **OPEN-1**; if Sam moves them, they move here and in G6-1's disclosure together.
 
 - Three controls in one row at 375px, each ≥44px. If they do not fit, wrap — do not shrink.
 - The note field is a single-line input, `maxLength={200}`, ≥16px font (DESIGN.md: prevents iOS
   auto-zoom), and **optional**. Tapping a rating submits immediately with whatever is in the note.
 - **`Skip` submits `rating: null`.** It is a real submission, not a dismissal (`phase-2-design.md`
-  §4.3), and it is what stops the question coming back.
+  §4.3), and it is what stops the question coming back. **Set it apart from the three ratings** — its
+  own line, not a fourth chip in the row — and label its consequence, because it has two the tapper
+  cannot guess: they forfeit their own reveal, and they permanently deny the other person theirs
+  (**OPEN-5**). A bare "Skip" in the corner understates both.
 - The question wording asks about **the film**, not about the partner — this is **OPEN-2**, and this
   plan implements the design's recommendation. If Sam has overruled it, the copy changes here and the
   note's meaning changes with it.
@@ -1871,30 +2158,43 @@ cannot make sense of.
 
 **Files:** `src/components/watch-prompt.tsx`, its `.test.tsx`.
 
-**The change.** Two post-submit states in the same component:
+**The change.** Three post-submit states in the same component, driven by the `reveal` / `awaiting`
+pair that G2-2 returns from the submit and G2-3 returns on a later visit. **Both routes return both
+fields and at most one is non-null**, so this component switches on which one it got — it never
+infers a state from `null`:
 
 - **Both rated** → both names and both ratings, shown together. Per-person colours from DESIGN.md's
   taste-map palette (`--person-a` `#6b8cce`, `--person-b` `#ce7b8c`) — measured at 5.59:1 and 6.10:1
-  **on `midnight` only**. DESIGN.md is explicit that person colours are painted on `midnight` and
-  that `person-b` on `charcoal` drops to 4.45:1. **If this component sits on a `charcoal` surface,
-  the person colours may not carry its text.** Check the surface before choosing, and if it is
-  `charcoal`, render the names in `cream`.
+  **on `midnight`, which DESIGN.md calls "the only backdrop they are painted on"**. It gives no
+  measured figure for person-colour *text* on `charcoal`; its 4.45:1 figure is for the selected
+  dealbreaker chip's `#ce7b8c20` **fill** over `charcoal`, which is a different measurement. So if
+  this component sits on `charcoal`, **recompute with the WCAG relative-luminance formula before
+  painting a person colour** — DESIGN.md explicitly says not to trust a remembered figure — or render
+  the names in `cream` and sidestep the question.
   `src/components/person-color-contrast.test.tsx` pins the set of files allowed to paint these
   tokens. Its `ALLOWED` map is `Record<string, number>` and it asserts
   `expect(personColorUses()).toEqual(ALLOWED)` — **exact equality, including the per-file use
   count**. So if you paint a person colour, that test fails with a count mismatch until you add your
   file *with the right number*; and if you decide not to use them, do not touch the map at all. Do
   not weaken the assertion to `toMatchObject` or add an entry "just in case".
-- **Partner hasn't** → *"Ben hasn't said yet."* Nothing more. This copy is true for a partner who has
-  not answered **and** for one who skipped, and that is deliberate (§4.3): a skip must be
-  indistinguishable from silence. **Do not add a "Ben passed on this one" variant.**
-- The caller's own skip renders as *"You skipped this one."* — visible only to its author.
+- **`awaiting` with `selfSkipped: false`** → *"Ben hasn't said yet."* — built from `awaiting.names`.
+  This copy is true for a partner who has not answered **and** for one who skipped, and that is
+  deliberate (§4.3): a skip must be indistinguishable from silence. **Do not add a "Ben passed on this
+  one" variant.**
+  **Handle more than one name.** `names` is an array because the app supports friend groups
+  (DESIGN.md assigns person colours for groups > 2). Render *"Ben and Chris haven't said yet."* and
+  *"Ben, Chris and Dana haven't said yet."* — `src/lib/session-flow.ts:117-123`'s `nameList` shows
+  the established phrasing helper; do not import it (different module, different cap), but match its
+  output shape. A singular-only string is a bug for every group of three.
+- **`awaiting` with `selfSkipped: true`** → *"You skipped this one."* and nothing else. `names` is
+  empty by contract in this case (G1-4d): a skipper gave nothing and learns nothing.
 
 **Tests to write:** both-rated renders both names and both ratings; partner-not-rated renders
 "hasn't said yet"; **partner-skipped renders the identical string** — assert the two rendered
-outputs are equal, not merely that each contains something; own-skip renders the first-person copy;
-a solo group never renders any partner copy; the reveal from `fetchPending` renders the same way as
-the reveal returned by the submit.
+outputs are equal, not merely that each contains something; own-skip renders the first-person copy
+and no names; two and three outstanding names render with the right conjunction; a solo group never
+renders any partner copy; the `reveal` from `fetchPending` renders identically to the `reveal`
+returned by the submit.
 
 **Failing-first proof.** Implement the partner state first from a three-way `rating` value
 (`null` → "passed", missing row → "hasn't said"). The equality test between the skipped and
@@ -1978,9 +2278,15 @@ selected group and `sessionId: null`.
 `sessionId: null` and the selected group id; an unresolvable title renders the server's 400 message;
 after a successful log the picker closes and the group's newest watch is the logged one.
 
-**Failing-first proof.** Wire the post without `sessionId` in the body at all. The body-shape test
-fails on `expected { groupId, tmdbId } to have property 'sessionId'`. This matters because omitting
-the key and sending `null` are different requests, and G2-1's idempotency branches on it.
+**Failing-first proof.** Wire the picker to post the group id from the URL query string without
+falling back to the caller's solo group. The *"posts with the selected group id"* test then fails
+with `expected null to be 'group-1'` for a visitor who has no `?group=` param — which is the default
+state of `/tonight` for a solo user, and the state this entry point exists to serve.
+
+> **A proof that does NOT work.** An earlier draft said to omit `sessionId` from the body and watch a
+> shape assertion fail. G2-1 accepts the key *"absent, `null`, or a non-empty string"* and computes
+> `sessionId ?? null`, so the two requests are identical to the server. The body-shape test is still
+> worth having as a contract pin; it is not a failing-first proof.
 
 **Do NOT:**
 - Do NOT reuse the profile editor's title picker wholesale — it manages a saved list; this picks one.
@@ -2014,14 +2320,18 @@ Cover, in the page's own register:
 - **Who sees your rating:** your group, and only once everyone has answered. Never before.
 - **Skipping:** a skip looks the same to your group as not having answered yet.
 - **Your note is yours.** Nobody else in your group sees it. It is used to shape recommendations and
-  it is deleted with your account.
+  it is deleted with your account. **This sentence is a promise the code keeps** — §0.5 invariant 4
+  and 7, and `phase-2-design.md` §4.4, which closed the "share notes on reveal?" question precisely
+  so this line could be written without a caveat. If any of those move, this line moves first.
 - **Ratings are sent to Anthropic** along with profiles and mood, under the same terms the page
-  already discloses for matching.
+  already discloses for matching — **and only once everyone in the group has answered**, which is
+  worth saying because it is a stronger promise than users would assume.
 - **Deletion:** ratings are anonymized like other shared records; notes are deleted outright.
 
 **Tests to write** (`page.test.tsx`, appended): the page names ratings and notes; it states the
 both-must-answer rule; it states that notes are not shared within the group; it states that ratings
-go to Anthropic. Assert on the rendered strings, not on a `data-testid`.
+go to Anthropic only once everyone has answered. Assert on the rendered strings, not on a
+`data-testid`.
 
 **Failing-first proof.** Each assertion fails against the current page with
 `Unable to find an element with the text: …`, because none of these sentences exists yet. This is one
@@ -2063,8 +2373,15 @@ framework-specific phrasing; the Sibling-sync note at the top of each says so. A
 - **Watch history is group-scoped, never per-user.** A title watched with one group can still be
   recommended in another. This is deliberate (`phase-2-design.md` §4.6).
 - **A rating is revealed only when every eligible member has one.** A `NULL` rating is a *skip*, and
-  it never completes a reveal and is never distinguishable from silence.
+  it never completes a reveal and is never distinguishable from silence. Eligibility is *existing
+  raters plus current members who joined before the watch* — a partner who rated and then left still
+  completes it.
+- **Rating values reach the matching prompt only for a completed pair.** The model's output is
+  delivered to group members, so an unrevealed rating in the prompt is one paraphrase away from the
+  person who has not answered.
 - **The matching prompt must never attribute a past rating to a member.**
+- **Free-text notes never enter the tension-axis prompt.** An axis is an attributed statement about a
+  named person; a note is text its author was promised nobody would see.
 - **Do not derive a group-scoped `solo` from `getSessionForMember`.** The session flag counts session
   members; watch history is group-scoped, and the two disagree.
 
@@ -2101,6 +2418,10 @@ Add, only for things this campaign actually established (do not invent entries t
 - **implementation-pitfalls, a new domain section**: *derived data is deleted, not anonymized*, with
   `tension_axes` as the example and the reasoning that it is recomputable while `watch_ratings` is
   the evidence.
+- **implementation-pitfalls, same section or its own**: *a model's output is delivered to the people
+  whose private data is in its prompt* — so a rule of the form "the model is told not to say X" is a
+  second line of defence, never the first. Withhold the data instead. Phase 2's completed-pair gate
+  (§0.5 invariant 6) is the worked example, and the rough-day weighting is the prior one.
 
 **Failing-first proof.** None — documentation.
 
@@ -2147,9 +2468,16 @@ Surfaced here so a later session can see exactly where it deviates, and why.
 
 1. **The Taste Autopsy question is rewritten.** The approved design doc asks *"what surprised you
    about your partner's reaction"* (`dev/plans/design-doc.md:104, :151, :518`). This plan asks about
-   the film instead. **This is a deviation from a decision Sam approved, it is
-   `phase-2-design.md` §4.4 and **OPEN-2**, and it is the single most likely thing in this campaign
-   to be overruled.** If it is, only G5-2's copy and G6-1's disclosure change — no schema, no API.
+   the film instead. **This is a deviation from a decision Sam approved, it is `phase-2-design.md`
+   §4.4 and **OPEN-2**, and it is the single most likely thing in this campaign to be overruled.**
+
+   **If it is overruled, the blast radius is not small.** The copy in G5-2 and the disclosure in G6-1
+   change, but so does the *nature of the field*: it becomes text **about another member**, which
+   pulls in G3-3 (it enters the matching prompt, where the model can paraphrase it into shared
+   prose), G4-2 (which excludes notes from the axis generator on precisely this reasoning — §0.5
+   invariant 7), and the whole of `phase-2-design.md` §4.4. It does **not** change the schema or any
+   API shape. An earlier draft of this plan claimed only copy and disclosure would move; that was
+   wrong, and it is the claim an implementer would rely on if Sam's answer arrived mid-campaign.
 
 2. **`watch_ratings.rating IS NULL` is given a meaning the schema does not state.** The reserved
    column is merely nullable. This plan reads `NULL` as *skipped* and builds the prompt-termination
@@ -2179,6 +2507,19 @@ Surfaced here so a later session can see exactly where it deviates, and why.
 7. **The `npm test` baseline is measured rather than quoted.** The Phase 1 plan hardcoded it. `dev`
    moved twice while this plan was being written (`5d76a38` → `f09d375`), which is exactly how a
    hardcoded baseline becomes a trap (§0.2 step 3).
+
+8. **Rating values are withheld from the prompt until the pair completes** — reversing an earlier
+   draft of the design that said reveal state never gates the prompt, on the grounds that "the model
+   is not a group member". It is not; its output is *delivered to* group members, and in a couple a
+   non-attributed "you two didn't get on with it" is attributable by elimination to whoever did not
+   answer (`phase-2-design.md` §4.5a). The product cost is real and stated: **a unilateral rating
+   shapes nothing until the other person answers.** Recorded here because it is the campaign's one
+   design reversal and because the reasoning that produced the original is seductive.
+
+9. **Two prescribed tests are explicitly labelled unfailable** rather than removed — G1-1's
+   rewatch test and G1-5's deleted-member prompt-read test. Both are worth keeping as regression
+   guards and both would have been read as strong failing-first evidence. §0.3 asks implementers to
+   report unfailable tests; a plan that ships two without saying so is not entitled to ask.
 
 ---
 
