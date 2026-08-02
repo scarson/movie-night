@@ -130,6 +130,20 @@ describe("Join by invite page", () => {
     expect(screen.getByRole("button", { name: /join this group/i })).toBeDefined();
   });
 
+  it("offers somewhere to go when the code will never work", async () => {
+    stubApi({
+      signedIn: true,
+      join: { status: 404, body: { error: "That code didn't match a group" } },
+    });
+    await renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /join this group/i }));
+    await screen.findByText("That code didn't match a group");
+
+    // An invite that doesn't resolve is where the app's second-ever user lands.
+    // Retrying the same code is the one thing that cannot help them.
+    expect(screen.getByRole("link", { name: /groups/i }).getAttribute("href")).toBe("/groups");
+  });
+
   it("surfaces the rate-limit message", async () => {
     stubApi({
       signedIn: true,

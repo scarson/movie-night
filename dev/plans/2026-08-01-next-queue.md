@@ -1,7 +1,7 @@
 # Next queue — items 6–10
 
 **Written:** 2026-08-01, while items 1–5 of the current wave were in flight.
-**Status:** items 6–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
+**Status:** item 6 shipped 2026-08-02. Items 7–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
 
 **Update 2026-08-02.** Items 1–5 all shipped: prompt-injection threat model + corpus (PR #37),
 abuse-surface and rate limits (#36), observability + deploy preflight (#39), Tier-2 cleanup (#35),
@@ -41,7 +41,15 @@ pass) are tracked in `dev/handoff-2026-08-01.md`.
 
 ---
 
-## 6. First-run experience and the states nobody designed
+## 6. First-run experience and the states nobody designed — **SHIPPED 2026-08-02**
+
+**Outcome:** `dev/reports/first-run-experience.md`. Three defects fixed under TDD (the matching error
+taxonomy applied on one screen out of three; an unresolvable invite code with nowhere to go; the
+no-round results branch with no way back). The main finding is a product call and is now
+`dev/research/open-decisions.md` #12 — `/tonight` makes Quick match primary for an account with no
+saved profile, and Quick match runs anyway. The loading narrative's 4.6-second freeze is measured in
+the report and handed to item 8.
+
 
 **Why this first.** A new user arrives with no profile, no group, no history, and no idea what the app
 is for. Nothing in the codebase has ever been evaluated from that position. The smoke pass proved the

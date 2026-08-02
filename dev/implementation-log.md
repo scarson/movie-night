@@ -3324,3 +3324,44 @@ Six adversarial review rounds were run on the handoff, then re-run after fixes p
 6's session-specific lens was **empirical-claims auditor** — for a session that produced this many
 numbers, is each one labelled measured or modelled? It caught the cost figures in open-decisions being
 presented as "at measured rates" when they rest on an estimated 3,000-token output size; corrected.
+
+---
+
+## Queue item 6 — first-run experience (2026-08-02)
+
+Walked every route as a brand-new account (one `users` row, no profile, no groups) on the OpenNext
+build under `wrangler dev` with real D1 and real secrets, at 375×812 and 1280×800. Report:
+`dev/reports/first-run-experience.md`.
+
+**Three defects fixed under TDD (`a7c707e`), all verified against the running Worker:**
+
+- **The matching error taxonomy was applied on the results page and nowhere else.** The root cause
+  was in `session-flow.ts`: `requestMatch()` returned the server's message and dropped `kind`, so the
+  ritual and quick screens *structurally could not* branch — one framing and a "Try again" button
+  under every failure. Observed live: a real `daily_limit` refusal (tripped the 30-per-24h `match`
+  rule) offered a retry whose window is a day; `monthly_cap` the same (`MONTHLY_MATCH_LIMIT=0`);
+  `thin_results` told the reader to loosen a dealbreaker from a screen with no dealbreaker control.
+  The results page had already reasoned the `daily_limit` case out in a comment and set
+  `retry: false` — the other two screens never saw it. `ERROR_FRAMING` moved to
+  `src/lib/match-errors.ts`; all three screens now read it.
+- **`/groups/join/<bad code>` was a dead end** — the message under a heading still reading "Someone
+  wants to watch with you.", and nothing but the button that had just failed. This is where the app's
+  second-ever user lands.
+- **`/results` no-round branch had no way back**, though both sibling load-failure branches on the
+  same page do.
+
+**Reported rather than invented, per the queue item's own instruction.** The main finding is
+structural: `/tonight` makes **Quick match** primary for an account with nothing saved, and Quick
+match runs — `matching.ts` renders empty lists as `"None selected"`, so the engine produces
+recommendations from popularity and mood alone and the user cannot tell. The full ritual *is* the
+onboarding and it works well; it is just the secondary button. Nothing on that screen invites the
+second person either. Both are product calls; they are in the report and in §Open questions.
+
+**Measured, and handed to item 8:** `PhasedLoading` reaches its last phase at 4.6 s and then never
+changes — no spinner, no progress, no cancel — against the design doc's 5–15 s budget. Up to ~10 s of
+a motionless screen on the slowest path, before any throttling.
+
+**Guardrail worth carrying:** the browser tool's first `left_click` after `read_page`/`scroll_to`
+repeatedly failed to dispatch (three times), and a naive "click then assert" read as *the feature is
+broken* rather than *the click didn't land*. Confirm the click fired — a network request, a state
+change — before drawing any conclusion from what the page shows afterwards.

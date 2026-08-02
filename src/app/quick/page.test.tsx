@@ -356,6 +356,50 @@ describe("quick match", () => {
     expect(calls.filter((c) => c.url === "/api/movie-sessions")).toHaveLength(1);
   });
 
+  it("withholds a retry the day's allowance cannot honour", async () => {
+    const calls = stubApi({
+      match: {
+        status: 429,
+        body: { error: "You've run a lot of matches today — try again tomorrow", kind: "daily_limit" },
+      },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    // The window is a day, not a moment: a retry here can only fail again.
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+    // The way off the screen survives.
+    expect(screen.getByRole("button", { name: /change the vibe/i })).toBeTruthy();
+  });
+
+  it("points a thin brief at the dealbreakers that narrowed it", async () => {
+    const calls = stubApi({
+      match: {
+        status: 502,
+        body: { error: "That was a tough brief — try loosening a dealbreaker", kind: "thin_results" },
+      },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderQuick();
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    // Telling someone to loosen a dealbreaker from a screen that has no
+    // dealbreaker control on it needs to carry them to the one that does.
+    expect(screen.getByRole("link", { name: /dealbreakers/i }).getAttribute("href")).toBe(
+      "/profile"
+    );
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+  });
+
   it("sends the signed-out visitor home", async () => {
     vi.stubGlobal(
       "fetch",

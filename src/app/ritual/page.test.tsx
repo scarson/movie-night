@@ -453,4 +453,29 @@ describe("the mood back-edge", () => {
     expect(calls[4].body).toMatchObject({ moodVibes: ["Slow-Burn"] });
     expect(calls.filter((c) => c.url === "/api/movie-sessions/s1/match")).toHaveLength(1);
   });
+
+  it("withholds a retry from someone who is no longer in the group", async () => {
+    search = "group=g1";
+    const calls = stubApi({
+      match: {
+        status: 403,
+        body: {
+          error: "You've left this group — you can still read this evening, but not run it again",
+          kind: "left_group",
+        },
+      },
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderRitual();
+    await advanceToMood(calls, 2);
+
+    fireEvent.click(screen.getByRole("button", { name: /find our match/i }));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await settleNarrative();
+    await screen.findByRole("alert");
+
+    // Membership is what failed, and no amount of retrying restores it.
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /back to the mood/i })).toBeTruthy();
+  });
 });

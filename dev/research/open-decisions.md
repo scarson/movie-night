@@ -64,6 +64,28 @@ than rewriting stored text, landed while there are zero production rounds to bac
 recommended: a stop-word heuristic, which trades a visible garbling bug for a silent privacy-promise
 failure for exactly the users with the commonest names.
 
+### 12. What `/tonight` should offer an account with nothing saved
+**Raised by:** `dev/reports/first-run-experience.md` (queue item 6)
+Measured on a brand-new account: **Quick match** is the amber primary, the full ritual is the outlined
+secondary, and "Groups & invites" is the smallest, lowest-contrast element on the page. Quick match
+reads saved profiles and this account has none — nothing blocks it, and `matching.ts` renders the empty
+lists as `"None selected"`, so the engine answers from popularity and mood alone and the result looks
+like the product working. The ritual *is* the onboarding and it is good; it is simply not what a new
+account is pointed at. Nothing on the screen invites the second person either, in an app whose premise
+is two people.
+
+Two decisions, both reversible and both cheap now: (a) does a first visit route to the ritual, with one
+line saying why; (b) does "Invite someone" belong on `/tonight` rather than behind a footer link.
+Settling (a) also settles two copy strings that currently assert a profile that isn't there — `/quick`'s
+"from your saved profiles" and the no-round results branch's "Everything we need is saved".
+
+### 13. Should the pre-results screens adopt the per-kind error headings?
+**Raised by:** PR for queue item 6
+The error *behaviour* is now consistent across all three screens — no screen offers a retry that cannot
+succeed. Only the heading differs: `/results` names the failure ("That's today's last round",
+"You've left this group"), while `/ritual` and `/quick` keep their own "Not tonight, apparently" for
+every kind. Deliberately left alone: that heading is voice, not correctness. One-line change either way.
+
 ---
 
 ## Phase 2 — the post-watch rating loop

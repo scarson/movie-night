@@ -3,6 +3,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { MemberAvatars } from "@/components/group-picker";
@@ -12,6 +13,7 @@ import { MoodScreen } from "@/components/mood-screen";
 import { ProfileEditor, type ProfileDraft } from "@/components/profile-editor";
 import type { TitleRef } from "@/components/title-search";
 import { RoughDayToggle } from "@/components/rough-day-toggle";
+import { framingFor } from "@/lib/match-errors";
 import {
   fetchProfileDraft,
   fetchQuickPicks,
@@ -50,7 +52,9 @@ function Ritual() {
   const [matching, setMatching] = useState(false);
   const [matchDone, setMatchDone] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [matchError, setMatchError] = useState<string | null>(null);
+  const [matchError, setMatchError] = useState<{ message: string; kind: string | null } | null>(
+    null
+  );
   const errorHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
@@ -148,9 +152,9 @@ function Ritual() {
     setMatchError(null);
     setMatchDone(false);
     setMatching(true);
-    const result = await requestMatch(id);
+    const { error, kind } = await requestMatch(id);
     setMatchDone(true);
-    if (result !== null) setMatchError(result);
+    if (error !== null) setMatchError({ message: error, kind });
   };
 
   const submit = async () => {
@@ -168,13 +172,15 @@ function Ritual() {
     });
     if (created.sessionId === null) {
       setMatchDone(true);
-      setMatchError(created.error);
+      // A session that never got created carries no matching-error kind, so it
+      // takes the default framing: a plain, retryable failure.
+      setMatchError({ message: created.error ?? "Something went wrong.", kind: null });
       return;
     }
     setSessionId(created.sessionId);
-    const error = await requestMatch(created.sessionId);
+    const { error, kind } = await requestMatch(created.sessionId);
     setMatchDone(true);
-    if (error !== null) setMatchError(error);
+    if (error !== null) setMatchError({ message: error, kind });
   };
 
   if (matching && matchError === null) {
@@ -191,6 +197,7 @@ function Ritual() {
   }
 
   if (matchError !== null) {
+    const framing = framingFor(matchError.kind);
     return (
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[680px] px-md pb-4xl pt-2xl">
         <h1
@@ -200,23 +207,30 @@ function Ritual() {
         >
           Not tonight, apparently
         </h1>
-        <p role="alert" className="mt-md text-base text-cream">
-          {matchError}
+        <p role="alert" className="mt-md break-words text-base text-cream">
+          {matchError.message}
         </p>
         <div className="mt-xl flex flex-col gap-sm sm:flex-row">
-          <button
-            type="button"
-            onClick={() => {
-              if (sessionId !== null) {
-                void runMatch(sessionId);
-              } else {
-                void submit();
-              }
-            }}
-            className={primaryButtonClasses}
-          >
-            Try again
-          </button>
+          {framing.retry && (
+            <button
+              type="button"
+              onClick={() => {
+                if (sessionId !== null) {
+                  void runMatch(sessionId);
+                } else {
+                  void submit();
+                }
+              }}
+              className={primaryButtonClasses}
+            >
+              Try again
+            </button>
+          )}
+          {framing.loosen === true && (
+            <Link href="/profile" className={primaryButtonClasses}>
+              Edit your dealbreakers
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => {
