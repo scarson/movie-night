@@ -3228,3 +3228,44 @@ would have read as "Sonnet fails validation 8/8 while a cheap model passes 7/8",
 The second was `codex exec` blocking on stdin under a non-TTY background job, which produced empty
 transcripts; `< /dev/null` fixes it. Sonnet's three remaining parse failures truncate at a consistent
 ~4.2-4.8k characters and are scored unusable but recorded as a harness artifact, not a model result.
+
+---
+
+## `parseMatchingResponse` enforces descending matchScore order (2026-08-01)
+
+The matching prompt's CRITICAL RULES ask for "5-7 movies, sorted by matchScore descending", and
+nothing verified it. `parseMatchingResponse` filtered, deduped and clamped, then handed the model's
+own array order straight through; `ranked-list.tsx` prints array position as the rank numeral and
+the screen-reader line. A ranking presented to the user was a prompt instruction on trust.
+
+`parseMatchingResponse` now sorts by `matchScore` descending after the clamp and dedupe. Sorting
+rather than rejecting: the data is valid and only the order is wrong, and a rejection would burn the
+single `malformed` retry — a billed API call — on a cosmetic fault.
+
+**Sorted on the clamped score, and sort stability is load-bearing.** An out-of-range score reads as
+its boundary value in the badge, the screen-reader line and the stored blob, so it must rank as that
+value too — 150 and 120 are the same recommendation to every consumer and tie at 100. That means
+clamping manufactures ties the model never expressed, on top of the ties it does express (the cited
+sample ends 65, 65). A stable sort resolves both the same way: tied entries keep the model's own
+relative order, which is the only preference signal left once the scores are equal.
+
+**Evidence.** Two independent out-of-order samples in the 2026-08-01 bake-off — 90, 80, 70, **75**,
+65, 65 (`dev/research/2026-08-01-openrouter-spike.md` §Recommendation 9) and 88, 82, 78, 65, **72**,
+58 (`deepseek-v4-flash` sample #7). Re-scanning the frontier arms in `dev/research/bakeoff-arms/`:
+**16/16 correctly descending** (8 Sonnet, 8 `gpt-5.6-sol`), and 11/12 of the parseable cheap-model
+samples. So this is a cheap-model failure in the observed data, not one seen from the production
+model — the fix is a cheap invariant rather than a live incident.
+
+**Existing test that encoded the bug.** `clamps matchScore into 0-100` asserted
+`recommendations[0]` and `recommendations[1]` by array position, so it pinned model-order-preserved
+behaviour as a side effect of testing the clamp. It now keys on `tmdbId`, which is what the clamp
+assertion was ever about; position now carries the ranking.
+
+**Nothing else consumed the old order.** The results page derives `keptTmdbIds`/`removedThisRound`
+by filtering `response.recommendations` so the payload matches the printed order — and the printed
+order is now the sorted one, so it stays consistent. `toRecommendedTmdbIds` builds a `Set`,
+`account.ts` anonymization rewrites in place, and the match route's `recommendedIdList` feeds only an
+error log. Rows persisted before this change keep their stored order; the read path does not re-sort.
+
+**Check results:** `npx tsc --noEmit` clean; `npm run lint` clean; `npm test` 68 files, 1553 passed,
+2 skipped; `npx @opennextjs/cloudflare build` complete.

@@ -836,8 +836,51 @@ describe("parseMatchingResponse", () => {
     response.recommendations[1].matchScore = -5;
     const { response: parsed } = parseMatchingResponse(JSON.stringify(response), validIds);
 
-    expect(parsed.recommendations[0].matchScore).toBe(100);
-    expect(parsed.recommendations[1].matchScore).toBe(0);
+    // Keyed on tmdbId, not array position: position carries the ranking, and a
+    // clamped -5 sorts to the end.
+    const scoreById = new Map(parsed.recommendations.map((rec) => [rec.tmdbId, rec.matchScore]));
+    expect(scoreById.get(1)).toBe(100);
+    expect(scoreById.get(2)).toBe(0);
+  });
+
+  it("sorts recommendations by matchScore descending whatever order the model returned", () => {
+    // The 90, 80, 70, 75, 65, 65 shape a model returned during the 2026-08-01
+    // bake-off (dev/research/2026-08-01-openrouter-spike.md): descending order
+    // is a prompt rule with nothing behind it, and ranked-list.tsx prints array
+    // position as the rank, so an inverted pair mis-ranks the list.
+    const sixValidIds = new Set([1, 2, 3, 4, 5, 6]);
+    const response = validResponse([1, 2, 3, 4, 5, 6]);
+    const scores = [90, 80, 70, 75, 65, 65];
+    response.recommendations.forEach((rec, i) => (rec.matchScore = scores[i]));
+
+    const { response: parsed } = parseMatchingResponse(JSON.stringify(response), sixValidIds);
+
+    expect(parsed.recommendations.map((r) => r.matchScore)).toEqual([90, 80, 75, 70, 65, 65]);
+    expect(parsed.recommendations.map((r) => r.tmdbId)).toEqual([1, 2, 4, 3, 5, 6]);
+  });
+
+  it("keeps the model's relative order within a tied matchScore", () => {
+    const response = validResponse([1, 2, 3, 4, 5]);
+    for (const rec of response.recommendations) rec.matchScore = 70;
+
+    const { response: parsed } = parseMatchingResponse(JSON.stringify(response), validIds);
+
+    expect(parsed.recommendations.map((r) => r.tmdbId)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("orders by the clamped score, so out-of-range scores tie at the boundary in model order", () => {
+    // 120 and 150 are the same recommendation to every consumer — the badge, the
+    // screen-reader line and the stored blob all read 100 — so they rank as a tie
+    // in the order the model gave them, not by raw values it was never allowed
+    // to send.
+    const response = validResponse([1, 2, 3, 4]);
+    const scores = [120, 95, 150, -20];
+    response.recommendations.forEach((rec, i) => (rec.matchScore = scores[i]));
+
+    const { response: parsed } = parseMatchingResponse(JSON.stringify(response), validIds);
+
+    expect(parsed.recommendations.map((r) => r.tmdbId)).toEqual([1, 3, 2, 4]);
+    expect(parsed.recommendations.map((r) => r.matchScore)).toEqual([100, 100, 95, 0]);
   });
 
   it("strips angle brackets from every string field (defense-in-depth)", () => {
