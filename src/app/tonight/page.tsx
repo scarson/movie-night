@@ -79,24 +79,35 @@ export default function Tonight() {
         )}
       </div>
 
-      <div className="mt-2xl flex flex-col gap-sm sm:flex-row">
-        <Link
-          href={`/quick${target}`}
-          className={primaryButtonClasses}
-        >
-          Quick match
-        </Link>
-        <Link
-          href={`/ritual${target}`}
-          className={secondaryButtonClasses}
-        >
-          The full ritual
-        </Link>
-      </div>
-      <p className="mt-md max-w-[46ch] text-sm text-ash">
+      <p className="mt-2xl max-w-[46ch] text-sm text-ash">
         Quick match reads the saved profiles and goes. The full ritual walks
         through them first — comfort films, dealbreakers, tonight&apos;s mood.
       </p>
+
+      {/* Both CTAs carry the chosen group, and `target` is empty until the groups
+          fetch resolves — live buttons here would silently match solo for someone
+          who has one. They wait on the same load the picker does. */}
+      {groups === null ? (
+        <div aria-hidden="true" className="mt-md flex flex-col gap-sm sm:flex-row">
+          <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
+          <div className="h-12 w-full rounded-control bg-charcoal sm:w-40" />
+        </div>
+      ) : (
+        <div className="mt-md flex flex-col gap-sm sm:flex-row">
+          <Link
+            href={`/quick${target}`}
+            className={primaryButtonClasses}
+          >
+            Quick match
+          </Link>
+          <Link
+            href={`/ritual${target}`}
+            className={secondaryButtonClasses}
+          >
+            The full ritual
+          </Link>
+        </div>
+      )}
 
       <div className="mt-3xl border-t border-slate pt-lg">
         <Link

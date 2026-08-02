@@ -53,6 +53,33 @@ function stubApi({
   );
 }
 
+/**
+ * Same as `stubApi`, but `/api/groups` hangs until the returned `release` is
+ * called — the only way to observe the window where auth has settled and the
+ * group choice has not.
+ */
+function stubApiWithPendingGroups(body: unknown) {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify(ALICE), { status: 200 });
+      }
+      if (url === "/api/groups") {
+        await gate;
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    })
+  );
+  return { release };
+}
+
 function renderHub() {
   return render(
     <AuthProvider>
@@ -140,6 +167,24 @@ describe("Tonight hub", () => {
     expect(
       (await screen.findByRole("link", { name: /groups/i })).getAttribute("href")
     ).toBe("/groups");
+  });
+
+  it("withholds the entry CTAs until the group choice has loaded", async () => {
+    // `target` is "" until /api/groups resolves, so a CTA pressed in this window
+    // silently starts a solo match for someone who has exactly one group.
+    const { release } = stubApiWithPendingGroups({ groups: [SUNDAY] });
+    renderHub();
+    await screen.findByRole("heading", { name: /^Alice,/ });
+
+    expect(screen.queryByRole("link", { name: /quick match/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /full ritual/i })).toBeNull();
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /quick match/i }).getAttribute("href")).toBe(
+        "/quick?group=g1"
+      )
+    );
   });
 
   it("stays usable when the groups request fails", async () => {
