@@ -286,6 +286,20 @@ describe("profile settings", () => {
     expect(explanation).not.toMatch(/your profile, your groups/i);
   });
 
+  it("gives the confirmation field the same thumb-sized target as every other input", async () => {
+    // Measured in Chrome at 375px: 256 x 42, the only input in the app under
+    // DESIGN.md's 44px minimum — every other one carries `min-h-11`, this one
+    // was sized by its padding alone. It gates the least reversible action here.
+    // jsdom has no layout, so the class is what can be asserted; the measurement
+    // is in dev/reports/mobile-qa.md.
+    stubApi();
+    await renderProfile();
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete (my )?account/i }));
+    const field = screen.getByRole("textbox", { name: /type delete/i });
+    expect(field.className).toContain("min-h-11");
+  });
+
   it("keeps deletion locked until the word is actually typed", async () => {
     const calls = stubApi();
     await renderProfile();
