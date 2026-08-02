@@ -1,7 +1,7 @@
 # Next queue — items 6–10
 
 **Written:** 2026-08-01, while items 1–5 of the current wave were in flight.
-**Status:** item 6 shipped 2026-08-02. Items 7–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
+**Status:** items 6, 7 and 8 shipped 2026-08-02. Items 9–10 remain planned and **not started**. Each is scoped to be dispatchable as a single agent.
 
 **Update 2026-08-02.** Items 1–5 all shipped: prompt-injection threat model + corpus (PR #37),
 abuse-surface and rate limits (#36), observability + deploy preflight (#39), Tier-2 cleanup (#35),
@@ -113,7 +113,17 @@ weakened; their `ALLOWED` maps use exact-equality assertions.
 
 ---
 
-## 8. Mobile and touch QA of the full ritual
+## 8. Mobile and touch QA of the full ritual — **SHIPPED 2026-08-02**
+
+**Outcome:** `dev/reports/mobile-qa.md`. Three undersized touch targets, two distinct causes, both fixed — the
+completed-step markers were 32x44 below `sm:` (the `sr-only` label that protects 320px reflow left
+the 28px marker as the whole target) and the delete-confirmation field was 42px. All seven inputs are
+16px, so iOS never zooms. Two structural findings queued rather than fixed: nothing in the app is
+sticky or fixed, so the ritual's first step is a 3.77-screen scroll to an optional-field form's
+Continue button; and DESIGN.md specifies a bottom tab bar (and its shadow) that was never built and
+whose omission is unrecorded. The loading narrative goes static from ~3-4.6s, which is a gap against
+DESIGN.md's own "adapts to actual API response time".
+
 
 **Why.** This is an app for two people on a sofa deciding what to watch. It is phone-first in every
 way that matters, and phone behaviour has been verified only for reflow at 320px — a conformance

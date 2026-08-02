@@ -265,7 +265,7 @@ export default function ProfilePage() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="mt-xs w-full max-w-64 rounded-control border border-ash bg-midnight px-md py-sm text-base text-cream"
+              className="mt-xs min-h-11 w-full max-w-64 rounded-control border border-ash bg-midnight px-md py-sm text-base text-cream"
             />
 
             {deleteError !== null && (

@@ -3408,3 +3408,49 @@ inert, because the animation origin outranks author-normal declarations — and 
 strips the animation, is what switches it back on. Any state expressed as a plain declaration on an
 animated element has two different renderings depending on a user's motion preference, and only one
 of them is ever reviewed.
+
+---
+
+## Queue item 8 — mobile and touch QA (2026-08-02)
+
+The ritual driven end to end in Chrome at 375x812 against `wrangler dev` on the OpenNext build, with a
+two-member group and a deliberately long partner name. Every number read from
+`getBoundingClientRect()` on the running page. Report: `dev/reports/mobile-qa.md`.
+
+**Three undersized touch targets, two causes, both fixed:**
+
+- **The completed-step markers measured 32x44, and only below `sm:`.** `ProgressSteps` sets
+  `min-h-11`, so height was never wrong; width is content-driven, and below `sm:` the label is
+  `sr-only`, leaving the 28px marker as the whole target. Two individually correct decisions collided
+  — the `sr-only` label is the pattern the a11y report singled out as *right* for 320px reflow.
+  `min-w-11` replaces `min-w-0`; an explicit minimum still lets the button shrink past its content,
+  so truncation still protects 320px. Verified after: 44x44 and zero overflow at both 375 and 320.
+- **`/profile`'s delete-confirmation field measured 256x42** — the only input in the app without
+  `min-h-11`, sized by its padding alone, gating the least reversible action in the product.
+
+Both clear WCAG 2.2's 2.5.8 floor of 24px, so these were house-rule misses against DESIGN.md's
+stricter 44px, not conformance failures. Stated that way in the tests and the report.
+
+All seven text inputs compute 16px, so iOS never zooms on focus.
+
+**Two structural findings queued rather than fixed:**
+
+- **Nothing in the app is `position: sticky` or `fixed`.** The ritual's first step is 3065px — 3.77
+  screens — with Continue at y=2693, past a form where every field is optional. `/results` picks is
+  3.64 screens *with only three recommendations*; a real round returns about five.
+- **DESIGN.md specifies a bottom tab bar for mobile chrome, and its shadow in §Elevation, and neither
+  exists.** A repo-wide search finds those two lines and nothing else — no component, no decision-log
+  entry. Phase 1 has three destinations so YAGNI may be right, but the spec is dangling and it is
+  exactly where a persistent primary action would live, which makes it the same decision as the
+  scroll-depth finding.
+
+**The loading narrative, measured on both waits:** terminal phase at 4.6s on quick match and ~3.0s on
+refinement, then unchanged through 12-14s — no spinner, no elapsed time, no cancel. Framed as a spec
+gap rather than a design request: DESIGN.md says the sequence "adapts to actual API response time",
+and it only adapts *downward* (a fast response fast-forwards at 200ms per phase). Against the design
+doc's own 5-15s budget that is up to ~10s of motionless screen.
+
+**Stated as not covered,** because two of them are what the queue actually asked: real touch input
+(these are geometry measurements from desktop Chrome at a phone viewport), and whether the soft
+keyboard obscures inputs (needs a real device — the measurable half, 16px inputs, is done; the
+residual risk is `/results`, where the steering textarea sits 138px above its submit button).

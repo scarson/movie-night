@@ -43,6 +43,21 @@ describe("ProgressSteps", () => {
     expect(screen.getByRole("button", { name: "Step 2: Bob" })).toBeTruthy();
   });
 
+  it("keeps a completed step tappable at the width where its label is hidden", () => {
+    // The button sizes itself to its contents, and below `sm:` the label is
+    // `sr-only` — so the only thing left is the 28px marker. Measured in Chrome
+    // at 375px: 32 x 44, against DESIGN.md's flat 44px minimum. It clears WCAG
+    // 2.2's 2.5.8 floor of 24px, so this is the house rule, not the criterion.
+    // jsdom has no layout, so the class is what can be asserted here; the
+    // measurement lives in dev/reports/mobile-qa.md.
+    render(<ProgressSteps steps={STEPS} current={2} onStepSelect={vi.fn()} />);
+
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.className).toContain("min-h-11");
+      expect(button.className).toContain("min-w-11");
+    }
+  });
+
   it("exposes progress as an ordered list under a labelled landmark", () => {
     render(<ProgressSteps steps={STEPS} current={0} onStepSelect={vi.fn()} />);
 
