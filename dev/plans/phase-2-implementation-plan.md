@@ -781,9 +781,10 @@ export interface WatchSummary {
 ```
 
 > **⚠ The completeness gate is the point of this mapper, and it is easy to leave out.** Emit
-> `ratings` **only** when every eligible member of the watch (same predicate as `getRevealForWatch`
-> below) has a non-`NULL` rating. Otherwise emit `[]` — not a partial list, not entries with
-> `rating: null`. A partial list is what makes a skip distinguishable from silence in the prompt, and
+> `ratings` **only** when every eligible member of the watch has a non-`NULL` rating —
+> **"eligible" is defined once, in (d) below; read that definition before writing this query**, and
+> factor it so both call sites use the same SQL rather than two hand-written versions that drift.
+> Otherwise emit `[]` — not a partial list, not entries with `rating: null`. A partial list is what makes a skip distinguishable from silence in the prompt, and
 > the guardrail sentence is not a substitute for not sending the data.
 
 Both joins are `LEFT`, deliberately and for different reasons. `watch_ratings` is LEFT because **a

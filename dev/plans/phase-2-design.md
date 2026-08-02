@@ -77,7 +77,7 @@ never stand between the couple and the film.**
                                        ▼
   ┌── next visit to /tonight ───────────────────────────────────────┐
   │  Above "who's watching tonight?", one quiet question:           │
-  │      "How was Arrival?"   [ not for us ] [ good ] [ loved it ]  │
+  │      "How was Arrival?"   [ not for me ] [ good ] [ loved it ]  │
   │      + optional one-line note, + "skip"                         │
   │  → one tap ends it. writes watch_ratings.                       │
   └────────────────────────────────────┬────────────────────────────┘
@@ -181,6 +181,11 @@ surface, because a stats page is both scope and the wrong idea (§4.5).
    *"you two didn't get on with the last slow-burn we sent, so this one earns its running time"* in
    the same `explanation` and `conversational` fields the app already renders. No new UI, and it is
    the payoff the product actually promised.
+   **Note the precondition, which §4.5a makes necessary and which is worth being honest about:**
+   that sentence is only safe once *both* have answered, so the ratings only start shaping
+   recommendations then. A rating given alone buys the exclusion (payoff 3) and nothing else until
+   the other person answers. That is a cost — and also the most honest reason the app can give the
+   second person for answering.
 3. **Nothing comes back twice.** Watched titles leave the candidate pool. That is a silent benefit,
    but it is the one users notice when it is missing.
 
