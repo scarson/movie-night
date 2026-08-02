@@ -3146,3 +3146,60 @@ silently comply or silently fix.
 
 **Checks:** documentation only — no `tsc`, `lint`, `test` or build run, and none applicable. CI skips
 docs-only changes by `paths-ignore`, so this PR will show no checks, which is expected.
+
+## Research spike: OpenRouter as a replacement/fallback for the Anthropic matching call (2026-08-01)
+
+**Built:** `dev/research/2026-08-01-openrouter-spike.md` (the deliverable),
+`scripts/openrouter-spike.ts` (spike artifact, ABOUTME-marked, not imported by production code and
+not collected by vitest — it is not a `.test.ts`), and `dev/research/openrouter-spike/` containing the
+verbatim assembled prompt, a manifest with SHA-256 hashes, and one sample file per model tested.
+
+**No production code changed.** This was a research question, not a migration.
+
+**Question:** Cloudflare Workers AI turned out to be flaky — could OpenRouter be used instead?
+**Answer:** No. Stay on Anthropic direct.
+
+**Key findings:**
+- OpenRouter's Anthropic-compatible endpoint (the "Anthropic Skin") is the only path preserving
+  `thinking: {type:"adaptive"}`, `output_config.effort` and `output_config.format` — and it is
+  documented as guaranteed only with the Anthropic first-party provider. Pinned there, provider
+  failover has nowhere to go. The OpenAI-shaped path gives failover but costs a `callClaude` rewrite.
+  The two wanted properties are mutually exclusive on one request.
+- The reliability problem was Workers AI's, never Anthropic's. No Anthropic failure rate has been
+  measured, so there is nothing yet to insure against.
+- Data policy is better than expected: zero prompt/completion logging by default, no training on
+  inputs, plus a per-request `data_collection: "deny"`. Defensible, but still one more party holding
+  the private rough-day directive.
+- The injection gate *survives* provider failover (all seven `claude-sonnet-5` endpoints serve the
+  same snapshot). What breaks it is the opt-in `models` array, which simply must not be set.
+- Cost moves the wrong way for the same model: no inference markup, but a 5.5% credit-purchase fee
+  makes Sonnet-via-OpenRouter ~5.8% dearer than direct.
+
+**Gotchas discovered (both cost a wrong result before being caught):**
+1. **The answer arrives in `message.reasoning`, not `message.content`.** Reasoning models on the
+   chat-completions path return the full JSON with `content: null`. The first version of the bake-off
+   script read only `content` and scored a model 0/8 as "empty completion" — it was actually
+   answering correctly every time. Corrected extraction took the same model to 7/8. A naive port of
+   `callClaude` to that path would classify every such reply as `malformed`.
+2. **`AbortSignal.timeout` must cover the body read, not just `fetch`.** An abort firing during
+   `await res.text()` sits outside a try that wraps only the fetch, and the unhandled rejection kills
+   the whole run instead of failing one sample.
+
+**Separately flagged (not fixed here):** `parseMatchingResponse` does not enforce the descending
+`matchScore` ordering the prompt demands, and `ranked-list.tsx` renders array order. A live sample
+returned 90, 80, 70, 75, 65, 65 and parsed clean. Raised as its own task.
+
+**Bake-off:** 3 cheap models × 8 samples = 24 live calls, **$0.023**; **$0.055 total** on the key
+including four aborted runs and diagnostic probes. No Anthropic or OpenAI model was billed — those
+arms run on Sam's existing subscriptions and are reserved slots in the comparison table. Results:
+only 12 of 24 samples usable; `ling-2.6-flash` (90% off) failed 8/8 on upstream 429 with no failover
+because it has a single endpoint; `deepseek-v4-flash` parsed 7/8 but collapsed 29:11 toward one
+member and never once returned any of the other member's comfort titles; `glm-4.7-flash` parsed 5/8
+and produced the only hard-constraint violation of the spike — an explicitly excluded title plus a
+dealbreaker-genre title, which reaches production only because `selectCandidates` filters both in
+SQL. That last point is evidence against the CF spike's §6 idea of relaxing the never-return
+guarantee from a SQL pre-filter to a prompt instruction.
+
+**Check results:** `npx tsc --noEmit` clean; `npm run lint` clean; `npm test` 68 files, 1550 passed,
+2 skipped.
+
